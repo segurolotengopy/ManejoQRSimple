@@ -1,0 +1,36 @@
+# Secretos — NUNCA versionar
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+service-account*.json
+gha-creds-*.json
+*storage-state*.json
+.manejoqr/
+
+# Claude Code personal
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Firebase local
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*.cache
+
+# Build y dependencias
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Playwright (solo yape-scraper)
+playwright-report/
+test-results/
+
+# Sistema
+.DS_Store
+*.log

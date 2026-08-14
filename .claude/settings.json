@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Read(./**)",
+      "Edit(packages/**)",
+      "Edit(docs/**)",
+      "Edit(scripts/**)",
+      "Bash(npm ci)",
+      "Bash(npm install:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx eslint:*)",
+      "Bash(npx prettier:*)",
+      "Bash(firebase emulators:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git branch:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(rg:*)",
+      "Bash(jq:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/service-account*.json)",
+      "Read(./**/*storage-state*.json)",
+      "Read(~/.manejoqr/**)",
+      "Bash(rm -rf:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(firebase deploy:*)",
+      "Bash(firebase projects:delete:*)",
+      "Bash(gcloud * delete:*)",
+      "Bash(gcloud secrets:*)",
+      "Bash(curl:*yape*)",
+      "Bash(curl:*bcp.com.bo*)",
+      "Bash(npx playwright:* --headed *bcp*)",
+      "Bash(terraform apply:*)",
+      "Bash(terraform destroy:*)"
+    ]
+  },
+  "env": {
+    "NODE_ENV": "development",
+    "INTEGRATION_MODE": "mock",
+    "SCRAPER_DRY_RUN": "true"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/no-secrets.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

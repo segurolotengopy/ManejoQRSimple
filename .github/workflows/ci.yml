@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+# Sin permisos de escritura: ningún job necesita empujar nada al repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint · Types · Tests · Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run deps:check
+      - run: npm run test -- --coverage
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+
+  gitleaks:
+    name: Secretos en el historial
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # historial completo: sin esto solo escanea el último commit
+      # Binario en vez de gitleaks-action (lección heredada de WhatsApp-Modular):
+      # la action necesita permisos de escritura para comentar en PRs y falla
+      # con el token de solo lectura de los PRs de Dependabot.
+      - name: Instalar gitleaks
+        env:
+          GITLEAKS_VERSION: 8.24.3
+        run: |
+          set -euo pipefail
+          curl -sSfL \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+      - name: Escanear historial completo
+        run: gitleaks detect --redact --verbose
+
+  # CodeQL queda fuera: code scanning requiere GitHub Advanced Security,
+  # no disponible en repos privados de cuenta personal (misma situación que
+  # los proyectos hermanos). Semgrep en CI puede cubrir SAST más adelante.

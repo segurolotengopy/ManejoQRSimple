@@ -1,0 +1,53 @@
+title = "ManejoQRSimple — secret scanning"
+
+# Partimos del ruleset por defecto de gitleaks (Google/GCP, GitHub, claves
+# privadas, JWT, etc.) y le sumamos lo específico de este proyecto.
+[extend]
+useDefault = true
+
+# Ninguna de estas credenciales debería existir en el repo (el login bancario
+# es siempre manual del dueño) — por eso conviene que el pipeline avise el día
+# que aparezca una.
+[[rules]]
+id = "mqs-credencial-bancaria"
+description = "Posible credencial de Yape/BCP (usuario, clave o PIN)"
+regex = '''(?i)(yape|bcp)[_-]?(user|usuario|pass|clave|password|pin)\s*[:=]\s*['"][^'"]{4,}['"]'''
+tags = ["banco", "yape"]
+
+[[rules]]
+id = "mqs-storage-state"
+description = "Contenido de storageState de Playwright (cookies de sesión bancaria)"
+regex = '''"cookies"\s*:\s*\[\s*\{[^\]]{0,400}(yape|bcp|viabcp)'''
+tags = ["banco", "sesion"]
+
+[[rules]]
+id = "mqs-wm-api-token"
+description = "Token de WhatsAppModular en claro"
+regex = '''(?i)wm[_-]?api[_-]?token\s*[:=]\s*['"][0-9a-zA-Z/+=._-]{16,}['"]'''
+tags = ["whatsapp"]
+
+[[rules]]
+id = "mqs-hmac-secret"
+description = "Secreto HMAC del webhook en claro"
+regex = '''(?i)hmac[_-]?secret\s*[:=]\s*['"][^'"]{12,}['"]'''
+tags = ["webhook"]
+
+[allowlist]
+description = "Rutas y patrones sin secretos reales por construcción"
+regexTarget = "line"
+
+paths = [
+  # Hashes de integridad, no credenciales.
+  '''package-lock\.json''',
+  # Capturas de la consola (imágenes) y PDFs de proveedores.
+  '''docs/consola-yape/.*''',
+  '''docs/Integraciones/.*\.(pdf|csv)$''',
+]
+
+regexes = [
+  # hashMovimiento e imagenRef son identificadores/digests del dominio, no
+  # credenciales: no autentican nada. La regla genérica los marca solo por
+  # tener aspecto de hash largo.
+  '''hashMovimiento\s*[:=]''',
+  '''hashImagen\s*[:=]''',
+]

@@ -4,7 +4,7 @@ Sistema modular de cobros por **QR Simple (Bolivia)** sobre la billetera
 **Yape — BCP Bolivia**: genera y renueva QRs de cobro, los envía a los clientes
 por WhatsApp mediante **WhatsAppModular**, recibe comprobantes y confirma los
 pagos contra la consola web de la billetera hasta contar con una API oficial.
-Proyecto del ecosistema **SeguroLoTengo** — Bolivia (+591).
+Proyecto independiente — Bolivia (+591).
 
 > Estado: **documentación de arranque**. El código todavía no está implementado;
 > este repositorio contiene la arquitectura, las guías y la configuración de
@@ -72,4 +72,4 @@ Verifica que se cargaron con `/agents` y `/hooks`.
 
 ## Licencia
 
-Propietario — Andres Alberdi / SeguroLoTengo. Todos los derechos reservados.
+Propietario — Andres Alberdi. Todos los derechos reservados.

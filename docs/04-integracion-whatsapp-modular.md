@@ -1,7 +1,7 @@
 # 04 — Integración con WhatsAppModular
 
 Contrato entre ManejoQRSimple (consumidor) y **WhatsAppModular** (plataforma de
-mensajería del ecosistema, repo `segurolotengopy/WhatsAppModular`). Gobierna
+mensajería del mismo dueño, repo `segurolotengopy/WhatsAppModular`). Gobierna
 `packages/wa-bridge`. WhatsAppModular fue ampliado por decisión de su dueño para
 mensajería de ida y vuelta genérica (no solo OTP) — este proyecto es su segundo
 consumidor.

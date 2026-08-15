@@ -2,7 +2,7 @@
 
 Sistema modular de cobros por **QR Simple (Bolivia)** sobre **Yape BCP Bolivia**,
 con envío por WhatsApp (WhatsAppModular) y confirmación de pagos contra la
-consola web de la billetera — proyecto del ecosistema **SeguroLoTengo** (BO +591).
+consola web de la billetera — proyecto independiente (Bolivia, +591).
 
 > **Fecha de elaboración:** 14 de agosto de 2026
 > **Estado:** documentación de arranque (pre-código)

@@ -3,8 +3,8 @@
 ## 1. Principios de diseño
 
 1. **Modular y consumible por otros sistemas.** ManejoQRSimple no es una app:
-   es un conjunto de módulos con contratos claros. Otros proyectos del
-   ecosistema (SeguroLoTengo, futuros) deben poder usar `qr-core` y sus puertos
+   es un conjunto de módulos con contratos claros. Otros proyectos del dueño
+   (actuales o futuros) deben poder usar `qr-core` y sus puertos
    sin arrastrar el scraper ni el demo.
 2. **El dominio no conoce a los proveedores.** `qr-core` no sabe si los pagos
    los detecta un scraper de Playwright o una API del banco, ni si los mensajes

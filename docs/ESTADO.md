@@ -29,10 +29,14 @@
 5. **Firebase:** proyecto **ManejoQRSimple**, cuenta alberdi.andres@gmail.com.
    Verificar project-id exacto con `firebase projects:list` y registrarlo en
    docs/05 §1. Mantener sin billing mientras se pueda (criterio heredado).
-6. **Repo:** `git@github.com:AndresAlberdi/ManejoQRSimple.git`. Procedimiento
-   de seguridad heredado de segurolotengo-demo / WhatsApp-Modular: CI
-   bloqueante + gitleaks (binario, historial completo) + dependabot + branch
-   protection; secret scanning nativo no aplica a repos privados personales.
+6. **Repo:** `git@github.com:segurolotengopy/ManejoQRSimple.git` (decisión del
+   2026-08-14: se movió de la cuenta personal AndresAlberdi a la org
+   segurolotengopy, que es de pago y trae herramientas adicionales). En esta
+   máquina el remoto `origin` usa el alias SSH `github-segurolotengo`, igual
+   que segurolotengo-demo. Procedimiento de seguridad heredado de
+   segurolotengo-demo / WhatsApp-Modular: CI bloqueante + gitleaks (binario,
+   historial completo) + dependabot + branch protection; re-evaluar qué
+   controles nativos (secret scanning, etc.) habilita el plan de la org.
 7. **Integración WhatsApp:** por **WhatsAppModular** (envío de QR + datos del
    cobro; recepción del comprobante). Verificar su API pública real antes de
    implementar `wa-bridge` (ese proyecto está en Fase 0 del riel Meta, con

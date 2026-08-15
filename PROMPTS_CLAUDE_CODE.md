@@ -12,7 +12,7 @@ propuesta y recién después aprobar.
 cd ~/ManejoQRSimple          # esta carpeta, ya poblada con docs y config
 chmod +x .claude/hooks/*.sh
 git init
-git remote add origin git@github.com:AndresAlberdi/ManejoQRSimple.git
+git remote add origin git@github-segurolotengo:segurolotengopy/ManejoQRSimple.git
 gh auth status               # verificar credenciales de GitHub
 firebase login:list          # verificar cuenta alberdi.andres@gmail.com
 claude

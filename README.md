@@ -21,7 +21,7 @@ Proyecto independiente — Bolivia (+591).
 ## Instalación
 
 ```bash
-git clone git@github.com:AndresAlberdi/ManejoQRSimple.git
+git clone git@github.com:segurolotengopy/ManejoQRSimple.git
 cd ManejoQRSimple
 npm ci
 cp .env.example .env      # completar con tus valores; .env no se versiona

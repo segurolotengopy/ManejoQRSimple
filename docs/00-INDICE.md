@@ -7,7 +7,7 @@ consola web de la billetera — proyecto independiente (Bolivia, +591).
 > **Fecha de elaboración:** 14 de agosto de 2026
 > **Estado:** documentación de arranque (pre-código)
 > **Runtime elegido:** Node.js 22 LTS + TypeScript
-> **Repositorio:** monorepo modular (npm workspaces) — `git@github.com:AndresAlberdi/ManejoQRSimple.git`
+> **Repositorio:** monorepo modular (npm workspaces) — `git@github.com:segurolotengopy/ManejoQRSimple.git`
 > **Firebase:** proyecto **ManejoQRSimple**, cuenta alberdi.andres@gmail.com
 
 ---

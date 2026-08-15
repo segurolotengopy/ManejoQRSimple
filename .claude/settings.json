@@ -42,9 +42,9 @@
       "Bash(firebase projects:delete:*)",
       "Bash(gcloud * delete:*)",
       "Bash(gcloud secrets:*)",
-      "Bash(curl:*yape*)",
-      "Bash(curl:*bcp.com.bo*)",
-      "Bash(npx playwright:* --headed *bcp*)",
+      "Bash(curl *yape*)",
+      "Bash(curl *bcp.com.bo*)",
+      "Bash(npx playwright * --headed *bcp*)",
       "Bash(terraform apply:*)",
       "Bash(terraform destroy:*)"
     ]

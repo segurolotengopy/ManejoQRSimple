@@ -4,7 +4,7 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-08-14 (sesión 0 — fundación documental, con Claude Cowork)
+**Última actualización:** 2026-08-18 (sesión 0.1 — repo en la org, push y branch protection)
 
 ---
 
@@ -64,6 +64,20 @@
 - [x] Configuración de repo: .gitignore, .gitleaks.toml, CI, dependabot,
       PR template, .env.example, package.json y tsconfig.json raíz.
 - [x] Decisiones de arquitectura ADR-001…005 documentadas (docs/01 §6).
+- [x] Independencia del proyecto asentada en los docs: se quitaron las
+      menciones de pertenencia al "ecosistema SeguroLoTengo" (quedan solo
+      las referencias históricas de procedencia de las decisiones).
+- [x] Repo publicado: rama `main` (renombrada desde `master`) pusheada a
+      `segurolotengopy/ManejoQRSimple`; remoto `origin` por el alias SSH
+      `github-segurolotengo`.
+- [x] Branch protection activa: ruleset `main-protegida` (id 20972960),
+      réplica del de SeguroLoTengoDemo — sin borrado ni force-push, todo
+      cambio por PR (0 aprobaciones, merge/squash), checks requeridos
+      "Lint · Types · Tests · Build" y "Secretos en el historial", bypass
+      solo para administradores del repo.
+- [x] Ajustes de configuración commiteados: patrones deny corregidos en
+      `.claude/settings.json`, `.mcp.json` sin header manual (el MCP de
+      GitHub usa OAuth propio) y `*.bak` en `.gitignore`.
 
 ### Próximo paso (retomar acá)
 
@@ -72,7 +86,10 @@
    sesión vencida).
 2. **Dueño:** verificar instalación del Playwright MCP local (reiniciar app
    de Claude → confirmar herramientas).
-3. **Claude Code, sesión 1** (seguir `PROMPTS_CLAUDE_CODE.md`): verificar
-   contexto → fundar el monorepo instalable con gates en verde → git init,
-   push, CI y branch protection → empezar `qr-core` con TDD.
+3. **Claude Code, sesión 1** (seguir `PROMPTS_CLAUDE_CODE.md`, abierta
+   desde este directorio): verificar contexto → fundar el monorepo
+   instalable con gates en verde → empezar `qr-core` con TDD. El CI hoy
+   está en rojo (no existe código que compilar) y el ruleset ya exige sus
+   checks: el primer PR real es el de la fundación del monorepo, y a
+   `main` no se pushea directo (salvo bypass de administrador).
 4. Sesión de mapeo de la consola (docs/03 §6) cuando estén las capturas.

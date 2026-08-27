@@ -18,6 +18,6 @@
   },
   "dependencies": {
     "@mqs/qr-core": "*",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   }
 }

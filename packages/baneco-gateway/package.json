@@ -2,6 +2,7 @@
   "name": "@mqs/baneco-gateway",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Adaptador de la API oficial de Cobros QR Simple de Banco Económico: QrProvider + PaymentWatcher.",
   "main": "./dist/index.js",
@@ -12,7 +13,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b"
   },

@@ -72,4 +72,13 @@ Verifica que se cargaron con `/agents` y `/hooks`.
 
 ## Licencia
 
-Propietario — Andres Alberdi. Todos los derechos reservados.
+[Apache License 2.0](LICENSE) — Copyright 2026 Andres Alberdi.
+
+Este repositorio es **público**: cualquiera puede usar, modificar y redistribuir
+el código bajo los términos de esa licencia, incluso con fines comerciales.
+
+Lo que la licencia **no** cubre, porque nunca está en el repositorio: las
+credenciales bancarias, la especificación oficial de Banco Económico y los demás
+documentos del banco, que viven fuera de git (ver
+[`docs/Integraciones/baneco/README.md`](docs/Integraciones/baneco/README.md)).
+El código es abierto; los secretos no son parte del código.

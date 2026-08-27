@@ -2,6 +2,7 @@
   "name": "@mqs/functions",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Cloud Functions: API HTTP del demo y triggers de Firestore. Orquesta; no contiene reglas de negocio.",
   "main": "./dist/index.js",
@@ -12,7 +13,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b"
   },

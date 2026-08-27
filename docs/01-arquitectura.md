@@ -67,6 +67,7 @@ La máquina de estados completa, con los caminos de excepción (`EN_REVISION`,
 | Paquete | Responsabilidad | Restricciones |
 |---|---|---|
 | `@mqs/qr-core` | Dominio puro: cobros, QRs versionados, máquina de estados, conciliación, políticas (vencimiento, tolerancias), puertos | No importa nada. Sin I/O. Sin SDKs. |
+| `@mqs/baneco-gateway` | Adaptador `QrProvider` + `PaymentWatcher` sobre la API oficial de Cobros QR Simple de Banco Económico (ADR-006) | Único paquete que conoce la API de Baneco: URLs, DTOs, cifrado y códigos. Corre como satélite. |
 | `@mqs/yape-scraper` | Adaptador `PaymentWatcher` + (opcional, docs/03 §5) `QrProvider` sobre la consola Yape BCP con Playwright | Solo lectura. Único paquete con Playwright. Corre fuera de Firebase. |
 | `@mqs/wa-bridge` | Adaptador `MessagingProvider`: cliente HTTP de WhatsAppModular + receptor de webhooks de comprobantes | Único paquete que conoce WhatsAppModular. |
 | `@mqs/functions` | Cloud Functions: API HTTP del demo, triggers de Firestore, endpoint del webhook de wa-bridge | Orquesta; no contiene reglas de negocio. |
@@ -127,6 +128,34 @@ falsificar. Decisión: `COMPROBANTE_RECIBIDO` y `PAGO_DETECTADO` son estados
 independientes; solo la detección en la consola (más conciliación de dominio)
 lleva a `CONFIRMADO`. Consecuencia: un OCR de comprobantes, si algún día se
 agrega, solo puede *acelerar* la búsqueda del abono, jamás sustituirla.
+
+**ADR-006 — Baneco entra como adaptador de API oficial detrás de los mismos puertos
+(decisión del dueño, 27-ago-2026).**
+Contexto: apareció una API oficial real —Banco Económico, "Api Market v1.3.0",
+Cobros QR Simple— que cubre de forma nativa lo que el scraping resolvía a mano:
+generación de QR de un solo uso con monto fijo y verificación del pago.
+Decisión: se implementa como paquete `@mqs/baneco-gateway` que satisface
+`QrProvider` (generateQR/cancelQR) y `PaymentWatcher` (statusQR/paidQR), sin tocar
+ninguna regla de `qr-core`. Es la **primera validación real de ADR-002**: cambiar de
+scraping a API oficial resultó ser escribir un adaptador, tal como se había previsto.
+Consecuencias:
+- **Convivencia, no reemplazo.** `yape-scraper` sigue siendo una implementación
+  alternativa de `PaymentWatcher`, hoy diferida (D1). La selección es por
+  configuración y por puerto: `QR_PROVIDER` y `PAYMENT_WATCHER` reemplazan al
+  `INTEGRATION_MODE` único, y cada cobro lleva un campo `provider`.
+- **Ejecución como proceso satélite** (D2, opción b): mismo patrón que el scraper
+  —ThinkPad hoy, OCI después—, escribiendo a Firestore por repositorio con
+  credencial de mínimo privilegio. Se escala a Functions + Blaze solo si hace falta.
+- **Primera etapa sin webhook** (D3): detección por polling de `statusQR` más
+  conciliación diaria `paidQR`. La espec. marca el webhook como opcional.
+- **Regla BANECO-1** (extiende ADR-005 al mundo Baneco): el webhook
+  `notifyPaymentQR` del banco **jamás** confirma un pago — es un disparador de
+  verificación. Solo la consulta saliente autenticada es fuente de verdad. El
+  razonamiento es idéntico al del comprobante del cliente: lo que llega sin
+  autenticar puede ser falsificado por cualquiera que conozca la URL.
+- **Idempotencia mejorada** (regla #7): Baneco entrega identificadores propios, así
+  que la clave natural de deduplicación pasa de un hash de fecha+monto+referencia a
+  `baneco:{qrId}:{transactionId}`. Mismo mecanismo, mejor clave.
 
 ## 7. No-objetivos explícitos de la Fase 0–1
 

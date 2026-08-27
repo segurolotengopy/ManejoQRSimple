@@ -85,6 +85,22 @@ export {
   type OrigenDeteccion,
 } from './conciliacion/deteccion.js';
 
+// Casos de uso: la orquestación del cobro sobre los puertos
+export {
+  aplicar,
+  conciliarDia,
+  emitirQr,
+  enviarQr,
+  registrarComprobante,
+  renovarYReenviar,
+  vencerSiCorresponde,
+  verificarPago,
+  type Dependencias,
+  type ErrorCasoUso,
+  type ResultadoVerificacion,
+  type ResumenConciliacionDiaria,
+} from './casos-uso/cobrar.js';
+
 // Puertos y sus tests de contrato compartidos
 export type {
   CobroRepository,

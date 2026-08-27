@@ -109,7 +109,14 @@ export class MessagingProviderEnMemoria implements MessagingProvider {
 
 export class CobroRepositoryEnMemoria implements CobroRepository {
   private readonly cobros = new Map<string, Cobro>();
-  private readonly detecciones = new Map<string, string[]>();
+  private readonly deteccionesSembradas = new Map<string, string[]>();
+
+  /**
+   * Recibe el almacén de evidencia porque de ahí se derivan las detecciones ya
+   * aplicadas — igual que hará el adaptador de Firestore, consultando la
+   * evidencia del cobro en vez de llevar una lista paralela.
+   */
+  constructor(private readonly evidencia?: EvidenceStoreEnMemoria) {}
 
   obtener(id: string): Ok<Cobro | null> {
     return Promise.resolve(exito(this.cobros.get(id) ?? null));
@@ -127,14 +134,32 @@ export class CobroRepositoryEnMemoria implements CobroRepository {
     return Promise.resolve(exito(pendientes));
   }
 
-  deteccionesAplicadas(cobroId: string): Ok<readonly string[]> {
-    return Promise.resolve(exito([...(this.detecciones.get(cobroId) ?? [])]));
+  async deteccionesAplicadas(cobroId: string): Ok<readonly string[]> {
+    const sembradas = this.deteccionesSembradas.get(cobroId) ?? [];
+    if (this.evidencia === undefined) {
+      return exito([...sembradas]);
+    }
+
+    const registros = await this.evidencia.listarDeCobro(cobroId);
+    if (!registros.ok) {
+      return registros;
+    }
+
+    // Solo cuentan las detecciones que llegaron a conciliar: una detección que
+    // terminó en EN_REVISION no debe bloquear un reintento legítimo.
+    const conciliadas = registros.valor
+      .filter((r) => r.evento === 'PAGO_CONCILIADO')
+      .map((r) => r.datos['idDeduplicacion'])
+      .filter((id): id is string => typeof id === 'string');
+
+    return exito([...sembradas, ...conciliadas]);
   }
 
+  /** Siembra una detección previa, para armar escenarios en los tests. */
   registrarDeteccionAplicada(cobroId: string, idDeduplicacion: string): void {
-    const previas = this.detecciones.get(cobroId) ?? [];
+    const previas = this.deteccionesSembradas.get(cobroId) ?? [];
     previas.push(idDeduplicacion);
-    this.detecciones.set(cobroId, previas);
+    this.deteccionesSembradas.set(cobroId, previas);
   }
 }
 

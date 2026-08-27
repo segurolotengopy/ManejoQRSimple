@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.test.ts", "dist"],
+  "references": [
+    { "path": "../qr-core" },
+    { "path": "../baneco-gateway" },
+    { "path": "../firestore-store" }
+  ]
+}

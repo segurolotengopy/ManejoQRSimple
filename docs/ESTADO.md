@@ -139,12 +139,32 @@ diferido)
       integraciones API Market. C7 (interoperabilidad QR BCB) ya venía resuelta
       por el dueño y se omitió del envío. **A la espera de respuesta.**
 
+- [x] **2026-08-27 — Fase 0 cerrada: monorepo instalable con los gates en verde**
+      (PR #1). Seis paquetes `@mqs/*`, TypeScript con project references,
+      ESLint strictTypeChecked, y la regla de dependencias traducida a 8 reglas
+      de dependency-cruiser — verificadas introduciendo violaciones de cada
+      tipo y comprobando que fallan. El CI pasó de rojo permanente a verde.
+- [x] **2026-08-27 — Dominio `qr-core`** (PR #2). Montos en centavos,
+      máquina de estados con función única de transición, conciliación, puertos
+      y sus tests de contrato compartidos. Las dos reglas críticas quedaron
+      sostenidas por el compilador: `CONFIRMADO` exige una `ConciliacionAprobada`
+      que solo `conciliar()` fabrica, y los montos son un tipo marcado que no
+      acepta un `number` cualquiera.
+- [x] **2026-08-27 — Hito B1: `@mqs/baneco-gateway` contra fixtures.**
+      Cifrado AES-256-CBC IV-prepended, schemas Zod en todos los bordes,
+      cliente HTTP con transporte inyectable, `ProveedorDeToken` con renovación
+      anticipada y reintento único ante 401, y los adaptadores `QrProviderBaneco`
+      y `PaymentWatcherBaneco` pasando los tests de contrato de `qr-core`.
+      317 tests en total. **Sin llamadas vivas en CI.**
+      Verificaciones pendientes contra el PDF oficial: tabla V1–V5 en
+      `docs/Integraciones/baneco/README.md`.
+
 ### En espera (bloqueos externos, no bloquean el desarrollo)
 
 | Qué | Desde | Bloquea | Mientras tanto |
 |---|---|---|---|
 | Respuesta de Banco Económico a `01-preguntas-al-banco.md` | 2026-08-27 | Cierre del diseño definitivo y cualquier pase a producción | Se trabaja contra **certificación** con los supuestos explícitos del §"Supuestos de trabajo" de ese documento (JWT corto con reintento único ante 401; AES-256-CBC/PKCS7/IV-prepended/Base64 a validar empíricamente en el Hito B0; operación sin webhook por polling `statusQR` + `paidQR`; `dueDate` 72 h; todo `responseCode != 0` como error opaco). Ningún supuesto pasa a producción sin respuesta escrita o verificación formal. |
-| Credenciales/proceso de certificación (A1–A5) | 2026-08-27 | Arranque real del Hito B0 contra el ambiente del banco | Se puede escribir `tools/baneco-b0/` y sus fixtures; la corrida contra certificación espera credenciales propias. |
+| Credenciales/proceso de certificación (A1–A5) | 2026-08-27 | Corrida del Hito B0 contra el ambiente del banco, y con ella el reemplazo de las fixtures derivadas de la espec. por capturas reales | B1 ya está hecho contra fixtures derivadas de la especificación. Cuando B0 corra, cualquier diferencia de forma va a aparecer como test en rojo — que es para lo que sirven. |
 | Capturas de la consola Yape BCP | — | Riel Yape (diferido, D1) | Sin impacto en la línea principal Baneco. |
 
 **Al llegar la respuesta del banco:** registrarla en la columna "Respuesta" de

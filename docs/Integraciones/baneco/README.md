@@ -37,3 +37,17 @@ del banco, entra por esta carpeta primero y solo se versiona una copia saneada.
 
 Regla de esta carpeta (heredada de `docs/Integraciones/README.md`): **no inventar
 parámetros ni endpoints distintos a los documentados.**
+
+## Verificaciones pendientes contra el PDF oficial
+
+El adaptador (`packages/baneco-gateway`) se codificó desde el manual derivado saneado,
+que es fuente de nivel 4. Estos puntos hay que contrastarlos con el PDF —y confirmarlos
+empíricamente en el Hito B0— antes de considerarlos cerrados:
+
+| # | Punto | Por qué importa |
+|---|---|---|
+| V1 | **Versionado asimétrico de rutas.** El manual documenta `/api/qrsimple/generateQR` y `/api/qrsimple/cancelQR` sin `v2`, pero `/api/qrsimple/v2/statusQR/{id}` y `/api/qrsimple/v2/paidQR/{fecha}` con `v2`. | Una ruta equivocada es un 404 en la primera llamada real. Está codificado tal cual lo documenta el manual. |
+| V2 | **Esquema de cifrado AES** (§2 del manual): AES-256-CBC, PKCS7, IV de 16 bytes antepuesto, Base64. | Es un supuesto declarado (pregunta B2). Lo confirma el endpoint utilitario de certificación en B0, no nosotros. |
+| V3 | **Zona horaria de `paymentDate`/`paymentTime`.** Se interpretan en hora boliviana (UTC-4). | Pregunta D7. Un offset equivocado desplaza los pagos de día y rompe la conciliación diaria. Está aislado en una constante de `mapeo.ts`. |
+| V4 | **Nombre del campo de estado**: `statusQrCode` vs `statusQRCode`. | La espec. no es consistente. El adaptador acepta ambos: equivocarse significaría no detectar un pago. |
+| V5 | **Catálogo de `responseCode`.** No documentado en la v1.3.0. | Pregunta E1. Todo código distinto de 0 se trata como error opaco y se registra para construir el catálogo empírico. |

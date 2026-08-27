@@ -18,6 +18,6 @@
       "@mqs/demo-web": ["packages/demo-web/src/index.ts"]
     }
   },
-  "include": ["packages/*/src/**/*", "scripts/**/*", "*.config.ts", "*.config.mjs"],
+  "include": ["packages/*/src/**/*", "tools/*/src/**/*", "scripts/**/*", "*.config.ts", "*.config.mjs"],
   "exclude": ["node_modules", "**/dist", "coverage"]
 }

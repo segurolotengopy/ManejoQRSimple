@@ -106,6 +106,19 @@ resultado real de cada paso.
 
 ## Sesión 2 🗺️ — Hito B0: validación de contrato contra certificación Baneco
 
+> **Estado (2026-08-27): ya implementado** en `tools/baneco-b0/`, con dos
+> desviaciones deliberadas respecto del prompt de abajo, explicadas en
+> `tools/baneco-b0/README.md`:
+> 1. **Reusa `@mqs/baneco-gateway`** en vez de ser autónomo — así B0 valida el
+>    código que va a producción y no una implementación paralela. El prompt pedía
+>    autonomía porque se escribió antes de que existiera el monorepo.
+> 2. **No usa el endpoint utilitario `/api/authentication/encrypt`**, cuyo
+>    contrato no está en ninguna fuente documentada del repo (aparece solo acá).
+>    No hace falta: que el login funcione ya valida el esquema AES end-to-end
+>    contra el banco.
+>
+> Falta **correrlo**: espera credenciales de certificación (pregunta A3).
+
 Requiere `.env` con `BANECO_CERT_*` cargado (ver Preparación). No requiere
 dominio implementado.
 

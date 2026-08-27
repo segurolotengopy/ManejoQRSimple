@@ -139,6 +139,7 @@ El código debe hacerlas **imposibles de violar**, no solo evitarlas.
 ```
 BORRADOR → QR_ACTIVO → ENVIADO
     ENVIADO ──(watcher detecta abono)────────────► PAGO_DETECTADO → CONFIRMADO
+    PAGO_DETECTADO ──(la conciliación rechaza)───► EN_REVISION
     ENVIADO ──(cliente envía comprobante)────────► COMPROBANTE_RECIBIDO
     COMPROBANTE_RECIBIDO ──(watcher detecta)─────► PAGO_DETECTADO
     COMPROBANTE_RECIBIDO ──(ventana agotada)─────► EN_REVISION
@@ -151,6 +152,9 @@ BORRADOR → QR_ACTIVO → ENVIADO
   abono concilió contra el cobro: monto exacto, dentro de la vigencia (con
   tolerancia configurada), sin duplicado previo. Son dos estados a propósito:
   la detección es del adaptador; la conciliación es del dominio.
+- Un abono detectado que **no** concilia (monto distinto, fuera de vigencia,
+  duplicado) va a `EN_REVISION`, nunca se descarta en silencio ni se redondea
+  para que entre. Es el mismo criterio del análisis Baneco §6.2.
 - `CONFIRMADO`, `RECHAZADO` y `ANULADO` son terminales.
 - La renovación tras `VENCIDO` no crea un cobro nuevo: incrementa `qrVersion`
   del mismo cobro y reenvía por WhatsApp. El QR anterior queda en el historial.

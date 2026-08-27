@@ -27,6 +27,16 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-return': 'error',
       '@typescript-eslint/no-unsafe-argument': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
+      // Un parámetro con `_` adelante está ahí por la firma de la interfaz,
+      // no por descuido: implementarla obliga a declararlo aunque no se use.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       // Regla de negocio #10: aleatoriedad criptográfica, nunca Math.random().
       'no-restricted-properties': [
         'error',

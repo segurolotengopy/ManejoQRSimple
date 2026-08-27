@@ -38,6 +38,13 @@ del banco, entra por esta carpeta primero y solo se versiona una copia saneada.
 Regla de esta carpeta (heredada de `docs/Integraciones/README.md`): **no inventar
 parámetros ni endpoints distintos a los documentados.**
 
+## Cómo se resuelven estas verificaciones
+
+`tools/baneco-b0/` sondea el ambiente de certificación y produce
+`02-hallazgos-certificacion.md` con un veredicto por cada punto de la tabla de abajo y
+por cada pregunta que se pueda contestar empíricamente. Se corre con
+`npm run baneco:b0` y **espera credenciales de certificación** (pregunta A3).
+
 ## Verificaciones pendientes contra el PDF oficial
 
 El adaptador (`packages/baneco-gateway`) se codificó desde el manual derivado saneado,

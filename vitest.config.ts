@@ -19,7 +19,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['packages/*/src/**/*.test.ts'],
+    include: ['packages/*/src/**/*.test.ts', 'tools/*/src/**/*.test.ts'],
     // Objetivo declarado en CLAUDE.md: la suite completa por debajo de 10 s.
     testTimeout: 10_000,
     coverage: {

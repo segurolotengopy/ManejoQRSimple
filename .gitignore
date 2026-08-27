@@ -39,3 +39,6 @@ test-results/
 
 # Documentos de proveedores con credenciales — NUNCA a GitHub (decisión D4, 2026-08-27)
 docs/Integraciones/baneco/privado-no-gh/
+
+# Salida local del Hito B0: imágenes de QR de prueba del ambiente de certificación
+tools/baneco-b0/out/

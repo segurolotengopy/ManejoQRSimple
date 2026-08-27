@@ -50,8 +50,9 @@ module.exports = {
       comment:
         'Solo baneco-gateway conoce la API de Banco Económico: sus URLs, DTOs, ' +
         'cifrado y códigos de respuesta. functions puede importarlo porque es ' +
-        'la raíz de composición que lo cablea a los puertos.',
-      from: { pathNot: '^packages/(baneco-gateway|functions)/' },
+        'la raíz de composición que lo cablea a los puertos, y tools/baneco-b0 ' +
+        'porque su razón de ser es validar ese mismo adaptador contra el banco.',
+      from: { pathNot: '^(packages/(baneco-gateway|functions)|tools/baneco-b0)/' },
       to: { path: '^packages/baneco-gateway/' },
     },
     {

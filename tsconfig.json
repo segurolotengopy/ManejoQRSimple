@@ -10,6 +10,7 @@
     { "path": "packages/yape-scraper" },
     { "path": "packages/wa-bridge" },
     { "path": "packages/functions" },
-    { "path": "packages/demo-web" }
+    { "path": "packages/demo-web" },
+    { "path": "tools/baneco-b0" }
   ]
 }

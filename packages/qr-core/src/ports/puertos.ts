@@ -86,7 +86,13 @@ export interface CobroRepository {
   guardar(cobro: Cobro): Promise<Resultado<void, ErrorPuerto>>;
   /** Cobros que el watcher debe seguir mirando. */
   listarPendientes(): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
-  /** Claves de deduplicación ya aplicadas a un cobro (regla #7). */
+  /**
+   * Claves de deduplicación ya aplicadas a un cobro (regla #7).
+   *
+   * Se **deriva de la evidencia**, no se lleva en una lista aparte: cada
+   * transición que involucró un abono ya registró su `idDeduplicacion`. Un
+   * segundo lugar donde anotarlo sería un segundo lugar donde desincronizarse.
+   */
   deteccionesAplicadas(cobroId: string): Promise<Resultado<readonly string[], ErrorPuerto>>;
 }
 

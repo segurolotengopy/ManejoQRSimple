@@ -1,0 +1,22 @@
+{
+  "name": "@mqs/yape-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Adaptador PaymentWatcher sobre la consola Yape BCP con Playwright. Solo lectura.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@mqs/qr-core": "*"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@mqs/demo-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Consola del comerciante (React + Vite sobre Firebase Hosting). Sin lógica de negocio.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "node --eval \"console.error('demo-web todavía no tiene app React+Vite: llega en su propia sesión (docs/07). Mientras tanto usá npm test / npm run typecheck.'); process.exit(1)\""
+  },
+  "dependencies": {
+    "@mqs/qr-core": "*"
+  }
+}

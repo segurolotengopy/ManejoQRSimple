@@ -1,21 +1,15 @@
 {
-  "compilerOptions": {
-    "target": "ES2023",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "lib": ["ES2023"],
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitOverride": true,
-    "noFallthroughCasesInSwitch": true,
-    "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "sourceMap": true,
-    "noEmit": true
-  },
-  "include": ["packages/*/src/**/*", "scripts/**/*"],
-  "exclude": ["node_modules", "dist", "coverage"]
+  // Archivo "solución": no compila nada por sí mismo, orquesta el build
+  // incremental de los paquetes en orden topológico (`tsc -b`).
+  // Para chequear tipos de TODO el repo (incluidos los tests) se usa
+  // tsconfig.typecheck.json, que resuelve @mqs/* contra el código fuente.
+  "files": [],
+  "references": [
+    { "path": "packages/qr-core" },
+    { "path": "packages/baneco-gateway" },
+    { "path": "packages/yape-scraper" },
+    { "path": "packages/wa-bridge" },
+    { "path": "packages/functions" },
+    { "path": "packages/demo-web" }
+  ]
 }

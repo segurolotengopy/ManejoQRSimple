@@ -1,0 +1,22 @@
+{
+  "name": "@mqs/functions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloud Functions: API HTTP del demo y triggers de Firestore. Orquesta; no contiene reglas de negocio.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@mqs/qr-core": "*"
+  }
+}

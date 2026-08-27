@@ -29,6 +29,7 @@ de memoria si pasó tiempo desde la última lectura.
 | `docs/05-firebase-demo.md` | Proyecto Firebase ManejoQRSimple, Firestore, Functions, Hosting, emuladores y reglas de seguridad. |
 | `docs/06-seguridad.md` | Modelo de amenazas, gestión de secretos, checklist de seguridad. |
 | `docs/07-plan-fases.md` | Fases del proyecto y criterios de salida de cada una. |
+| `docs/Integraciones/baneco/` | Integración con Banco Económico (**línea principal** desde 2026-08-27): análisis del módulo, preguntas al banco y sus respuestas, manual saneado. La espec. oficial "Api Market v1.3.0" gobierna y vive en `privado-no-gh/` (git-ignored). |
 | `docs/ESTADO.md` | Bitácora de avance. **Leerla al empezar y actualizarla al cerrar cada sesión.** |
 
 La documentación técnica de proveedores externos (BCP, BCB, Meta) va en
@@ -64,6 +65,9 @@ proyecto **ManejoQRSimple**, cuenta alberdi.andres@gmail.com) · React + Vite en
 ```
 packages/qr-core/         Dominio puro. NO importa nada. Cobros, QRs, máquina
                           de estados, conciliación, política de vencimiento.
+packages/baneco-gateway/  Adaptador de la API oficial de Banco Económico
+                          (QrProvider + PaymentWatcher). Único paquete que
+                          conoce esa API. Corre como satélite (ADR-006).
 packages/yape-scraper/    Adaptador Playwright de la consola Yape BCP.
                           SOLO LECTURA. Corre en la ThinkPad del dueño
                           (Fase 2: promovible a VM OCI — ver ADR-003).
@@ -76,7 +80,8 @@ docs/                     Documentación (ver docs/00-INDICE.md)
 
 **Regla de dependencias:** `qr-core` no importa a nadie. Ningún adaptador importa
 a otro adaptador. Nada fuera de `yape-scraper` importa Playwright ni conoce la
-consola del banco. Nada fuera de `wa-bridge` llama a WhatsAppModular. Se valida en CI.
+consola del banco. Nada fuera de `baneco-gateway` conoce la API de Baneco. Nada
+fuera de `wa-bridge` llama a WhatsAppModular. Se valida en CI (`npm run deps:check`).
 
 ---
 
@@ -88,6 +93,11 @@ El código debe hacerlas **imposibles de violar**, no solo evitarlas.
    futuro, la API oficial). Un comprobante enviado por el cliente **jamás**
    transiciona un cobro a `CONFIRMADO`: es evidencia auxiliar y disparador de
    verificación. El comprobante falsificado es el vector de fraude nº 1 de este dominio.
+1bis. **BANECO-1 — el webhook del banco tampoco confirma.** El webhook
+   `notifyPaymentQR` de Banco Económico es un **disparador de verificación**, no una
+   confirmación: llega sin autenticar y cualquiera que conozca la URL puede
+   falsificarlo. Solo la consulta saliente autenticada (`statusQR`, `paidQR`)
+   transiciona un cobro. Mismo razonamiento que la regla #1 aplicada al comprobante.
 2. **Credenciales bancarias: nunca.** Ni en el repo, ni en `.env`, ni en logs, ni
    en Firestore, ni en tests. El login en la consola lo hace el dueño a mano; el
    scraper solo reutiliza el `storageState` de Playwright, que vive **fuera del

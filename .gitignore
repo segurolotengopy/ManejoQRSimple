@@ -36,3 +36,6 @@ test-results/
 *.log
 *.bak
 .mcp.json.bak.*
+
+# Documentos de proveedores con credenciales — NUNCA a GitHub (decisión D4, 2026-08-27)
+docs/Integraciones/baneco/privado-no-gh/

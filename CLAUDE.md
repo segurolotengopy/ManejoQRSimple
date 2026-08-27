@@ -71,6 +71,9 @@ packages/baneco-gateway/  Adaptador de la API oficial de Banco Económico
 packages/yape-scraper/    Adaptador Playwright de la consola Yape BCP.
                           SOLO LECTURA. Corre en la ThinkPad del dueño
                           (Fase 2: promovible a VM OCI — ver ADR-003).
+packages/firestore-store/ Adaptadores CobroRepository y EvidenceStore sobre
+                          Firestore. Único paquete que conoce el SDK de
+                          Firebase; recibe la conexión inyectada (ADR-007).
 packages/wa-bridge/       Cliente de WhatsAppModular (envío de QR, recepción
                           de comprobantes por webhook).
 packages/functions/       Cloud Functions: API HTTP del demo y triggers Firestore.
@@ -81,7 +84,8 @@ docs/                     Documentación (ver docs/00-INDICE.md)
 **Regla de dependencias:** `qr-core` no importa a nadie. Ningún adaptador importa
 a otro adaptador. Nada fuera de `yape-scraper` importa Playwright ni conoce la
 consola del banco. Nada fuera de `baneco-gateway` conoce la API de Baneco. Nada
-fuera de `wa-bridge` llama a WhatsAppModular. Se valida en CI (`npm run deps:check`).
+fuera de `wa-bridge` llama a WhatsAppModular. Nada fuera de `firestore-store`
+importa el SDK de Firebase. Se valida en CI (`npm run deps:check`).
 
 ---
 

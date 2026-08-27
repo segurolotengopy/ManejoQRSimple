@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// Reglas de seguridad de Firestore (docs/05 §3).
+//
+// Principio: **ningún cliente escribe nunca**. Todas las escrituras entran por
+// el Admin SDK —Cloud Functions y el satélite de Baneco— que pasa por encima de
+// estas reglas y aplica las del dominio (`qr-core`). Estas reglas gobiernan al
+// único cliente que habla directo con Firestore: la consola del comerciante.
+//
+// Que un cliente no pueda escribir hace estructuralmente imposible que alguien
+// confirme un cobro desde el navegador salteándose la máquina de estados
+// (reglas de negocio #1 y "toda transición pasa por la función única").
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // El demo opera la billetera del dueño: solo su sesión autenticada lee.
+    function esDuenoAutenticado() {
+      return request.auth != null;
+    }
+
+    match /cobros/{cobroId} {
+      allow read: if esDuenoAutenticado();
+      allow write: if false;
+
+      // Historial de QRs emitidos: append-only (regla #6). Ni siquiera el
+      // Admin SDK debería pisarlos, y el adaptador usa create() para eso.
+      match /qrs/{version} {
+        allow read: if esDuenoAutenticado();
+        allow write: if false;
+      }
+
+      // Evidencia: append-only (regla #8). Nunca se sobrescribe ni se borra.
+      match /evidencia/{registroId} {
+        allow read: if esDuenoAutenticado();
+        allow write: if false;
+      }
+    }
+
+    // Detecciones del watcher, deduplicadas por id de documento.
+    match /abonos/{idDeduplicacion} {
+      allow read: if esDuenoAutenticado();
+      allow write: if false;
+    }
+
+    // Comprobantes que llegan por WhatsApp. Evidencia auxiliar: no confirman
+    // nada por sí solos (ADR-005).
+    match /comprobantes/{messageId} {
+      allow read: if esDuenoAutenticado();
+      allow write: if false;
+    }
+
+    // Todo lo no contemplado queda negado, incluida la lectura.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

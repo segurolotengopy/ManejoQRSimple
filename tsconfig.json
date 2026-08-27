@@ -11,6 +11,7 @@
     { "path": "packages/wa-bridge" },
     { "path": "packages/functions" },
     { "path": "packages/demo-web" },
+    { "path": "packages/firestore-store" },
     { "path": "tools/baneco-b0" }
   ]
 }

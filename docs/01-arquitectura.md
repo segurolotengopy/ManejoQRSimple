@@ -70,6 +70,7 @@ La máquina de estados completa, con los caminos de excepción (`EN_REVISION`,
 | `@mqs/baneco-gateway` | Adaptador `QrProvider` + `PaymentWatcher` sobre la API oficial de Cobros QR Simple de Banco Económico (ADR-006) | Único paquete que conoce la API de Baneco: URLs, DTOs, cifrado y códigos. Corre como satélite. |
 | `@mqs/yape-scraper` | Adaptador `PaymentWatcher` + (opcional, docs/03 §5) `QrProvider` sobre la consola Yape BCP con Playwright | Solo lectura. Único paquete con Playwright. Corre fuera de Firebase. |
 | `@mqs/wa-bridge` | Adaptador `MessagingProvider`: cliente HTTP de WhatsAppModular + receptor de webhooks de comprobantes | Único paquete que conoce WhatsAppModular. |
+| `@mqs/firestore-store` | Adaptadores `CobroRepository` y `EvidenceStore` sobre Firestore (ADR-007) | Único paquete que conoce el SDK de Firebase. Recibe la conexión inyectada. |
 | `@mqs/functions` | Cloud Functions: API HTTP del demo, triggers de Firestore, endpoint del webhook de wa-bridge | Orquesta; no contiene reglas de negocio. |
 | `@mqs/demo-web` | Consola del comerciante: React + Vite sobre Firebase Hosting | Sin lógica de negocio; consume la API. |
 
@@ -156,6 +157,30 @@ Consecuencias:
 - **Idempotencia mejorada** (regla #7): Baneco entrega identificadores propios, así
   que la clave natural de deduplicación pasa de un hash de fecha+monto+referencia a
   `baneco:{qrId}:{transactionId}`. Mismo mecanismo, mejor clave.
+
+**ADR-007 — La persistencia es un adaptador más: `@mqs/firestore-store`.**
+Contexto: `CobroRepository` y `EvidenceStore` necesitaban implementación real, y
+sus dos consumidores son distintos — las Cloud Functions (dentro de Firebase) y
+el satélite de Baneco (fuera, ADR-006/D2). Poner el adaptador dentro de
+`packages/functions` habría obligado al satélite a importar el paquete de
+despliegue de Functions para poder guardar un cobro.
+Decisión: paquete propio `@mqs/firestore-store`, tratado como cualquier otro
+adaptador. Es el **único** que conoce el SDK de Firebase, y la regla se valida en
+CI igual que la de Playwright con `yape-scraper`.
+Consecuencias:
+- La conexión se **inyecta**: el adaptador recibe una `Firestore`, no la crea.
+  Los tests corren contra el emulador y el satélite contra el proyecto real sin
+  que el adaptador sepa la diferencia — y sin que exista un camino por el que un
+  test termine escribiendo en el proyecto de verdad.
+- **Append-only por construcción**: la evidencia y el historial de QRs se
+  escriben con `create()`, que falla si el documento ya existe. No sobrescribir
+  deja de ser algo que hay que acordarse de no hacer y pasa a ser algo que la
+  base rechaza (reglas #6 y #8).
+- Los tests de integración contra el emulador viven aparte
+  (`*.emulador.test.ts`, `npm run test:emulador`) y **no corren en CI**: necesitan
+  Java y firebase-tools. La suite de CI sigue siendo hermética.
+- Alternativa descartada: que cada consumidor hablara con Firestore por su cuenta.
+  Habría multiplicado el conocimiento del esquema y roto la premisa de ADR-002.
 
 ## 7. No-objetivos explícitos de la Fase 0–1
 

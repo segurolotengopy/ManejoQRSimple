@@ -54,7 +54,7 @@ export class ProveedorDeToken {
       cuerpo: {
         userName: this.config.usuario,
         // La contraseña viaja cifrada con la llave AES del entorno (manual §3).
-        password: cifrar(this.config.password, this.config.llave),
+        password: cifrar(this.config.password.revelar(), this.config.llave),
       },
     });
 

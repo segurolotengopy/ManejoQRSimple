@@ -41,7 +41,7 @@ export class QrProviderBaneco implements QrProvider {
     const respuesta = await this.cliente.generarQr({
       transactionId,
       // La cuenta de abono viaja cifrada, siempre (manual §4.1, regla #4).
-      accountCredit: cifrar(this.config.cuentaAbono, this.config.llave),
+      accountCredit: cifrar(this.config.cuentaAbono.revelar(), this.config.llave),
       currency: 'BOB',
       // Centavos → decimal por aritmética entera, solo acá en el borde (regla #5).
       amount: aDecimalBob(solicitud.montoCentavos),

@@ -15,6 +15,7 @@ import { exito, type ErrorPuerto, type Resultado } from '@mqs/qr-core';
 
 import type { ConfigBaneco } from '../config.js';
 import { llaveAes } from '../crypto/aes.js';
+import { Secreto } from '../secreto.js';
 import type { PeticionHttp, RespuestaHttp, Transporte } from '../client/http.js';
 
 /** Llave de prueba propia. La del banco nunca entra al repo (regla #2). */
@@ -58,9 +59,9 @@ export function configDePrueba(sobrescribir: Partial<ConfigBaneco> = {}): Config
     ambiente: 'cert',
     baseUrl: 'https://apimktdesa.baneco.com.bo/ApiGateway',
     usuario: 'usuario-de-prueba',
-    password: 'password-de-prueba',
+    password: new Secreto('password-de-prueba'),
     llave: llave.valor,
-    cuentaAbono: '1234567890',
+    cuentaAbono: new Secreto('1234567890'),
     ttlQrHoras: 72,
     branchCode: 'E0001',
     ...sobrescribir,

@@ -85,12 +85,13 @@ describe('QrProviderBaneco.emitir()', () => {
     const generar = transporte.peticiones.find((p) => p.url.endsWith('/generateQR'));
     const cuerpo = generar?.cuerpo as { accountCredit: string };
 
-    expect(cuerpo.accountCredit).not.toBe(config.cuentaAbono);
-    expect(cuerpo.accountCredit).not.toContain(config.cuentaAbono);
+    const cuentaEnClaro = config.cuentaAbono.revelar();
+    expect(cuerpo.accountCredit).not.toBe(cuentaEnClaro);
+    expect(cuerpo.accountCredit).not.toContain(cuentaEnClaro);
     // Y descifra de vuelta a la cuenta real: está cifrada, no destruida.
     expect(descifrar(cuerpo.accountCredit, config.llave)).toEqual({
       ok: true,
-      valor: config.cuentaAbono,
+      valor: cuentaEnClaro,
     });
   });
 
@@ -284,7 +285,8 @@ describe('el token nunca viaja en el cuerpo ni se repite de más', () => {
 
     const auth = transporte.peticiones.find((p) => p.url.endsWith('/authenticate'));
     const cuerpo = auth?.cuerpo as { password: string };
-    expect(cuerpo.password).not.toBe(config.password);
-    expect(descifrar(cuerpo.password, config.llave)).toEqual({ ok: true, valor: config.password });
+    const passwordEnClaro = config.password.revelar();
+    expect(cuerpo.password).not.toBe(passwordEnClaro);
+    expect(descifrar(cuerpo.password, config.llave)).toEqual({ ok: true, valor: passwordEnClaro });
   });
 });

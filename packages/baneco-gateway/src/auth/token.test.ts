@@ -52,7 +52,7 @@ describe('ProveedorDeToken', () => {
     await proveedor.obtener();
 
     const cuerpo = transporte.peticiones[0]?.cuerpo as { password: string; userName: string };
-    expect(cuerpo.password).not.toBe(configDePrueba().password);
+    expect(cuerpo.password).not.toBe(configDePrueba().password.revelar());
     expect(cuerpo.userName).toBe(configDePrueba().usuario);
   });
 

@@ -9,6 +9,7 @@
 import { esExito, exito, fallo, type Resultado } from '@mqs/qr-core';
 
 import { llaveAes, type LlaveAes } from './crypto/aes.js';
+import { Secreto } from './secreto.js';
 
 export type Ambiente = 'cert' | 'prod';
 
@@ -16,11 +17,11 @@ export type ConfigBaneco = {
   readonly ambiente: Ambiente;
   readonly baseUrl: string;
   readonly usuario: string;
-  /** Contraseña en claro; se cifra recién al autenticar. */
-  readonly password: string;
+  /** Se cifra recién al autenticar. Envuelta para que no se pueda loguear. */
+  readonly password: Secreto;
   readonly llave: LlaveAes;
-  /** Cuenta de abono en claro; se cifra en cada `generateQR`. */
-  readonly cuentaAbono: string;
+  /** Se cifra en cada `generateQR`. Envuelta por el mismo motivo. */
+  readonly cuentaAbono: Secreto;
   readonly ttlQrHoras: number;
   readonly branchCode: string | null;
 };
@@ -104,14 +105,30 @@ export function leerConfig(
 
   return exito({
     ambiente,
-    baseUrl: baseUrl.valor.replace(/\/+$/, ''),
+    baseUrl: sinBarrasFinales(baseUrl.valor),
     usuario: usuario.valor,
-    password: password.valor,
+    password: new Secreto(password.valor),
     llave: llave.valor,
-    cuentaAbono: cuentaAbono.valor,
+    cuentaAbono: new Secreto(cuentaAbono.valor),
     ttlQrHoras,
     branchCode: branchCode === undefined || branchCode === '' ? null : branchCode,
   });
+}
+
+/**
+ * Quita las barras finales de la URL base.
+ *
+ * A mano y no con `/\/+$/`: ese patrón es vulnerable a backtracking polinómico
+ * ante una entrada con muchas barras (CodeQL `js/polynomial-redos`). El origen
+ * es una variable de entorno y el riesgo es mínimo, pero el bucle es igual de
+ * corto y no tiene el problema.
+ */
+function sinBarrasFinales(url: string): string {
+  let fin = url.length;
+  while (fin > 0 && url[fin - 1] === '/') {
+    fin -= 1;
+  }
+  return url.slice(0, fin);
 }
 
 /** Descripción segura para logs: sin secretos, ni siquiera ofuscados. */

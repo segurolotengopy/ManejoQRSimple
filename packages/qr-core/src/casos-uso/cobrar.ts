@@ -34,6 +34,15 @@ import type {
   QrProvider,
 } from '../ports/puertos.js';
 
+/**
+ * Todos los puertos que el sistema necesita.
+ *
+ * Cada caso de uso pide con `Pick` **solo los que usa**, no este objeto entero.
+ * No es purismo: el satélite de Baneco no emite QRs ni envía mensajes, y
+ * obligarlo a construir un `QrProvider` para poder verificar un pago lo forzaría
+ * a fabricar uno falso — que es justo el tipo de pieza inerte que después
+ * alguien conecta por error.
+ */
 export type Dependencias = {
   readonly cobros: CobroRepository;
   readonly evidencia: EvidenceStore;
@@ -42,6 +51,18 @@ export type Dependencias = {
   readonly mensajeria: MessagingProvider;
   readonly politica: PoliticaConciliacion;
 };
+
+/** Lo mínimo para aplicar una transición: guardarla y dejar su evidencia. */
+export type DepsPersistencia = Pick<Dependencias, 'cobros' | 'evidencia'>;
+
+/** Lo que necesita verificar un pago contra el banco y conciliarlo. */
+export type DepsVerificacion = Pick<
+  Dependencias,
+  'cobros' | 'evidencia' | 'watcher' | 'mensajeria' | 'politica'
+>;
+
+/** Lo que necesita emitir o renovar un QR y mandarlo al cliente. */
+export type DepsEmision = Pick<Dependencias, 'cobros' | 'evidencia' | 'qr' | 'mensajeria'>;
 
 export type ErrorCasoUso =
   | { readonly tipo: 'PUERTO'; readonly error: ErrorPuerto }
@@ -61,7 +82,7 @@ const deTransicion = (error: ErrorTransicion): ErrorCasoUso => ({ tipo: 'TRANSIC
  * exactamente lo que la regla #8 existe para impedir.
  */
 export async function aplicar(
-  deps: Dependencias,
+  deps: DepsPersistencia,
   cobro: Cobro,
   evento: EventoCobro,
   ahora: Date,
@@ -86,7 +107,7 @@ export async function aplicar(
 
 /** Pide el QR al proveedor y deja el cobro en `QR_ACTIVO`. */
 export async function emitirQr(
-  deps: Dependencias,
+  deps: Pick<DepsEmision, 'cobros' | 'evidencia' | 'qr'>,
   cobro: Cobro,
   venceEn: Date,
   ahora: Date,
@@ -114,7 +135,7 @@ export async function emitirQr(
 
 /** Manda el QR al cliente por WhatsApp y deja el cobro en `ENVIADO`. */
 export async function enviarQr(
-  deps: Dependencias,
+  deps: Pick<DepsEmision, 'cobros' | 'evidencia' | 'mensajeria'>,
   cobro: Cobro,
   ahora: Date,
 ): Promise<Resultado<Cobro, ErrorCasoUso>> {
@@ -140,7 +161,7 @@ export async function enviarQr(
  * banco antes de que el QR venza.
  */
 export async function registrarComprobante(
-  deps: Dependencias,
+  deps: DepsPersistencia,
   cobro: Cobro,
   referenciaComprobante: string,
   ahora: Date,
@@ -172,7 +193,7 @@ export type ResultadoVerificacion =
  * `ConciliacionAprobada`, y esa solo la fabrica la conciliación.
  */
 export async function verificarPago(
-  deps: Dependencias,
+  deps: DepsVerificacion,
   cobroInicial: Cobro,
   ahora: Date,
 ): Promise<Resultado<ResultadoVerificacion, ErrorCasoUso>> {
@@ -254,7 +275,7 @@ export async function verificarPago(
 
 /** Marca vencido un cobro cuyo QR pasó su fecha, sin renovarlo todavía. */
 export async function vencerSiCorresponde(
-  deps: Dependencias,
+  deps: DepsPersistencia,
   cobro: Cobro,
   ahora: Date,
 ): Promise<Resultado<Cobro, ErrorCasoUso>> {
@@ -273,7 +294,7 @@ export async function vencerSiCorresponde(
  * No crea un cobro nuevo: incrementa `qrVersion` sobre el mismo (regla #6).
  */
 export async function renovarYReenviar(
-  deps: Dependencias,
+  deps: DepsEmision,
   cobro: Cobro,
   venceEn: Date,
   ahora: Date,
@@ -302,7 +323,7 @@ export type ResumenConciliacionDiaria = {
  * como huérfano para que alguien lo mire.
  */
 export async function conciliarDia(
-  deps: Dependencias,
+  deps: DepsVerificacion,
   fecha: Date,
   ahora: Date,
 ): Promise<Resultado<ResumenConciliacionDiaria, ErrorCasoUso>> {

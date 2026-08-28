@@ -48,6 +48,8 @@ npm run lint              # ESLint (--max-warnings=0)
 npm run typecheck         # tsc --noEmit en todos los paquetes
 npm run build
 npm run scraper:dry       # yape-scraper en modo lectura sin escritura a Firestore
+npm run satelite:baneco   # satélite de Baneco (--una para una sola pasada)
+npm run test:emulador     # tests de integración contra el emulador de Firestore
 ```
 
 Antes de cualquier commit: `npm run typecheck && npm run lint && npm test` deben pasar.
@@ -74,6 +76,9 @@ packages/yape-scraper/    Adaptador Playwright de la consola Yape BCP.
 packages/firestore-store/ Adaptadores CobroRepository y EvidenceStore sobre
                           Firestore. Único paquete que conoce el SDK de
                           Firebase; recibe la conexión inyectada (ADR-007).
+packages/baneco-satelite/ Proceso que verifica los pagos contra Baneco y los
+                          concilia. Raíz de composición: cablea puertos, no
+                          contiene reglas (ADR-006, D2 opción b).
 packages/wa-bridge/       Cliente de WhatsAppModular (envío de QR, recepción
                           de comprobantes por webhook).
 packages/functions/       Cloud Functions: API HTTP del demo y triggers Firestore.

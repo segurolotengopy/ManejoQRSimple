@@ -1,0 +1,25 @@
+{
+  "name": "@mqs/baneco-satelite",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Proceso satélite que verifica los pagos de Baneco contra el banco y los concilia (ADR-006, decisión D2 opción b).",
+  "main": "./dist/main.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@mqs/baneco-gateway": "*",
+    "@mqs/firestore-store": "*",
+    "@mqs/qr-core": "*",
+    "firebase-admin": "^14.3.0"
+  }
+}

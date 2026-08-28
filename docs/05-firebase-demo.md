@@ -49,6 +49,11 @@ activos. La llave JSON vive en `~/.manejoqr/` (nunca en el repo — cubierta por
 al retirar el scraper. La promoción a OCI exige una llave DISTINTA para la VM,
 revocable por separado.
 
+El **satélite de Baneco** (`@mqs/baneco-satelite`) necesita su propia credencial, con
+el mismo criterio: distinta de la del scraper, revocable por separado, y acotada a
+leer los cobros pendientes y escribir estado y evidencia. Se pasa por
+`GOOGLE_APPLICATION_CREDENTIALS`; la llave vive en `~/.manejoqr/`, nunca en el repo.
+
 ## 5. Entornos
 
 | Entorno | Dónde | Datos |

@@ -50,9 +50,10 @@ module.exports = {
       comment:
         'Solo baneco-gateway conoce la API de Banco Económico: sus URLs, DTOs, ' +
         'cifrado y códigos de respuesta. functions puede importarlo porque es ' +
-        'la raíz de composición que lo cablea a los puertos, y tools/baneco-b0 ' +
-        'porque su razón de ser es validar ese mismo adaptador contra el banco.',
-      from: { pathNot: '^(packages/(baneco-gateway|functions)|tools/baneco-b0)/' },
+        'una raíz de composición que lo cablea a los puertos —igual que ' +
+        'baneco-satelite—, y tools/baneco-b0 porque su razón de ser es validar ' +
+        'ese mismo adaptador contra el banco.',
+      from: { pathNot: '^(packages/(baneco-gateway|functions|baneco-satelite)|tools/baneco-b0)/' },
       to: { path: '^packages/baneco-gateway/' },
     },
     {
@@ -60,10 +61,11 @@ module.exports = {
       severity: 'error',
       comment:
         'Nada llama al SDK de Firebase fuera de su adaptador (docs/01 §2). ' +
-        'functions puede importarlo porque corre dentro de Firebase y es la raíz ' +
-        'de composición. Si el dominio pudiera tocar Firestore, la persistencia ' +
+        'Las raíces de composición —functions y baneco-satelite— pueden importarlo ' +
+        'porque su trabajo es justamente cablearlo. Si el dominio pudiera tocar ' +
+        'Firestore, la persistencia ' +
         'dejaría de estar detrás de un puerto y ADR-002 quedaría en el papel.',
-      from: { pathNot: '^packages/(firestore-store|functions)/' },
+      from: { pathNot: '^packages/(firestore-store|functions|baneco-satelite)/' },
       to: { path: 'node_modules/(firebase-admin|@google-cloud|firebase)/' },
     },
     {
@@ -72,7 +74,7 @@ module.exports = {
       comment:
         'El adaptador de Firestore se cablea en la raíz de composición, no se ' +
         'importa desde el dominio ni desde otros adaptadores.',
-      from: { pathNot: '^(packages/(firestore-store|functions)|tools/)' },
+      from: { pathNot: '^(packages/(firestore-store|functions|baneco-satelite)|tools/)' },
       to: { path: '^packages/firestore-store/' },
     },
     {

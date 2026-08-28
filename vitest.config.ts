@@ -13,6 +13,7 @@ export default defineConfig({
       '@mqs/qr-core': paquete('qr-core'),
       '@mqs/baneco-gateway': paquete('baneco-gateway'),
       '@mqs/firestore-store': paquete('firestore-store'),
+      '@mqs/baneco-satelite': paquete('baneco-satelite'),
       '@mqs/yape-scraper': paquete('yape-scraper'),
       '@mqs/wa-bridge': paquete('wa-bridge'),
       '@mqs/functions': paquete('functions'),

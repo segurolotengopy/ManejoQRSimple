@@ -26,7 +26,8 @@
     "deps:check": "depcruise packages tools --config .dependency-cruiser.cjs",
     "baneco:b0": "npm run build && node --env-file=.env tools/baneco-b0/dist/main.js",
     "scraper:login": "npm run login -w @mqs/yape-scraper",
-    "scraper:dry": "npm run dry -w @mqs/yape-scraper"
+    "scraper:dry": "npm run dry -w @mqs/yape-scraper",
+    "satelite:baneco": "npm run build && node --env-file=.env packages/baneco-satelite/dist/main.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",

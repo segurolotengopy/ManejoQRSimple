@@ -62,6 +62,12 @@ export function leerConfig(
     return exito(valor.trim());
   };
 
+  /** Igual que `requerida`, pero devuelve el valor ya envuelto en `Secreto`. */
+  const secretoRequerido = (sufijo: string): Resultado<Secreto, ErrorConfig> => {
+    const leido = requerida(sufijo);
+    return esExito(leido) ? exito(new Secreto(leido.valor)) : leido;
+  };
+
   const baseUrl = requerida('BASE_URL');
   if (!esExito(baseUrl)) return baseUrl;
 
@@ -73,13 +79,15 @@ export function leerConfig(
   const usuario = requerida('USERNAME');
   if (!esExito(usuario)) return usuario;
 
-  const password = requerida('PASSWORD');
-  if (!esExito(password)) return password;
+  // Los secretos se envuelven **en el momento de leerlos**: nunca existen como
+  // `string` suelto en una variable de esta función, ni siquiera de paso.
+  const claveAcceso = secretoRequerido('PASSWORD');
+  if (!esExito(claveAcceso)) return claveAcceso;
 
-  const llaveCruda = requerida('AES_KEY');
+  const llaveCruda = secretoRequerido('AES_KEY');
   if (!esExito(llaveCruda)) return llaveCruda;
 
-  const llave = llaveAes(llaveCruda.valor);
+  const llave = llaveAes(llaveCruda.valor.revelar());
   if (!esExito(llave)) {
     return fallo({
       tipo: 'VARIABLE_INVALIDA',
@@ -88,7 +96,7 @@ export function leerConfig(
     });
   }
 
-  const cuentaAbono = requerida('ACCOUNT_CREDIT');
+  const cuentaAbono = secretoRequerido('ACCOUNT_CREDIT');
   if (!esExito(cuentaAbono)) return cuentaAbono;
 
   const ttlCrudo = entorno['BANECO_QR_TTL_HORAS'] ?? '72';
@@ -107,9 +115,9 @@ export function leerConfig(
     ambiente,
     baseUrl: sinBarrasFinales(baseUrl.valor),
     usuario: usuario.valor,
-    password: new Secreto(password.valor),
+    password: claveAcceso.valor,
     llave: llave.valor,
-    cuentaAbono: new Secreto(cuentaAbono.valor),
+    cuentaAbono: cuentaAbono.valor,
     ttlQrHoras,
     branchCode: branchCode === undefined || branchCode === '' ? null : branchCode,
   });

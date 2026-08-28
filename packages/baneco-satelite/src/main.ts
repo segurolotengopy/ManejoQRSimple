@@ -1,10 +1,13 @@
 /**
- * Satélite de Baneco — la raíz de composición (ADR-006, decisión D2 opción b).
+ * Satélite de Baneco — el proceso (ADR-006, decisión D2 opción b).
  *
- * Es el único lugar del sistema donde se conocen a la vez el banco, Firestore y
- * el dominio. Su trabajo es **cablear y repetir**: construye los puertos, llama
- * a `unaPasada()` cada intervalo y registra el resumen. Ninguna regla de negocio
- * vive acá; todas están en `qr-core`.
+ * Su trabajo es **cablear y repetir**: pide los puertos a `@mqs/composicion`,
+ * llama a `unaPasada()` cada intervalo y registra el resumen. Ninguna regla de
+ * negocio vive acá; todas están en `qr-core`.
+ *
+ * Los adaptadores los elige el entorno (`QR_PROVIDER`, `PAYMENT_WATCHER`), así
+ * que el mismo binario corre contra el banco de verdad o enteramente en mock —
+ * útil mientras el Hito B0 sigue esperando credenciales de certificación.
  *
  * Corre fuera de Firebase —ThinkPad hoy, OCI después— con una credencial de
  * servicio de mínimo privilegio (docs/05 §4).
@@ -15,63 +18,59 @@
  */
 
 import {
-  ClienteBaneco,
-  PaymentWatcherBaneco,
-  ProveedorDeToken,
-  describir,
-  leerConfig,
-  transporteFetch,
-} from '@mqs/baneco-gateway';
-import { CobroRepositoryFirestore, EvidenceStoreFirestore } from '@mqs/firestore-store';
-import { POLITICA_POR_DEFECTO, esExito, type DepsVerificacion } from '@mqs/qr-core';
+  MensajeriaNoConfigurada,
+  construirPuertos,
+  describirError,
+} from '@mqs/composicion';
+import { esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
-import { MensajeriaNoConfigurada } from './mensajeria.js';
 import { describirPasada, unaPasada } from './pasada.js';
 
 const INTERVALO_POR_DEFECTO_SEGUNDOS = 180;
+const INTERVALO_MINIMO_SEGUNDOS = 30;
 
 function intervaloSegundos(): number {
-  const crudo = process.env['BANECO_POLL_INTERVAL_SECONDS'] ?? String(INTERVALO_POR_DEFECTO_SEGUNDOS);
+  const crudo =
+    process.env['BANECO_POLL_INTERVAL_SECONDS'] ?? String(INTERVALO_POR_DEFECTO_SEGUNDOS);
   const valor = Number(crudo);
-  return Number.isInteger(valor) && valor >= 30 ? valor : INTERVALO_POR_DEFECTO_SEGUNDOS;
+  // Un intervalo demasiado corto castiga al banco y al rate limit (pregunta D6).
+  return Number.isInteger(valor) && valor >= INTERVALO_MINIMO_SEGUNDOS
+    ? valor
+    : INTERVALO_POR_DEFECTO_SEGUNDOS;
+}
+
+/**
+ * Firestore solo si hay proyecto configurado. Sin él, el satélite corre en
+ * memoria — sirve para probar el bucle, no para operar.
+ */
+function conectarFirestore(): ReturnType<typeof getFirestore> | null {
+  const projectId = process.env['FIREBASE_PROJECT_ID'] ?? 'manejoqrsimple';
+  if (process.env['SATELITE_SIN_FIRESTORE'] === '1') {
+    return null;
+  }
+  const app = initializeApp({ credential: applicationDefault(), projectId });
+  return getFirestore(app);
 }
 
 async function main(): Promise<number> {
-  const config = leerConfig(process.env);
-  if (!esExito(config)) {
-    console.error(`✖ Configuración de Baneco inválida: ${config.error.tipo}`);
-    if ('variable' in config.error) {
-      console.error(`  Variable: ${config.error.variable}`);
-    }
+  const mensajeria = new MensajeriaNoConfigurada();
+  const db = conectarFirestore();
+
+  const puertos = construirPuertos({ env: process.env, db, mensajeria });
+  if (!esExito(puertos)) {
+    console.error(`✖ No se pudieron armar los puertos: ${describirError(puertos.error)}`);
     return 1;
   }
-
-  const projectId = process.env['FIREBASE_PROJECT_ID'] ?? 'manejoqrsimple';
-  const app = initializeApp({ credential: applicationDefault(), projectId });
-  const db = getFirestore(app);
-
-  const transporte = transporteFetch();
-  const tokens = new ProveedorDeToken(config.valor, transporte);
-  const cliente = new ClienteBaneco(config.valor, transporte, tokens);
-  const mensajeria = new MensajeriaNoConfigurada();
-
-  const deps: DepsVerificacion = {
-    cobros: new CobroRepositoryFirestore(db),
-    evidencia: new EvidenceStoreFirestore(db),
-    watcher: new PaymentWatcherBaneco(cliente),
-    mensajeria,
-    politica: POLITICA_POR_DEFECTO,
-  };
 
   const unaSola = process.argv.includes('--una');
   const intervalo = intervaloSegundos();
 
-  console.log(`▶ Satélite Baneco — ${describir(config.valor)}`);
-  console.log(`  Firestore: ${projectId}`);
+  console.log('▶ Satélite Baneco');
+  console.log(`  Adaptadores: ${puertos.valor.resumen}`);
   console.log(unaSola ? '  Modo: una sola pasada.' : `  Intervalo: ${String(intervalo)} s.`);
-  console.log('  El satélite verifica y concilia; no emite ni renueva QRs.\n');
+  console.log('  Verifica y concilia; no emite ni renueva QRs.\n');
 
   // En un objeto y no en un `let`: el manejador de señal lo muta desde una
   // clausura, y TypeScript no puede ver eso en una variable local.
@@ -90,7 +89,7 @@ async function main(): Promise<number> {
   });
 
   do {
-    const resultado = await unaPasada(deps, new Date());
+    const resultado = await unaPasada(puertos.valor.deps, new Date());
 
     if ('errorFatal' in resultado) {
       // No se pudo listar los cobros pendientes: no hay forma de saber cuáles
@@ -101,12 +100,12 @@ async function main(): Promise<number> {
       for (const { cobroId, error } of resultado.conError) {
         console.error(`  ! cobro ${cobroId}: ${error.tipo}`);
       }
-      if (mensajeria.pendientes.length > 0) {
+      const sinEnviar = mensajeria.drenar();
+      if (sinEnviar.length > 0) {
         console.warn(
-          `  ! ${String(mensajeria.pendientes.length)} aviso(s) al cliente sin enviar: ` +
-            'wa-bridge no está implementado todavía (docs/ESTADO.md, decisión 7).',
+          `  ! ${String(sinEnviar.length)} aviso(s) al cliente sin enviar: ` +
+            'wa-bridge no está implementado (docs/04 §2).',
         );
-        mensajeria.pendientes.length = 0;
       }
     }
 

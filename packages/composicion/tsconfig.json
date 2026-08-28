@@ -8,7 +8,7 @@
   "exclude": ["src/**/*.test.ts", "dist"],
   "references": [
     { "path": "../qr-core" },
-    { "path": "../composicion" },
+    { "path": "../baneco-gateway" },
     { "path": "../firestore-store" }
   ]
 }

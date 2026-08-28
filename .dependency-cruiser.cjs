@@ -53,7 +53,7 @@ module.exports = {
         'una raíz de composición que lo cablea a los puertos —igual que ' +
         'baneco-satelite—, y tools/baneco-b0 porque su razón de ser es validar ' +
         'ese mismo adaptador contra el banco.',
-      from: { pathNot: '^(packages/(baneco-gateway|functions|baneco-satelite)|tools/baneco-b0)/' },
+      from: { pathNot: '^(packages/(baneco-gateway|functions|composicion)|tools/baneco-b0)/' },
       to: { path: '^packages/baneco-gateway/' },
     },
     {
@@ -65,7 +65,7 @@ module.exports = {
         'porque su trabajo es justamente cablearlo. Si el dominio pudiera tocar ' +
         'Firestore, la persistencia ' +
         'dejaría de estar detrás de un puerto y ADR-002 quedaría en el papel.',
-      from: { pathNot: '^packages/(firestore-store|functions|baneco-satelite)/' },
+      from: { pathNot: '^packages/(firestore-store|functions|composicion|baneco-satelite)/' },
       to: { path: 'node_modules/(firebase-admin|@google-cloud|firebase)/' },
     },
     {
@@ -74,7 +74,7 @@ module.exports = {
       comment:
         'El adaptador de Firestore se cablea en la raíz de composición, no se ' +
         'importa desde el dominio ni desde otros adaptadores.',
-      from: { pathNot: '^(packages/(firestore-store|functions|baneco-satelite)|tools/)' },
+      from: { pathNot: '^(packages/(firestore-store|functions|composicion|baneco-satelite)|tools/)' },
       to: { path: '^packages/firestore-store/' },
     },
     {

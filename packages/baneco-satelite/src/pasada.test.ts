@@ -14,7 +14,7 @@ import {
 } from '@mqs/qr-core';
 import { describe, expect, it } from 'vitest';
 
-import { MensajeriaNoConfigurada } from './mensajeria.js';
+import { MensajeriaNoConfigurada } from '@mqs/composicion';
 import { describirPasada, unaPasada, type ResumenPasada } from './pasada.js';
 
 const T0 = new Date('2026-08-27T12:00:00.000Z');

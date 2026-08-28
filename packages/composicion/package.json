@@ -1,25 +1,24 @@
 {
-  "name": "@mqs/baneco-satelite",
+  "name": "@mqs/composicion",
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
-  "description": "Proceso sat\u00e9lite que verifica los pagos de Baneco contra el banco y los concilia (ADR-006, decisi\u00f3n D2 opci\u00f3n b).",
-  "main": "./dist/main.js",
+  "description": "Raíz de composición compartida: elige los adaptadores por variable de entorno y arma los puertos del dominio.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsc -b"
   },
   "dependencies": {
-    "@mqs/composicion": "*",
+    "@mqs/baneco-gateway": "*",
     "@mqs/firestore-store": "*",
     "@mqs/qr-core": "*",
     "firebase-admin": "^14.3.0"

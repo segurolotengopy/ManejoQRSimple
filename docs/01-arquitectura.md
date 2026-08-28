@@ -71,6 +71,7 @@ La máquina de estados completa, con los caminos de excepción (`EN_REVISION`,
 | `@mqs/yape-scraper` | Adaptador `PaymentWatcher` + (opcional, docs/03 §5) `QrProvider` sobre la consola Yape BCP con Playwright | Solo lectura. Único paquete con Playwright. Corre fuera de Firebase. |
 | `@mqs/wa-bridge` | Adaptador `MessagingProvider`: cliente HTTP de WhatsAppModular + receptor de webhooks de comprobantes | Único paquete que conoce WhatsAppModular. |
 | `@mqs/firestore-store` | Adaptadores `CobroRepository` y `EvidenceStore` sobre Firestore (ADR-007) | Único paquete que conoce el SDK de Firebase. Recibe la conexión inyectada. |
+| `@mqs/composicion` | Raíz de composición compartida: elige adaptadores por variable de entorno y arma los puertos | Sin reglas de negocio. La usan los procesos, nunca el dominio. |
 | `@mqs/baneco-satelite` | Proceso satélite que verifica los pagos contra Baneco y los concilia (ADR-006) | Raíz de composición: cablea puertos y repite. Sin reglas de negocio. Corre fuera de Firebase. |
 | `@mqs/functions` | Cloud Functions: API HTTP del demo, triggers de Firestore, endpoint del webhook de wa-bridge | Orquesta; no contiene reglas de negocio. |
 | `@mqs/demo-web` | Consola del comerciante: React + Vite sobre Firebase Hosting | Sin lógica de negocio; consume la API. |

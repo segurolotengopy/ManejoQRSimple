@@ -58,7 +58,9 @@ describe('selección por variable de entorno', () => {
     const r = armar({ [variable]: 'inventado' });
     expect(esExito(r)).toBe(false);
     if (!esExito(r)) {
-      expect(r.error).toEqual({ tipo: 'MODO_INVALIDO', variable, valor: 'inventado' });
+      // El error lleva el nombre de la variable, nunca el valor leído del
+      // entorno: si no lo transporta, no hay nada que se pueda filtrar.
+      expect(r.error).toEqual({ tipo: 'MODO_INVALIDO', variable });
     }
   });
 
@@ -90,14 +92,9 @@ describe('persistencia', () => {
 
 describe('describirError()', () => {
   it('explica cada falla sin filtrar secretos', () => {
-    const invalido = describirError({
-      tipo: 'MODO_INVALIDO',
-      variable: 'QR_PROVIDER',
-      valor: 'valor-que-podria-ser-un-secreto',
-    });
+    const invalido = describirError({ tipo: 'MODO_INVALIDO', variable: 'QR_PROVIDER' });
     expect(invalido).toContain('QR_PROVIDER');
-    // No ecoa el valor: viene del entorno, y ahí viven las credenciales.
-    expect(invalido).not.toContain('valor-que-podria-ser-un-secreto');
+    expect(invalido).toContain('mock');
     expect(
       describirError({ tipo: 'MODO_NO_IMPLEMENTADO', variable: 'PAYMENT_WATCHER', modo: 'yape' }),
     ).toContain('todavía no está implementado');

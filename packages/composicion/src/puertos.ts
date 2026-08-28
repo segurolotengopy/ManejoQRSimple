@@ -49,7 +49,15 @@ export const MODOS = ['mock', 'baneco', 'yape'] as const;
 export type Modo = (typeof MODOS)[number];
 
 export type ErrorComposicion =
-  | { readonly tipo: 'MODO_INVALIDO'; readonly variable: string; readonly valor: string }
+  /**
+   * Lleva el **nombre** de la variable, nunca su valor.
+   *
+   * El valor viene del entorno, que es donde viven las credenciales. Con no
+   * imprimirlo no alcanza: si el error lo transporta, cualquier código futuro
+   * que serialice el error lo filtra, y un analizador estático no puede
+   * demostrar lo contrario. No cargarlo hace que no exista nada que filtrar.
+   */
+  | { readonly tipo: 'MODO_INVALIDO'; readonly variable: string }
   | { readonly tipo: 'MODO_NO_IMPLEMENTADO'; readonly variable: string; readonly modo: Modo }
   | { readonly tipo: 'CONFIG_BANECO'; readonly detalle: string };
 
@@ -72,7 +80,8 @@ function leerModo(
 ): Resultado<Modo, ErrorComposicion> {
   const valor = env[variable] ?? 'mock';
   if (!(MODOS as readonly string[]).includes(valor)) {
-    return fallo({ tipo: 'MODO_INVALIDO', variable, valor });
+    // Se descarta el valor a propósito: ver el comentario de MODO_INVALIDO.
+    return fallo({ tipo: 'MODO_INVALIDO', variable });
   }
   return exito(valor as Modo);
 }
@@ -179,13 +188,8 @@ function elegirWatcher(
 }
 
 /**
- * Mensaje legible para el arranque. Sin secretos.
- *
- * **No ecoa el valor recibido**, solo el nombre de la variable. El valor viene
- * del entorno, y el entorno es donde viven las credenciales: si alguien se
- * equivoca de variable al copiar un `.env`, echarlo al log convertiría un typo
- * en una credencial impresa en consola. El nombre de la variable y la lista de
- * modos válidos alcanzan para corregirlo.
+ * Mensaje legible para el arranque. Sin secretos: los errores no transportan
+ * ningún valor leído del entorno, solo nombres de variable.
  */
 export function describirError(error: ErrorComposicion): string {
   switch (error.tipo) {

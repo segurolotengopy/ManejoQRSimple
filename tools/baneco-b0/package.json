@@ -2,6 +2,7 @@
   "name": "@mqs/baneco-b0",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "Hito B0: validación del contrato de Baneco contra el ambiente de certificación. Herramienta manual, nunca en CI.",
   "main": "./dist/main.js",

@@ -178,11 +178,19 @@ function elegirWatcher(
   }
 }
 
-/** Mensaje legible para el arranque. Sin secretos. */
+/**
+ * Mensaje legible para el arranque. Sin secretos.
+ *
+ * **No ecoa el valor recibido**, solo el nombre de la variable. El valor viene
+ * del entorno, y el entorno es donde viven las credenciales: si alguien se
+ * equivoca de variable al copiar un `.env`, echarlo al log convertiría un typo
+ * en una credencial impresa en consola. El nombre de la variable y la lista de
+ * modos válidos alcanzan para corregirlo.
+ */
 export function describirError(error: ErrorComposicion): string {
   switch (error.tipo) {
     case 'MODO_INVALIDO':
-      return `${error.variable}="${error.valor}" no es un modo válido (${MODOS.join(', ')}).`;
+      return `${error.variable} no tiene un modo válido. Valores admitidos: ${MODOS.join(', ')}.`;
     case 'MODO_NO_IMPLEMENTADO':
       return `${error.variable}=${error.modo}: ese adaptador todavía no está implementado.`;
     case 'CONFIG_BANECO':

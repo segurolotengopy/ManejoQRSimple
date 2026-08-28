@@ -90,9 +90,14 @@ describe('persistencia', () => {
 
 describe('describirError()', () => {
   it('explica cada falla sin filtrar secretos', () => {
-    expect(describirError({ tipo: 'MODO_INVALIDO', variable: 'QR_PROVIDER', valor: 'x' })).toContain(
-      'no es un modo válido',
-    );
+    const invalido = describirError({
+      tipo: 'MODO_INVALIDO',
+      variable: 'QR_PROVIDER',
+      valor: 'valor-que-podria-ser-un-secreto',
+    });
+    expect(invalido).toContain('QR_PROVIDER');
+    // No ecoa el valor: viene del entorno, y ahí viven las credenciales.
+    expect(invalido).not.toContain('valor-que-podria-ser-un-secreto');
     expect(
       describirError({ tipo: 'MODO_NO_IMPLEMENTADO', variable: 'PAYMENT_WATCHER', modo: 'yape' }),
     ).toContain('todavía no está implementado');

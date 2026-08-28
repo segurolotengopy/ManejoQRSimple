@@ -3,8 +3,11 @@
 ## 1. Proyecto
 
 - **Proyecto Firebase:** ManejoQRSimple — cuenta **alberdi.andres@gmail.com**.
-  (Registrar acá el project-id y número exactos al verificar con
-  `firebase projects:list`; no asumirlos.)
+  - **project-id:** `manejoqrsimple`
+  - **número de proyecto:** `658736385545`
+  - Dato aportado por el dueño el 2026-08-27. Queda fijado en `.firebaserc`,
+    así que ningún comando tiene que adivinarlo. Ni el id ni el número son
+    secretos: identifican el proyecto, no dan acceso a él.
 - **Plan:** empezar en Spark (gratuito). Functions HTTP puede requerir Blaze;
   si es el caso, decidir con el dueño ANTES de habilitar billing y registrar la
   decisión en ESTADO.md — mismo criterio de WhatsApp-Modular con GCP

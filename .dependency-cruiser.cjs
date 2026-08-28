@@ -56,6 +56,26 @@ module.exports = {
       to: { path: '^packages/baneco-gateway/' },
     },
     {
+      name: 'firebase-solo-en-firestore-store',
+      severity: 'error',
+      comment:
+        'Nada llama al SDK de Firebase fuera de su adaptador (docs/01 §2). ' +
+        'functions puede importarlo porque corre dentro de Firebase y es la raíz ' +
+        'de composición. Si el dominio pudiera tocar Firestore, la persistencia ' +
+        'dejaría de estar detrás de un puerto y ADR-002 quedaría en el papel.',
+      from: { pathNot: '^packages/(firestore-store|functions)/' },
+      to: { path: 'node_modules/(firebase-admin|@google-cloud|firebase)/' },
+    },
+    {
+      name: 'firestore-store-solo-por-el-puerto',
+      severity: 'error',
+      comment:
+        'El adaptador de Firestore se cablea en la raíz de composición, no se ' +
+        'importa desde el dominio ni desde otros adaptadores.',
+      from: { pathNot: '^(packages/(firestore-store|functions)|tools/)' },
+      to: { path: '^packages/firestore-store/' },
+    },
+    {
       name: 'whatsappmodular-solo-en-wa-bridge',
       severity: 'error',
       comment:

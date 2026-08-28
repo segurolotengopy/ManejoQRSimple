@@ -1,0 +1,26 @@
+{
+  "name": "@mqs/firestore-store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Adaptadores CobroRepository y EvidenceStore sobre Firestore. Único paquete que conoce el SDK de Firebase.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@mqs/qr-core": "*",
+    "firebase-admin": "^14.3.0",
+    "zod": "^4.4.3"
+  }
+}

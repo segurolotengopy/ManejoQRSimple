@@ -17,6 +17,7 @@
     "build:clean": "tsc -b --clean",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:emulador": "firebase emulators:exec --only firestore \"vitest run --config vitest.emulador.config.ts\"",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint . --max-warnings=0",
     "lint:fix": "eslint . --fix",

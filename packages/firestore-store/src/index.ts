@@ -19,6 +19,10 @@ export {
   SUBCOLECCION_QRS,
 } from './repositorio.js';
 export {
+  PaymentWatcherAbonosFirestore,
+  COLECCION_ABONOS,
+} from './watcher-abonos.js';
+export {
   cobroADocumento,
   documentoACobro,
   documentoAEvidencia,

@@ -27,7 +27,13 @@
     "baneco:b0": "npm run build && node --env-file=.env tools/baneco-b0/dist/main.js",
     "scraper:login": "npm run login -w @mqs/yape-scraper",
     "scraper:dry": "npm run dry -w @mqs/yape-scraper",
-    "satelite:baneco": "npm run build && node --env-file=.env packages/baneco-satelite/dist/main.js"
+    "satelite:baneco": "npm run build && node --env-file=.env packages/baneco-satelite/dist/main.js",
+    "demo": "npm run build && firebase emulators:exec --only firestore --project manejoqrsimple --config firebase.demo.json \"node tools/demo-local/dist/sembrar.js && node tools/demo-local/dist/estado.js\"",
+    "demo:ui": "firebase emulators:start --only firestore --project manejoqrsimple --config firebase.demo.json",
+    "demo:sembrar": "node tools/demo-local/dist/sembrar.js",
+    "demo:pagar": "node tools/demo-local/dist/pagar.js",
+    "demo:estado": "node tools/demo-local/dist/estado.js",
+    "satelite:demo": "QR_PROVIDER=mock PAYMENT_WATCHER=simulado node packages/baneco-satelite/dist/main.js --una"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",

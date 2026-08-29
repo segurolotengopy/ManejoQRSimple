@@ -104,7 +104,13 @@ ${catalogo}
 `;
 }
 
-/** Evita que un detalle con pipes rompa la tabla markdown. */
+/**
+ * Evita que un detalle rompa la tabla markdown.
+ *
+ * La barra invertida se escapa **primero**: si se escaparan antes los pipes, un
+ * `\\` de la entrada quedaría comiéndose la barra que agregamos nosotros y el
+ * pipe volvería a partir la celda (CodeQL `js/incomplete-sanitization`).
+ */
 function escapar(texto: string): string {
-  return texto.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  return texto.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }

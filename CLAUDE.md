@@ -76,9 +76,10 @@ packages/yape-scraper/    Adaptador Playwright de la consola Yape BCP.
 packages/firestore-store/ Adaptadores CobroRepository y EvidenceStore sobre
                           Firestore. Único paquete que conoce el SDK de
                           Firebase; recibe la conexión inyectada (ADR-007).
+packages/composicion/     Raíz de composición compartida: elige los adaptadores
+                          por QR_PROVIDER / PAYMENT_WATCHER y arma los puertos.
 packages/baneco-satelite/ Proceso que verifica los pagos contra Baneco y los
-                          concilia. Raíz de composición: cablea puertos, no
-                          contiene reglas (ADR-006, D2 opción b).
+                          concilia (ADR-006, D2 opción b). Sin reglas de negocio.
 packages/wa-bridge/       Cliente de WhatsAppModular (envío de QR, recepción
                           de comprobantes por webhook).
 packages/functions/       Cloud Functions: API HTTP del demo y triggers Firestore.
@@ -189,7 +190,8 @@ Las integraciones externas viven detrás de interfaces en `packages/qr-core/src/
 - `CobroRepository` / `EvidenceStore`: Firestore, detrás de interfaz. Nada llama
   al SDK de Firebase fuera de los adaptadores.
 
-La selección de adaptador es por variable de entorno (`INTEGRATION_MODE=mock|demo`).
+La selección de adaptador es por variable de entorno (`QR_PROVIDER` / `PAYMENT_WATCHER`,
+valores `mock|baneco|yape`), resuelta en `@mqs/composicion`.
 Mocks y adaptadores reales comparten los mismos tests de contrato en
 `packages/qr-core/src/ports/__tests__/`.
 

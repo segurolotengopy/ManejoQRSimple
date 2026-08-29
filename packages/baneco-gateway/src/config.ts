@@ -9,6 +9,7 @@
 import { esExito, exito, fallo, type Resultado } from '@mqs/qr-core';
 
 import { llaveAes, type LlaveAes } from './crypto/aes.js';
+import { Secreto } from './secreto.js';
 
 export type Ambiente = 'cert' | 'prod';
 
@@ -16,11 +17,11 @@ export type ConfigBaneco = {
   readonly ambiente: Ambiente;
   readonly baseUrl: string;
   readonly usuario: string;
-  /** Contraseña en claro; se cifra recién al autenticar. */
-  readonly password: string;
+  /** Se cifra recién al autenticar. Envuelta para que no se pueda loguear. */
+  readonly password: Secreto;
   readonly llave: LlaveAes;
-  /** Cuenta de abono en claro; se cifra en cada `generateQR`. */
-  readonly cuentaAbono: string;
+  /** Se cifra en cada `generateQR`. Envuelta por el mismo motivo. */
+  readonly cuentaAbono: Secreto;
   readonly ttlQrHoras: number;
   readonly branchCode: string | null;
 };
@@ -61,6 +62,12 @@ export function leerConfig(
     return exito(valor.trim());
   };
 
+  /** Igual que `requerida`, pero devuelve el valor ya envuelto en `Secreto`. */
+  const secretoRequerido = (sufijo: string): Resultado<Secreto, ErrorConfig> => {
+    const leido = requerida(sufijo);
+    return esExito(leido) ? exito(new Secreto(leido.valor)) : leido;
+  };
+
   const baseUrl = requerida('BASE_URL');
   if (!esExito(baseUrl)) return baseUrl;
 
@@ -72,13 +79,15 @@ export function leerConfig(
   const usuario = requerida('USERNAME');
   if (!esExito(usuario)) return usuario;
 
-  const password = requerida('PASSWORD');
-  if (!esExito(password)) return password;
+  // Los secretos se envuelven **en el momento de leerlos**: nunca existen como
+  // `string` suelto en una variable de esta función, ni siquiera de paso.
+  const claveAcceso = secretoRequerido('PASSWORD');
+  if (!esExito(claveAcceso)) return claveAcceso;
 
-  const llaveCruda = requerida('AES_KEY');
+  const llaveCruda = secretoRequerido('AES_KEY');
   if (!esExito(llaveCruda)) return llaveCruda;
 
-  const llave = llaveAes(llaveCruda.valor);
+  const llave = llaveAes(llaveCruda.valor.revelar());
   if (!esExito(llave)) {
     return fallo({
       tipo: 'VARIABLE_INVALIDA',
@@ -87,7 +96,7 @@ export function leerConfig(
     });
   }
 
-  const cuentaAbono = requerida('ACCOUNT_CREDIT');
+  const cuentaAbono = secretoRequerido('ACCOUNT_CREDIT');
   if (!esExito(cuentaAbono)) return cuentaAbono;
 
   const ttlCrudo = entorno['BANECO_QR_TTL_HORAS'] ?? '72';
@@ -104,14 +113,30 @@ export function leerConfig(
 
   return exito({
     ambiente,
-    baseUrl: baseUrl.valor.replace(/\/+$/, ''),
+    baseUrl: sinBarrasFinales(baseUrl.valor),
     usuario: usuario.valor,
-    password: password.valor,
+    password: claveAcceso.valor,
     llave: llave.valor,
     cuentaAbono: cuentaAbono.valor,
     ttlQrHoras,
     branchCode: branchCode === undefined || branchCode === '' ? null : branchCode,
   });
+}
+
+/**
+ * Quita las barras finales de la URL base.
+ *
+ * A mano y no con `/\/+$/`: ese patrón es vulnerable a backtracking polinómico
+ * ante una entrada con muchas barras (CodeQL `js/polynomial-redos`). El origen
+ * es una variable de entorno y el riesgo es mínimo, pero el bucle es igual de
+ * corto y no tiene el problema.
+ */
+function sinBarrasFinales(url: string): string {
+  let fin = url.length;
+  while (fin > 0 && url[fin - 1] === '/') {
+    fin -= 1;
+  }
+  return url.slice(0, fin);
 }
 
 /** Descripción segura para logs: sin secretos, ni siquiera ofuscados. */

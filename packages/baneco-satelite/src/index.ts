@@ -13,5 +13,4 @@
  * para poder probarla y reusarla.
  */
 
-export { MensajeriaNoConfigurada } from './mensajeria.js';
 export { describirPasada, unaPasada, type ResumenPasada } from './pasada.js';

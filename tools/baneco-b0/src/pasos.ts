@@ -361,7 +361,7 @@ export async function sondearVigenciaMaxima(ctx: Contexto): Promise<readonly Hal
 
 /** El banco espera la cuenta de abono cifrada (manual §4.1, regla #4). */
 function cifrarCuenta(ctx: Contexto): string {
-  return cifrar(ctx.config.cuentaAbono, ctx.config.llave);
+  return cifrar(ctx.config.cuentaAbono.revelar(), ctx.config.llave);
 }
 
 /** `yyyy-MM-dd` en hora boliviana, como espera `dueDate`. */

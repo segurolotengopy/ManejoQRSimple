@@ -16,21 +16,58 @@ consumidor.
 3. **Notificaciones al dueño** (operativas): sesión del scraper expirada,
    cobro en `EN_REVISION`, pago confirmado.
 
-## 2. Contrato propuesto (a validar contra el estado real de WhatsAppModular)
+## 2. Estado real de la API — verificado el 2026-08-27
 
-> WhatsAppModular está en Fase 0 (riel Meta pendiente) y tiene un laboratorio
-> Evolution API operativo bajo reglas de contención propias. **Antes de
-> implementar `wa-bridge`, verificar en el repo de WhatsAppModular qué expone
-> hoy su API pública** y ajustar esta sección. No inventar endpoints.
+Se leyó el repo de WhatsAppModular (`/home/andres-alberdi/WhatsApp-Modular`).
+**El contrato que esta sección proponía no existe.** Lo que hay hoy:
 
-```
-POST {WM_BASE_URL}/messages/media     Authorization: Bearer {WM_API_TOKEN}
-  { to, mediaRef|mediaBase64, caption, correlationId }   → { messageId }
+### 2.1 Lo que SÍ está
 
-Webhook entrante (wa-bridge expone, WhatsAppModular llama):
-POST {NUESTRO}/webhooks/wa-inbound    firmado (HMAC sobre raw body)
-  { from, messageId, timestamp, media?, text?, correlationId? }
-```
+- **Tipos de mensajería genéricos** en `@wm/core`
+  (`packages/core/src/types/messaging.ts`), pensados explícitamente para
+  consumidores distintos del OTP. `OutboundContent` ya contempla el caso que
+  necesitamos:
+
+  ```ts
+  { kind: 'image',
+    media: { type: 'url', url } | { type: 'base64', data, mimeType },
+    caption?: string }
+  ```
+
+  Y `MessageEnvelope` lleva `to`, `content`, `correlationId` e
+  `idempotencyKey` — justo lo que hace falta para no duplicar envíos.
+- El puerto `MessagingProvider.send(envelope): Promise<ProviderResult>` en
+  `packages/core/src/ports/messaging-provider.ts`.
+- `@wm/whatsapp-adapter` con `WhatsAppCloudApiClient` y constructores de
+  payload (`buildTextPayload`, `buildHeaderTemplatePayload`, `normalizePhone`).
+
+### 2.2 Lo que NO está — los dos bloqueos reales
+
+1. **No hay API HTTP de mensajería genérica.** Los únicos endpoints expuestos
+   son `POST /v1/otp/request` y `POST /v1/otp/verify`
+   (`packages/otp-service/src/http/app.ts`). El envío de imagen existe como
+   **biblioteca**, no como servicio: un proceso externo como ManejoQRSimple no
+   tiene hoy cómo invocarlo.
+2. **El webhook entrante no entiende imágenes.** `InboundMessage.content` solo
+   admite `text`, `button` y `unsupported`, y el parser
+   (`packages/webhook-receiver/src/parse.ts`) no extrae `image` ni `document`.
+   **El comprobante del cliente llegaría como `unsupported` y se perdería.**
+
+### 2.3 Decisión pendiente del dueño
+
+Para desbloquear `wa-bridge` hay que elegir (son de WhatsAppModular, no de acá):
+
+| Opción | Qué implica |
+|---|---|
+| **A — Exponer API HTTP** en WhatsAppModular: un `POST /v1/messages` que acepte `MessageEnvelope`. | Es el diseño que esta sección asumía. Mantiene los proyectos desacoplados y despliegues independientes. |
+| **B — Consumir `@wm/core` + `@wm/whatsapp-adapter` como biblioteca.** | Sin trabajo del lado de WhatsAppModular, pero acopla los repos: ManejoQRSimple pasaría a depender de sus versiones y a cargar sus credenciales de Meta. |
+
+En cualquiera de las dos, **el webhook entrante necesita soportar `image` y
+`document`** para que el comprobante llegue. Eso es trabajo en WhatsAppModular
+sí o sí.
+
+Mientras tanto, `@mqs/baneco-satelite` usa `MensajeriaNoConfigurada`, que falla
+a propósito en vez de fingir que envió (ver su README).
 
 - `correlationId` = id del cobro. Si el cliente responde sin contexto (sin
   botón/reply), wa-bridge correlaciona por número de teléfono contra los cobros

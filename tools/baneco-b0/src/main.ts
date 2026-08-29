@@ -187,9 +187,9 @@ async function guardarImagen(qrId: string, base64: string | null): Promise<void>
 /** Los valores que jamás pueden aparecer en un archivo escrito por esta herramienta. */
 function secretosDe(ctx: Contexto): Readonly<Record<string, string>> {
   return {
-    password: ctx.config.password,
+    password: ctx.config.password.revelar(),
     llaveAes: ctx.config.llave.toString('utf8'),
-    cuentaAbono: ctx.config.cuentaAbono,
+    cuentaAbono: ctx.config.cuentaAbono.revelar(),
     usuario: ctx.config.usuario,
   };
 }

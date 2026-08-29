@@ -49,6 +49,7 @@ export {
   type ConfigBaneco,
   type ErrorConfig,
 } from './config.js';
+export { Secreto } from './secreto.js';
 export {
   cifrar,
   descifrar,

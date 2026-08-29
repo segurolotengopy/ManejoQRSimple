@@ -280,15 +280,30 @@ describe('rutas y métodos', () => {
 });
 
 describe('GET /api/cobros', () => {
-  it('lista solo los pendientes', async () => {
+  it('muestra también el cobro recién creado, que todavía no es "pendiente"', async () => {
+    // Es la diferencia entre la pregunta de la consola y la del satélite: un
+    // cobro en QR_ACTIVO no lo mira el watcher, pero quien acaba de crearlo
+    // necesita verlo — si no, crear un cobro parecería no hacer nada.
     const { ctx } = armar();
     const { id } = await crear(ctx);
     await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/enviar`));
-    const otro = await crear(ctx); // queda en QR_ACTIVO, no pendiente
+    const otro = await crear(ctx); // queda en QR_ACTIVO
 
     const r = await enrutar(ctx, aceptaTodo, pedir('GET', '/api/cobros'));
     const cuerpo = r.cuerpo as { cobros: { id: string }[] };
-    expect(cuerpo.cobros.map((c) => c.id)).toEqual([id]);
-    expect(cuerpo.cobros.map((c) => c.id)).not.toContain(otro.id);
+    const ids = cuerpo.cobros.map((c) => c.id);
+
+    expect(ids).toContain(id);
+    expect(ids).toContain(otro.id);
+  });
+
+  it('incluye los terminales: la consola muestra el historial reciente', async () => {
+    const { ctx } = armar();
+    const { id } = await crear(ctx);
+    await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/anular`, { motivo: 'x' }));
+
+    const r = await enrutar(ctx, aceptaTodo, pedir('GET', '/api/cobros'));
+    const cuerpo = r.cuerpo as { cobros: { id: string; estado: string }[] };
+    expect(cuerpo.cobros.find((c) => c.id === id)?.estado).toBe('ANULADO');
   });
 });

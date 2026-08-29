@@ -140,26 +140,43 @@ export class CobroRepositoryFirestore implements CobroRepository {
   async listarPendientes(): Promise<Resultado<readonly Cobro[], ErrorPuerto>> {
     try {
       const snapshot = await this.cobros.where('estado', 'in', [...ESTADOS_PENDIENTES]).get();
-      const cobros: Cobro[] = [];
-      for (const doc of snapshot.docs) {
-        const cobro = documentoACobro(doc.id, doc.data());
-        if (!esExito(cobro)) {
-          // Un documento corrupto no se saltea en silencio: si el watcher
-          // ignorara un cobro pendiente, nadie se enteraría de que dejó de
-          // mirarlo.
-          return fallo({
-            tipo: 'RESPUESTA_INVALIDA',
-            mensaje: `El cobro pendiente ${doc.id} no tiene la forma esperada: ${cobro.error.motivo}`,
-            reintentable: false,
-            codigoProveedor: null,
-          });
-        }
-        cobros.push(cobro.valor);
-      }
-      return exito(cobros);
+      return this.mapear(snapshot.docs);
     } catch (causa) {
       return fallo(comoErrorPuerto(causa, 'listarPendientes'));
     }
+  }
+
+  /** Los más recientes, en cualquier estado: es lo que la consola muestra. */
+  async listarRecientes(limite: number): Promise<Resultado<readonly Cobro[], ErrorPuerto>> {
+    try {
+      const snapshot = await this.cobros.orderBy('creadoEn', 'desc').limit(limite).get();
+      return this.mapear(snapshot.docs);
+    } catch (causa) {
+      return fallo(comoErrorPuerto(causa, 'listarRecientes'));
+    }
+  }
+
+  /** Convierte documentos a cobros, cortando ante el primero corrupto. */
+  private mapear(
+    docs: readonly { id: string; data: () => unknown }[],
+  ): Resultado<readonly Cobro[], ErrorPuerto> {
+    const cobros: Cobro[] = [];
+    for (const doc of docs) {
+      const cobro = documentoACobro(doc.id, doc.data());
+      if (!esExito(cobro)) {
+        // Un documento corrupto no se saltea en silencio: si el watcher
+        // ignorara un cobro pendiente, nadie se enteraría de que dejó de
+        // mirarlo.
+        return fallo({
+          tipo: 'RESPUESTA_INVALIDA',
+          mensaje: `El cobro ${doc.id} no tiene la forma esperada: ${cobro.error.motivo}`,
+          reintentable: false,
+          codigoProveedor: null,
+        });
+      }
+      cobros.push(cobro.valor);
+    }
+    return exito(cobros);
   }
 
   /**

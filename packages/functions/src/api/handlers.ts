@@ -153,12 +153,22 @@ export async function crearCobro(ctx: ContextoApi, cuerpo: unknown): Promise<Res
   return esExito(emitido) ? creado(aVista(emitido.valor)) : comoHttp(emitido.error);
 }
 
-/** `GET /api/cobros` — los cobros que el watcher todavía sigue. */
-export async function listarPendientes(ctx: ContextoApi): Promise<Respuesta> {
-  const pendientes = await ctx.deps.cobros.listarPendientes();
-  return esExito(pendientes)
-    ? ok({ cobros: pendientes.valor.map(aVista) })
-    : comoHttp({ tipo: 'PUERTO', error: pendientes.error });
+/** Cuántos cobros muestra la consola de una vez. */
+const LIMITE_LISTADO = 50;
+
+/**
+ * `GET /api/cobros` — los cobros más recientes, en cualquier estado.
+ *
+ * No usa `listarPendientes`: eso es la pregunta del satélite. Un cobro recién
+ * creado está en `QR_ACTIVO` y el watcher no lo mira todavía, pero quien lo
+ * acaba de crear necesita verlo — si la consola listara solo los pendientes,
+ * crear un cobro parecería no hacer nada.
+ */
+export async function listarCobros(ctx: ContextoApi): Promise<Respuesta> {
+  const recientes = await ctx.deps.cobros.listarRecientes(LIMITE_LISTADO);
+  return esExito(recientes)
+    ? ok({ cobros: recientes.valor.map(aVista) })
+    : comoHttp({ tipo: 'PUERTO', error: recientes.error });
 }
 
 /** `GET /api/cobros/:id` — el cobro con su rastro de evidencia completo. */

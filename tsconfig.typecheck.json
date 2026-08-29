@@ -17,10 +17,11 @@
       "@mqs/baneco-satelite": ["packages/baneco-satelite/src/index.ts"],
       "@mqs/yape-scraper": ["packages/yape-scraper/src/index.ts"],
       "@mqs/wa-bridge": ["packages/wa-bridge/src/index.ts"],
-      "@mqs/functions": ["packages/functions/src/index.ts"],
-      "@mqs/demo-web": ["packages/demo-web/src/index.ts"]
+      "@mqs/functions": ["packages/functions/src/index.ts"]
     }
   },
   "include": ["packages/*/src/**/*", "tools/*/src/**/*", "scripts/**/*", "*.config.ts", "*.config.mjs"],
-  "exclude": ["node_modules", "**/dist", "coverage"]
+  // demo-web usa JSX y DOM, que el resto del monorepo no debe ver: lo
+  // typechequea `tsc -b` con su propio tsconfig.
+  "exclude": ["node_modules", "**/dist", "coverage", "packages/demo-web"]
 }

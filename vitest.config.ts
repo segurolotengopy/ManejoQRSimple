@@ -18,7 +18,6 @@ export default defineConfig({
       '@mqs/yape-scraper': paquete('yape-scraper'),
       '@mqs/wa-bridge': paquete('wa-bridge'),
       '@mqs/functions': paquete('functions'),
-      '@mqs/demo-web': paquete('demo-web'),
     },
   },
   test: {

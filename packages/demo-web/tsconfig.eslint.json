@@ -1,0 +1,9 @@
+{
+  // Solo para ESLint: incluye tests y archivos de configuración, que el
+  // tsconfig del build deja afuera a propósito. El `exclude` se redefine
+  // porque `extends` lo heredaría del padre y volvería a dejar los tests fuera.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "composite": false, "noEmit": true },
+  "include": ["src/**/*", "vite.config.ts"],
+  "exclude": ["dist"]
+}

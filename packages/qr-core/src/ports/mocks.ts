@@ -140,6 +140,13 @@ export class CobroRepositoryEnMemoria implements CobroRepository {
     return Promise.resolve(exito(pendientes));
   }
 
+  listarRecientes(limite: number): Ok<readonly Cobro[]> {
+    const recientes = [...this.cobros.values()]
+      .sort((a, b) => b.creadoEn.getTime() - a.creadoEn.getTime())
+      .slice(0, limite);
+    return Promise.resolve(exito(recientes));
+  }
+
   async deteccionesAplicadas(cobroId: string): Ok<readonly string[]> {
     const sembradas = this.deteccionesSembradas.get(cobroId) ?? [];
     if (this.evidencia === undefined) {

@@ -1,0 +1,18 @@
+{
+  "name": "@mqs/demo-local",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Demo local: siembra cobros en el emulador y simula abonos, para ejercitar el sistema entero sin banco.",
+  "main": "./dist/sembrar.js",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@mqs/composicion": "*",
+    "@mqs/firestore-store": "*",
+    "@mqs/qr-core": "*",
+    "firebase-admin": "^14.3.0"
+  }
+}

@@ -25,7 +25,11 @@ import {
   transporteFetch,
   type ConfigBaneco,
 } from '@mqs/baneco-gateway';
-import { CobroRepositoryFirestore, EvidenceStoreFirestore } from '@mqs/firestore-store';
+import {
+  CobroRepositoryFirestore,
+  EvidenceStoreFirestore,
+  PaymentWatcherAbonosFirestore,
+} from '@mqs/firestore-store';
 import {
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
@@ -45,7 +49,7 @@ import {
 } from '@mqs/qr-core';
 import type { Firestore } from 'firebase-admin/firestore';
 
-export const MODOS = ['mock', 'baneco', 'yape'] as const;
+export const MODOS = ['mock', 'simulado', 'baneco', 'yape'] as const;
 export type Modo = (typeof MODOS)[number];
 
 export type ErrorComposicion =
@@ -59,6 +63,7 @@ export type ErrorComposicion =
    */
   | { readonly tipo: 'MODO_INVALIDO'; readonly variable: string }
   | { readonly tipo: 'MODO_NO_IMPLEMENTADO'; readonly variable: string; readonly modo: Modo }
+  | { readonly tipo: 'MODO_NECESITA_FIRESTORE'; readonly variable: string; readonly modo: Modo }
   | { readonly tipo: 'CONFIG_BANECO'; readonly detalle: string };
 
 export type OpcionesComposicion = {
@@ -116,7 +121,7 @@ export function construirPuertos(
   const qr = elegirQr(modoQr.valor, baneco);
   if (!esExito(qr)) return qr;
 
-  const watcher = elegirWatcher(modoWatcher.valor, baneco);
+  const watcher = elegirWatcher(modoWatcher.valor, baneco, opciones.db);
   if (!esExito(watcher)) return watcher;
 
   const enFirestore = opciones.db !== null;
@@ -158,6 +163,10 @@ function elegirQr(
 ): Resultado<QrProvider, ErrorComposicion> {
   switch (modo) {
     case 'mock':
+    case 'simulado':
+      // Para emitir QRs no hay diferencia entre "mock" y "simulado": los dos
+      // producen un QR de mentira. La distinción solo importa del lado del
+      // watcher, que es donde el simulador aporta algo.
       return exito(new QrProviderEnMemoria());
     case 'baneco':
       // `baneco` no es null: se construyó arriba justamente porque este modo lo pide.
@@ -174,10 +183,17 @@ function elegirQr(
 function elegirWatcher(
   modo: Modo,
   baneco: { watcher: PaymentWatcher } | null,
+  db: Firestore | null,
 ): Resultado<PaymentWatcher, ErrorComposicion> {
   switch (modo) {
     case 'mock':
       return exito(new PaymentWatcherEnMemoria());
+    case 'simulado':
+      // Lee los abonos de `abonos/*` en Firestore: el mismo lugar donde los
+      // dejará el scraper (docs/05 §2). Sin base no tiene de dónde leer.
+      return db === null
+        ? fallo({ tipo: 'MODO_NECESITA_FIRESTORE', variable: 'PAYMENT_WATCHER', modo })
+        : exito(new PaymentWatcherAbonosFirestore(db));
     case 'baneco':
       return baneco === null
         ? fallo({ tipo: 'CONFIG_BANECO', detalle: 'cliente no construido' })
@@ -197,6 +213,8 @@ export function describirError(error: ErrorComposicion): string {
       return `${error.variable} no tiene un modo válido. Valores admitidos: ${MODOS.join(', ')}.`;
     case 'MODO_NO_IMPLEMENTADO':
       return `${error.variable}=${error.modo}: ese adaptador todavía no está implementado.`;
+    case 'MODO_NECESITA_FIRESTORE':
+      return `${error.variable}=${error.modo} necesita una conexión a Firestore (levantá el emulador o configurá el proyecto).`;
     case 'CONFIG_BANECO':
       return `La configuración de Baneco es inválida (${error.detalle}). Revisá el bloque BANECO_* del .env.`;
   }

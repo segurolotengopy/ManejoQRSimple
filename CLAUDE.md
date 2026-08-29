@@ -50,6 +50,7 @@ npm run build
 npm run scraper:dry       # yape-scraper en modo lectura sin escritura a Firestore
 npm run satelite:baneco   # satélite de Baneco (--una para una sola pasada)
 npm run test:emulador     # tests de integración contra el emulador de Firestore
+npm run demo              # demo local completo sin banco (ver tools/demo-local)
 ```
 
 Antes de cualquier commit: `npm run typecheck && npm run lint && npm test` deben pasar.

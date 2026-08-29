@@ -61,11 +61,15 @@ module.exports = {
       severity: 'error',
       comment:
         'Nada llama al SDK de Firebase fuera de su adaptador (docs/01 §2). ' +
-        'Las raíces de composición —functions y baneco-satelite— pueden importarlo ' +
-        'porque su trabajo es justamente cablearlo. Si el dominio pudiera tocar ' +
+        'Las raíces de composición pueden importarlo ' +
+        'porque su trabajo es justamente cablearlo, y tools/demo-local porque siembra ' +
+        'y consulta el emulador directamente. Si el dominio pudiera tocar ' +
         'Firestore, la persistencia ' +
         'dejaría de estar detrás de un puerto y ADR-002 quedaría en el papel.',
-      from: { pathNot: '^packages/(firestore-store|functions|composicion|baneco-satelite)/' },
+      from: {
+        pathNot:
+          '^(packages/(firestore-store|functions|composicion|baneco-satelite)|tools/demo-local)/',
+      },
       to: { path: 'node_modules/(firebase-admin|@google-cloud|firebase)/' },
     },
     {

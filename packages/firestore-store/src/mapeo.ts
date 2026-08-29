@@ -180,12 +180,25 @@ export function documentoAEvidencia(
 }
 
 /**
- * Id del documento de evidencia.
+ * Id del documento de evidencia. Ordenable lexicográficamente por tiempo.
  *
- * Ordenable lexicográficamente por tiempo, para que listar la evidencia de un
- * cobro salga en orden cronológico sin necesitar un índice. El sufijo evita
- * colisiones entre dos transiciones en el mismo milisegundo.
+ * El prefijo ISO da el orden cronológico sin necesitar un índice. Pero dos
+ * transiciones del mismo cobro caen seguido en el **mismo milisegundo** —
+ * `verificarPago` aplica PAGO_DETECTADO y PAGO_CONCILIADO con el mismo `ahora`—
+ * y ahí el ISO empata. Sin un desempate por orden de inserción, el rastro sale
+ * ordenado por lo que venga después en el id: con el nombre del evento ahí,
+ * `PAGO_CONCILIADO` precedía a `PAGO_DETECTADO` y la auditoría mostraba la
+ * confirmación **antes** de la detección que la causó.
+ *
+ * El desempate es un contador monótono del proceso, de ancho fijo para que
+ * ordene bien como texto. Dentro de un proceso es estrictamente creciente, que
+ * es donde ocurren las ráfagas en el mismo milisegundo; entre procesos, dos
+ * transiciones del mismo cobro en el mismo milisegundo son inverosímiles.
  */
+let contadorMonotono = 0n;
+
 export function idDeEvidencia(registro: RegistroEvidencia, sufijo: string): string {
-  return `${registro.registradoEn.toISOString()}_${registro.evento}_${sufijo}`;
+  contadorMonotono += 1n;
+  const orden = contadorMonotono.toString().padStart(12, '0');
+  return `${registro.registradoEn.toISOString()}_${orden}_${sufijo}`;
 }

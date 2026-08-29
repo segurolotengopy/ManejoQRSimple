@@ -14,6 +14,7 @@
     { "path": "packages/firestore-store" },
     { "path": "packages/composicion" },
     { "path": "packages/baneco-satelite" },
-    { "path": "tools/baneco-b0" }
+    { "path": "tools/baneco-b0" },
+    { "path": "tools/demo-local" }
   ]
 }

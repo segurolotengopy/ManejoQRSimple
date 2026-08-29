@@ -42,7 +42,6 @@ consola Yape van en `docs/consola-yape/`.
 
 ```bash
 npm ci                    # instalar
-npm run dev               # demo-web + emuladores de Firebase
 npm test                  # Vitest, toda la suite (objetivo: < 10 s)
 npm run lint              # ESLint (--max-warnings=0)
 npm run typecheck         # tsc --noEmit en todos los paquetes
@@ -52,6 +51,7 @@ npm run satelite:baneco   # satélite de Baneco (--una para una sola pasada)
 npm run test:emulador     # tests de integración contra el emulador de Firestore
 npm run demo              # demo local completo sin banco (ver tools/demo-local)
 npm run api               # API HTTP del demo (ver packages/functions)
+npm run dev               # consola del comerciante (ver packages/demo-web)
 ```
 
 Antes de cualquier commit: `npm run typecheck && npm run lint && npm test` deben pasar.

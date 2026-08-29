@@ -50,6 +50,17 @@ export default tseslint.config(
     },
   },
   {
+    // demo-web queda fuera del typecheck raíz (usa JSX y DOM), así que sus
+    // archivos se tipan con el tsconfig del propio paquete.
+    files: ['packages/demo-web/**/*.ts', 'packages/demo-web/**/*.tsx'],
+    languageOptions: {
+      parserOptions: {
+        project: ['./packages/demo-web/tsconfig.eslint.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
     // Los archivos de configuración en JS/MJS no forman parte del programa de
     // TypeScript, así que las reglas con tipos no aplican sobre ellos.
     files: ['**/*.js', '**/*.mjs', '**/*.cjs'],

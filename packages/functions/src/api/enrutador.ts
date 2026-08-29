@@ -17,7 +17,7 @@ import {
   comprobante,
   crearCobro,
   enviar,
-  listarPendientes,
+  listarCobros,
   renovar,
   verCobro,
   verificar,
@@ -50,7 +50,7 @@ async function despachar(ctx: ContextoApi, peticion: Peticion): Promise<Respuest
   const { metodo, ruta, cuerpo } = peticion;
 
   if (ruta === PREFIJO) {
-    return metodo === 'GET' ? listarPendientes(ctx) : crearCobro(ctx, cuerpo);
+    return metodo === 'GET' ? listarCobros(ctx) : crearCobro(ctx, cuerpo);
   }
 
   if (!ruta.startsWith(`${PREFIJO}/`)) {

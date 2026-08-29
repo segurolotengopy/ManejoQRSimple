@@ -42,3 +42,6 @@ docs/Integraciones/baneco/privado-no-gh/
 
 # Salida local del Hito B0: imágenes de QR de prueba del ambiente de certificación
 tools/baneco-b0/out/
+
+# Configuración local de la consola (contiene el token de la API local)
+packages/demo-web/.env.local

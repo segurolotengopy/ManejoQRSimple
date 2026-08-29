@@ -127,7 +127,9 @@ module.exports = {
     enhancedResolveOptions: {
       exportsFields: ['exports'],
       conditionNames: ['import', 'require', 'node', 'default'],
-      extensions: ['.ts', '.js', '.mjs', '.cjs'],
+      // .tsx por demo-web: TypeScript resuelve `./App.js` a `App.tsx`, y sin
+      // esta extensión el resolvedor lo reporta como import irresoluble.
+      extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'],
     },
     reporterOptions: {
       text: { highlightFocused: true },

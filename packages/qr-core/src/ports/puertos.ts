@@ -84,8 +84,21 @@ export interface MessagingProvider {
 export interface CobroRepository {
   obtener(id: string): Promise<Resultado<Cobro | null, ErrorPuerto>>;
   guardar(cobro: Cobro): Promise<Resultado<void, ErrorPuerto>>;
-  /** Cobros que el watcher debe seguir mirando. */
+  /**
+   * Cobros que el watcher debe seguir mirando (`ENVIADO`,
+   * `COMPROBANTE_RECIBIDO`). Es la pregunta del satélite, no la de la consola.
+   */
   listarPendientes(): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
+
+  /**
+   * Los cobros más recientes, en cualquier estado.
+   *
+   * Es la pregunta de la **consola**, y es distinta a propósito: un cobro recién
+   * creado está en `QR_ACTIVO` y el watcher no lo mira todavía, pero quien lo
+   * acaba de crear necesita verlo. Mezclar las dos preguntas en un solo método
+   * dejaría a una de las dos mal servida.
+   */
+  listarRecientes(limite: number): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
   /**
    * Claves de deduplicación ya aplicadas a un cobro (regla #7).
    *

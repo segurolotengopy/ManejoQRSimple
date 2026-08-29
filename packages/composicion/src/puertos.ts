@@ -33,6 +33,7 @@ import {
 import {
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
+  MessagingProviderEnMemoria,
   POLITICA_POR_DEFECTO,
   PaymentWatcherEnMemoria,
   QrProviderEnMemoria,
@@ -70,6 +71,12 @@ export type OpcionesComposicion = {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** `null` ⇒ persistencia en memoria. Nunca se elige por variable de entorno. */
   readonly db: Firestore | null;
+  /**
+   * Proveedor de mensajería a usar cuando `MESSAGING_PROVIDER` no es `mock`.
+   *
+   * Se inyecta en vez de construirse acá porque hoy no hay adaptador real: lo
+   * que llega es `MensajeriaNoConfigurada`, que falla a propósito.
+   */
   readonly mensajeria: MessagingProvider;
 };
 
@@ -124,6 +131,13 @@ export function construirPuertos(
   const watcher = elegirWatcher(modoWatcher.valor, baneco, opciones.db);
   if (!esExito(watcher)) return watcher;
 
+  // El default NO es `mock`: fingir que el mensaje salió es peor que fallar.
+  // Solo el demo pide `mock` explícitamente.
+  const mensajeriaEnMock = opciones.env['MESSAGING_PROVIDER'] === 'mock';
+  const mensajeria = mensajeriaEnMock
+    ? new MessagingProviderEnMemoria()
+    : opciones.mensajeria;
+
   const enFirestore = opciones.db !== null;
   const cobros: CobroRepository = enFirestore
     ? new CobroRepositoryFirestore(opciones.db)
@@ -138,11 +152,12 @@ export function construirPuertos(
       evidencia,
       qr: qr.valor,
       watcher: watcher.valor,
-      mensajeria: opciones.mensajeria,
+      mensajeria,
       politica: POLITICA_POR_DEFECTO,
     },
     resumen:
       `qr=${modoQr.valor} watcher=${modoWatcher.valor} ` +
+      `mensajeria=${mensajeriaEnMock ? 'mock' : 'no-configurada'} ` +
       `persistencia=${enFirestore ? 'firestore' : 'memoria'}`,
   });
 }

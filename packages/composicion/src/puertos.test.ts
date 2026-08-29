@@ -24,7 +24,11 @@ describe('selección por variable de entorno', () => {
     const r = armar({});
     expect(esExito(r)).toBe(true);
     if (esExito(r)) {
-      expect(r.valor.resumen).toBe('qr=mock watcher=mock persistencia=memoria');
+      // La mensajería NO cae en mock por defecto: fingir que el mensaje salió
+      // sería peor que fallar. Solo el demo la pide explícitamente.
+      expect(r.valor.resumen).toBe(
+        'qr=mock watcher=mock mensajeria=no-configurada persistencia=memoria',
+      );
     }
   });
 
@@ -71,6 +75,22 @@ describe('selección por variable de entorno', () => {
     if (!esExito(r)) {
       expect(r.error.tipo).toBe('MODO_NO_IMPLEMENTADO');
     }
+  });
+});
+
+describe('mensajería', () => {
+  it('con MESSAGING_PROVIDER=mock usa el proveedor en memoria', () => {
+    const r = armar({ MESSAGING_PROVIDER: 'mock' });
+    expect(esExito(r) && r.valor.resumen).toContain('mensajeria=mock');
+  });
+
+  it('cualquier otro valor deja el proveedor inyectado, que falla a propósito', async () => {
+    const r = armar({ MESSAGING_PROVIDER: 'wa-bridge' });
+    expect(esExito(r) && r.valor.resumen).toContain('mensajeria=no-configurada');
+    if (!esExito(r)) return;
+
+    const envio = await r.valor.deps.mensajeria.enviarConfirmacion({ id: 'c1' } as never);
+    expect(esExito(envio)).toBe(false);
   });
 });
 

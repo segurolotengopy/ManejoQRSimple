@@ -28,12 +28,13 @@
     "scraper:login": "npm run login -w @mqs/yape-scraper",
     "scraper:dry": "npm run dry -w @mqs/yape-scraper",
     "satelite:baneco": "npm run build && node --env-file=.env packages/baneco-satelite/dist/main.js",
-    "demo": "npm run build && firebase emulators:exec --only firestore --project manejoqrsimple --config firebase.demo.json \"node tools/demo-local/dist/sembrar.js && node tools/demo-local/dist/estado.js\"",
+    "demo": "npm run build && firebase emulators:exec --only firestore --project manejoqrsimple --config firebase.demo.json \"MESSAGING_PROVIDER=mock node tools/demo-local/dist/sembrar.js && node tools/demo-local/dist/estado.js\"",
     "demo:ui": "firebase emulators:start --only firestore --project manejoqrsimple --config firebase.demo.json",
-    "demo:sembrar": "node tools/demo-local/dist/sembrar.js",
+    "demo:sembrar": "MESSAGING_PROVIDER=mock node tools/demo-local/dist/sembrar.js",
     "demo:pagar": "node tools/demo-local/dist/pagar.js",
     "demo:estado": "node tools/demo-local/dist/estado.js",
-    "satelite:demo": "QR_PROVIDER=mock PAYMENT_WATCHER=simulado node packages/baneco-satelite/dist/main.js --una"
+    "satelite:demo": "QR_PROVIDER=mock PAYMENT_WATCHER=simulado node packages/baneco-satelite/dist/main.js --una",
+    "api": "npm run build && MESSAGING_PROVIDER=mock QR_PROVIDER=mock PAYMENT_WATCHER=simulado node packages/functions/dist/main.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.14.0",

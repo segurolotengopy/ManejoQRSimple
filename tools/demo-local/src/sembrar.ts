@@ -54,7 +54,7 @@ async function main(): Promise<number> {
 
   // Persistencia real (emulador) + QR de mock: no hace falta el banco.
   const puertos = construirPuertos({
-    env: { ...process.env, QR_PROVIDER: 'mock', PAYMENT_WATCHER: 'simulado' },
+    env: { ...process.env, QR_PROVIDER: 'mock', PAYMENT_WATCHER: 'simulado', MESSAGING_PROVIDER: 'mock' },
     db,
     // Acá SÍ va el mock de mensajería, al revés que en el satélite.
     //

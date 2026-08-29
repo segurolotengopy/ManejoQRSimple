@@ -175,6 +175,27 @@ export async function registrarComprobante(
   return esExito(resultado) ? exito(resultado.valor.cobro) : resultado;
 }
 
+/**
+ * Anula un cobro por decisión del dueño.
+ *
+ * Queda con origen `accion-manual` en la evidencia, como toda decisión que toma
+ * una persona y no el sistema (regla #8).
+ */
+export async function anular(
+  deps: DepsPersistencia,
+  cobro: Cobro,
+  motivo: string,
+  ahora: Date,
+): Promise<Resultado<Cobro, ErrorCasoUso>> {
+  const resultado = await aplicar(
+    deps,
+    cobro,
+    { tipo: 'ANULADO', motivo, origen: 'accion-manual' },
+    ahora,
+  );
+  return esExito(resultado) ? exito(resultado.valor.cobro) : resultado;
+}
+
 export type ResultadoVerificacion =
   /** El cobro no está en un estado que admita verificación. */
   | { readonly tipo: 'NO_CORRESPONDE'; readonly cobro: Cobro }

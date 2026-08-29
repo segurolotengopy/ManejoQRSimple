@@ -87,6 +87,7 @@ export {
 
 // Casos de uso: la orquestación del cobro sobre los puertos
 export {
+  anular,
   aplicar,
   conciliarDia,
   emitirQr,

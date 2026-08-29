@@ -32,6 +32,9 @@ export class QrProviderEnMemoria implements QrProvider {
   private secuencia = 0;
   private readonly anulados = new Set<string>();
 
+  /** El reloj se inyecta para que los tests fijen el instante de emisión. */
+  constructor(private readonly reloj: () => Date = () => new Date()) {}
+
   emitir(solicitud: SolicitudQr): Ok<QrEmitido> {
     this.secuencia += 1;
     const referencia = `mock-qr-${String(this.secuencia).padStart(6, '0')}`;
@@ -39,7 +42,10 @@ export class QrProviderEnMemoria implements QrProvider {
       exito({
         qrVersion: solicitud.qrVersion,
         referenciaProveedor: referencia,
-        emitidoEn: new Date(solicitud.venceEn.getTime() - 3_600_000),
+        // `ahora`, no `venceEn - 1h`: derivar la emisión del vencimiento
+        // ponía el QR emitido en el futuro para vigencias largas, y el rastro
+        // de evidencia mostraba un cobro creado después de emitir su QR.
+        emitidoEn: this.reloj(),
         venceEn: solicitud.venceEn,
         origen: solicitud.origenEsperado,
         imagenRef: null,

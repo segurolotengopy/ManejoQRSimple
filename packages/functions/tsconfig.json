@@ -6,5 +6,5 @@
   },
   "include": ["src/**/*"],
   "exclude": ["src/**/*.test.ts", "dist"],
-  "references": [{ "path": "../qr-core" }]
+  "references": [{ "path": "../qr-core" }, { "path": "../composicion" }]
 }

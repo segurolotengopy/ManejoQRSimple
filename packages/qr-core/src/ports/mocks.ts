@@ -11,8 +11,9 @@
  * dominio no puede tener.
  */
 
-import { exito, type Resultado } from '../comun/resultado.js';
+import { exito, fallo, type Resultado } from '../comun/resultado.js';
 import type { Cobro, QrEmitido } from '../cobro/cobro.js';
+import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
 import type {
@@ -128,14 +129,28 @@ export class CobroRepositoryEnMemoria implements CobroRepository {
     return Promise.resolve(exito(this.cobros.get(id) ?? null));
   }
 
-  guardar(cobro: Cobro): Ok<void> {
+  guardar(cobro: Cobro, estadoEsperado?: EstadoCobro): Ok<void> {
+    if (estadoEsperado !== undefined) {
+      // Un cobro que todavía no existe está, a estos efectos, en BORRADOR.
+      const actual = this.cobros.get(cobro.id)?.estado ?? 'BORRADOR';
+      if (actual !== estadoEsperado) {
+        return Promise.resolve(
+          fallo({
+            tipo: 'CONFLICTO',
+            mensaje: `El cobro ${cobro.id} cambió de estado mientras se operaba`,
+            reintentable: false,
+            codigoProveedor: null,
+          }),
+        );
+      }
+    }
     this.cobros.set(cobro.id, cobro);
     return Promise.resolve(exito(undefined));
   }
 
   listarPendientes(): Ok<readonly Cobro[]> {
     const pendientes = [...this.cobros.values()].filter(
-      (c) => c.estado === 'ENVIADO' || c.estado === 'COMPROBANTE_RECIBIDO',
+      (c) => c.estado === 'QR_ACTIVO' || c.estado === 'ENVIADO' || c.estado === 'COMPROBANTE_RECIBIDO',
     );
     return Promise.resolve(exito(pendientes));
   }

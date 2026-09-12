@@ -65,12 +65,15 @@ export {
   verificarAdmision,
   type ErrorTransicion,
   type EventoCobro,
-  type QrAnulado,
   type RegistroEvidencia,
   type TipoEvento,
   type TransicionAplicada,
   type ValorEvidencia,
 } from './cobro/maquina-estados.js';
+
+// La constancia de anulación se exporta como tipo, no su fábrica: solo los
+// casos de uso la obtienen, anulando el QR de verdad.
+export type { QrAnulado } from './cobro/anulacion.js';
 
 // Conciliación
 export {

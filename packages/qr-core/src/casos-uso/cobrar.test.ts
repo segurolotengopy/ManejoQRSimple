@@ -38,6 +38,15 @@ class QrContado extends QrProviderEnMemoria {
   }
 }
 
+/** El cliente paga justo entre la última consulta y la anulación. */
+class QrPagadoEnLaCarrera extends QrContado {
+  alAnular: () => void = () => undefined;
+  override anular(referencia: string): ReturnType<QrProviderEnMemoria['anular']> {
+    this.alAnular();
+    return super.anular(referencia);
+  }
+}
+
 /** Un banco que emite pero no anula: está caído justo cuando hace falta. */
 class QrQueNoAnula extends QrContado {
   override anular(): Promise<Resultado<void, ErrorPuerto>> {
@@ -239,6 +248,31 @@ describe('vigilar(): vencimiento con el QR anulado en el banco (regla #6, Baneco
     expect(qr.estaAnulado(REFERENCIA)).toBe(false);
   });
 
+  it('si el cliente paga mientras se anula, concilia: no vence con la plata adentro', async () => {
+    const qr = new QrPagadoEnLaCarrera(() => T0);
+    const { deps, watcher, cobros } = armar(qr);
+    const cobro = await hastaEnviado(deps);
+    qr.alAnular = () => {
+      watcher.cargarAbono(REFERENCIA, abono({ ocurridoEn: enMinutos(72 * 60) }));
+    };
+
+    const r = await vigilar(deps, cobro, TRAS_VENCER);
+    expect(esExito(r) && r.valor.tipo).toBe('CONFIRMADO');
+    expect(await estadoGuardado(cobros)).toBe('CONFIRMADO');
+  });
+
+  it('un cobro que el satélite confirmó no lo pisa una copia vieja', async () => {
+    // El dueño tenía el cobro abierto en ENVIADO; mientras tanto se confirmó.
+    const { deps, watcher, cobros } = armar();
+    const copiaVieja = await hastaEnviado(deps);
+    watcher.cargarAbono(REFERENCIA, abono());
+    await verificarPago(deps, copiaVieja, enMinutos(31));
+
+    const r = await registrarComprobante(deps, copiaVieja, 'wa-1', enMinutos(32));
+    expect(!esExito(r) && r.error.tipo === 'PUERTO' && r.error.error.tipo).toBe('CONFLICTO');
+    expect(await estadoGuardado(cobros)).toBe('CONFIRMADO');
+  });
+
   it('si el banco no anula el QR, el cobro no vence: se reintenta en la próxima pasada', async () => {
     const { deps, cobros } = armar(new QrQueNoAnula(() => T0));
     const cobro = await hastaEnviado(deps);
@@ -350,6 +384,20 @@ describe('anular(): el QR se anula también en el banco', () => {
     expect(await estadoGuardado(cobros)).toBe('EN_REVISION');
   });
 
+  it('si el cliente paga mientras se anula, el cobro no se anula', async () => {
+    const qr = new QrPagadoEnLaCarrera(() => T0);
+    const { deps, watcher, cobros } = armar(qr);
+    const cobro = await hastaEnviado(deps);
+    qr.alAnular = () => {
+      watcher.cargarAbono(REFERENCIA, abono());
+    };
+
+    const r = await anular(deps, cobro, 'x', enMinutos(31));
+    expect(!esExito(r) && r.error.tipo).toBe('ABONO_DETECTADO');
+    // Queda esperando pago: el satélite lo verifica y lo confirma.
+    expect(await estadoGuardado(cobros)).toBe('ENVIADO');
+  });
+
   it('si el banco no anula el QR, el cobro tampoco se anula', async () => {
     const { deps, cobros } = armar(new QrQueNoAnula(() => T0));
     const cobro = await hastaEnviado(deps);
@@ -377,12 +425,27 @@ describe('anular(): el QR se anula también en el banco', () => {
   });
 });
 
-describe('verificarPago() en estados que no corresponden', () => {
-  it.each(['BORRADOR', 'QR_ACTIVO'] as const)('no hace nada si el cobro está en %s', async (estado) => {
-    const { deps } = armar();
-    const cobro = unCobro({ estado, montoCentavos: bs(MONTO) });
-    const r = await verificarPago(deps, cobro, T0);
-    expect(esExito(r) && r.valor.tipo).toBe('NO_CORRESPONDE');
+describe('verificarPago() según el estado', () => {
+  it.each(['BORRADOR', 'VENCIDO', 'EN_REVISION'] as const)(
+    'no hace nada si el cobro está en %s',
+    async (estado) => {
+      const { deps } = armar();
+      const cobro = unCobro({ estado, montoCentavos: bs(MONTO) });
+      const r = await verificarPago(deps, cobro, T0);
+      expect(esExito(r) && r.valor.tipo).toBe('NO_CORRESPONDE');
+    },
+  );
+
+  it('un QR_ACTIVO que el cliente igual pagó concilia: manda el banco, no el envío', async () => {
+    // WhatsApp pudo entregar el QR y reportar una falla: el cobro nunca pasó
+    // a ENVIADO, pero la plata está.
+    const { deps, watcher } = armar();
+    const emitido = await emitirQr(deps, unCobro({ montoCentavos: bs(MONTO) }), VENCE, T0);
+    if (!esExito(emitido)) throw new Error('emitir debería funcionar');
+    watcher.cargarAbono(REFERENCIA, abono());
+
+    const r = await verificarPago(deps, emitido.valor, enMinutos(31));
+    expect(esExito(r) && r.valor.tipo).toBe('CONFIRMADO');
   });
 });
 
@@ -444,6 +507,59 @@ describe('conciliarDia()', () => {
     expect(esExito(r) && r.valor.enRevision).toEqual(['cobro-1']);
     expect(await estadoGuardado(cobros)).toBe('EN_REVISION');
     expect((await ultimaEvidencia(evidencia))?.evento).toBe('ABONO_TARDIO');
+
+    // Idempotente: repetir el cierre (el satélite reinició) no duplica nada.
+    const otraVez = await conciliarDia(deps, enMinutos(72 * 60 + 30), enMinutos(72 * 60 + 90));
+    expect(esExito(otraVez) && otraVez.valor).toMatchObject({ enRevision: [], yaRegistrados: 1 });
+  });
+
+  it('un abono que la evidencia del cobro no explica no se da por registrado', async () => {
+    // Comprobante sin pago → ventana agotada → EN_REVISION sin ninguna
+    // detección. Si el reporte del día trae un pago, nadie lo vio todavía.
+    const { deps, watcher } = armar();
+    const cobro = await hastaEnviado(deps);
+    const conComprobante = await registrarComprobante(deps, cobro, 'wa-1', enMinutos(20));
+    if (!esExito(conComprobante)) throw new Error('el comprobante debería registrarse');
+    const agotada = await vigilar(deps, conComprobante.valor, TRAS_VENCER);
+    expect(esExito(agotada) && agotada.valor.tipo).toBe('VENTANA_AGOTADA');
+    watcher.cargarAbono(REFERENCIA, abono({ ocurridoEn: enMinutos(72 * 60 + 30) }));
+
+    const r = await conciliarDia(deps, enMinutos(72 * 60 + 30), enMinutos(72 * 60 + 60));
+    expect(esExito(r) && r.valor).toMatchObject({
+      yaRegistrados: 0,
+      sinCorroborar: ['baneco:mock-qr-000001:tx-1'],
+    });
+  });
+
+  it('un abono que no se puede procesar no corta el resto del día', async () => {
+    class RepoConUnQrRoto extends CobroRepositoryEnMemoria {
+      override buscarPorReferenciaQr(referencia: string): ReturnType<CobroRepositoryEnMemoria['buscarPorReferenciaQr']> {
+        return referencia === 'qr-roto'
+          ? Promise.resolve({
+              ok: false,
+              error: { tipo: 'INDISPONIBLE', mensaje: 'caído', reintentable: true, codigoProveedor: null },
+            })
+          : super.buscarPorReferenciaQr(referencia);
+      }
+    }
+    const base = armar();
+    const deps = { ...base.deps, cobros: new RepoConUnQrRoto(base.evidencia) };
+    for (const ref of ['qr-roto', 'qr-de-nadie']) {
+      base.watcher.cargarAbono(
+        ref,
+        registrarDeteccion({
+          idDeduplicacion: `baneco:${ref}:tx-1`,
+          montoCentavos: bs(500),
+          ocurridoEn: enMinutos(30),
+          origen: 'watcher-baneco',
+          referencia: null,
+        }),
+      );
+    }
+
+    const r = await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    expect(esExito(r) && r.valor.huerfanos).toEqual(['baneco:qr-de-nadie:tx-1']);
+    expect(esExito(r) && r.valor.conError.map((e) => e.idDeduplicacion)).toEqual(['baneco:qr-roto:tx-1']);
   });
 
   it('un abono sobre un cobro anulado es plata sin dueño', async () => {

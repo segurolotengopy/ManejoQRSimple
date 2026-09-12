@@ -150,7 +150,7 @@ El código debe hacerlas **imposibles de violar**, no solo evitarlas.
 
 ```
 BORRADOR → QR_ACTIVO → ENVIADO
-    ENVIADO ──(watcher detecta abono)────────────► PAGO_DETECTADO → CONFIRMADO
+    QR_ACTIVO | ENVIADO ──(watcher detecta abono)► PAGO_DETECTADO → CONFIRMADO
     PAGO_DETECTADO ──(la conciliación rechaza)───► EN_REVISION
     ENVIADO ──(cliente envía comprobante)────────► COMPROBANTE_RECIBIDO
     COMPROBANTE_RECIBIDO ──(watcher detecta)─────► PAGO_DETECTADO

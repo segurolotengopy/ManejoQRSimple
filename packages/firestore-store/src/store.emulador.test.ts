@@ -134,11 +134,13 @@ describe('CobroRepositoryFirestore', () => {
     await repo.guardar(unCobro({ id: 'c2', estado: 'COMPROBANTE_RECIBIDO', qrVersion: 1, qrVigente: unQr() }));
     await repo.guardar(unCobro({ id: 'c3', estado: 'CONFIRMADO' }));
     await repo.guardar(unCobro({ id: 'c4', estado: 'BORRADOR' }));
+    await repo.guardar(unCobro({ id: 'c5', estado: 'QR_ACTIVO', qrVersion: 1, qrVigente: unQr() }));
 
     const pendientes = await repo.listarPendientes();
     expect(esExito(pendientes)).toBe(true);
     if (esExito(pendientes)) {
-      expect(pendientes.valor.map((c) => c.id).sort()).toEqual(['c1', 'c2']);
+      // QR_ACTIVO también: su QR es pagable y al vencer hay que anularlo.
+      expect(pendientes.valor.map((c) => c.id).sort()).toEqual(['c1', 'c2', 'c5']);
     }
   });
 

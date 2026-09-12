@@ -24,14 +24,11 @@
 import { exito, fallo, type Resultado } from '../comun/resultado.js';
 import type { ConciliacionAprobada, MotivoRechazo } from '../conciliacion/conciliar.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
+import type { QrAnulado } from './anulacion.js';
 import type { Cobro, QrEmitido } from './cobro.js';
 import { esTerminal, type EstadoCobro, type OrigenTransicion } from './estados.js';
 
-/** Constancia de que el proveedor anuló un QR: ya no se puede pagar. */
-export type QrAnulado = {
-  readonly referenciaProveedor: string;
-  readonly anuladoEn: Date;
-};
+export type { QrAnulado };
 
 /**
  * Estados en los que el QR vigente todavía se puede pagar en el proveedor.
@@ -141,7 +138,10 @@ const ORIGENES_PERMITIDOS: Readonly<Record<TipoEvento, readonly EstadoCobro[]>> 
   QR_EMITIDO: ['BORRADOR'],
   QR_ENVIADO: ['QR_ACTIVO'],
   COMPROBANTE_RECIBIDO: ['ENVIADO'],
-  PAGO_DETECTADO: ['ENVIADO', 'COMPROBANTE_RECIBIDO'],
+  // QR_ACTIVO también: si WhatsApp entregó el QR pero reportó una falla, el
+  // cliente puede pagarlo sin que el cobro haya pasado a ENVIADO. Manda el
+  // banco, no nuestro registro del envío (regla #1).
+  PAGO_DETECTADO: ['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO'],
   PAGO_CONCILIADO: ['PAGO_DETECTADO'],
   CONCILIACION_FALLIDA: ['PAGO_DETECTADO'],
   QR_VENCIDO: ['QR_ACTIVO', 'ENVIADO'],

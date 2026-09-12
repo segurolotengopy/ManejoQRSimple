@@ -25,6 +25,7 @@ import {
   type Cobro,
   type CobroRepository,
   type ErrorPuerto,
+  type EstadoCobro,
   type EvidenceStore,
   type RegistroEvidencia,
   type Resultado,
@@ -45,7 +46,7 @@ export const SUBCOLECCION_QRS = 'qrs';
 export const SUBCOLECCION_EVIDENCIA = 'evidencia';
 
 /** Estados en los que el watcher todavía tiene que mirar el cobro. */
-const ESTADOS_PENDIENTES = ['ENVIADO', 'COMPROBANTE_RECIBIDO'] as const;
+const ESTADOS_PENDIENTES = ['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO'] as const;
 
 /** Código gRPC de Firestore para "el documento ya existe". */
 const YA_EXISTE = 6;
@@ -114,10 +115,34 @@ export class CobroRepositoryFirestore implements CobroRepository {
    * escrita, y una versión que ya existía se ignora en silencio porque volver a
    * guardar es normal (el mismo cobro se guarda en cada transición).
    */
-  async guardar(cobro: Cobro): Promise<Resultado<void, ErrorPuerto>> {
+  async guardar(cobro: Cobro, estadoEsperado?: EstadoCobro): Promise<Resultado<void, ErrorPuerto>> {
     try {
       const ref = this.cobros.doc(cobro.id);
-      await ref.set(cobroADocumento(cobro));
+      if (estadoEsperado === undefined) {
+        await ref.set(cobroADocumento(cobro));
+      } else {
+        // Leer y escribir en una transacción: si otro proceso cambió el estado
+        // en el medio, Firestore reintenta la función y la condición lo ve.
+        const escrito = await this.db.runTransaction(async (tx) => {
+          const actual = await tx.get(ref);
+          const datos = actual.data() as { estado?: unknown } | undefined;
+          // Un cobro que todavía no existe está, a estos efectos, en BORRADOR.
+          const estadoActual = actual.exists ? datos?.estado : 'BORRADOR';
+          if (estadoActual !== estadoEsperado) {
+            return false;
+          }
+          tx.set(ref, cobroADocumento(cobro));
+          return true;
+        });
+        if (!escrito) {
+          return fallo({
+            tipo: 'CONFLICTO',
+            mensaje: `El cobro ${cobro.id} cambió de estado mientras se operaba`,
+            reintentable: false,
+            codigoProveedor: null,
+          });
+        }
+      }
 
       if (cobro.qrVigente !== null) {
         const qrRef = ref

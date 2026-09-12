@@ -116,6 +116,13 @@ function comoHttp(err: ErrorCasoUso): Respuesta {
         'Llegó un pago al QR vencido: el cobro pasó a revisión y no se hizo la operación.',
       );
     case 'PUERTO':
+      if (err.error.tipo === 'CONFLICTO') {
+        return error(
+          409,
+          'CONFLICTO',
+          'El cobro cambió mientras operabas (el satélite pudo haberlo actualizado). Actualizá y volvé a intentar.',
+        );
+      }
       return err.error.reintentable
         ? error(503, 'SERVICIO_NO_DISPONIBLE', 'Un servicio externo no respondió. Reintentá.')
         : error(502, 'PROVEEDOR_RECHAZO', 'Un servicio externo rechazó la operación.');

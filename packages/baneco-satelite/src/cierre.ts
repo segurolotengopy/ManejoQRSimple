@@ -1,5 +1,5 @@
 /**
- * El cierre diario: conciliar los pagos del día anterior contra los cobros.
+ * El cierre diario: conciliar los pagos de los días anteriores contra los cobros.
  *
  * Es la red de seguridad del polling (análisis Baneco §4.3). Si una consulta
  * puntual se perdió un pago —el satélite estaba caído, el banco no respondía,
@@ -7,12 +7,13 @@
  * aparece.
  *
  * Cuándo corre lo decide la respuesta D7 del banco: `paidQR` informa en hora de
- * Bolivia y el día anterior está completo desde las 00:00:01. Así que se cierra
- * "ayer" apenas cambia el día boliviano, y también al arrancar el proceso, por
- * si estuvo apagado a medianoche.
+ * Bolivia y el día anterior está completo desde las 00:00:01. No se cierra solo
+ * "ayer": se revisan los últimos `DIAS_DE_CIERRE` días que no se hayan cerrado
+ * bien, así un satélite apagado un fin de semana no deja días sin red. Repetir
+ * un día no duplica nada — `conciliarDia` es idempotente.
  *
- * Como `pasada.ts`, es una función sin temporizadores ni I/O propio: el proceso
- * guarda qué día cerró por última vez y se lo pasa.
+ * Como `pasada.ts`, son funciones sin temporizadores ni I/O propio: el proceso
+ * guarda qué días cerró y se lo pasa.
  */
 
 import {
@@ -27,55 +28,80 @@ import {
 const OFFSET_BOLIVIA_MS = -4 * 3_600_000;
 const DIA_MS = 86_400_000;
 
+/**
+ * Cuántos días hacia atrás se miran. Cubre un fin de semana largo con el
+ * satélite apagado; más atrás, el día se concilia a mano (y se avisa).
+ */
+export const DIAS_DE_CIERRE = 3;
+
 /** `yyyy-MM-dd` del instante, en hora de Bolivia. */
 export function diaBoliviano(instante: Date): string {
   return new Date(instante.getTime() + OFFSET_BOLIVIA_MS).toISOString().slice(0, 10);
 }
 
+export type DiaACerrar = { readonly clave: string; readonly fecha: Date };
+
 /**
- * El día que corresponde cerrar en este instante: el anterior, en hora de
- * Bolivia. `fecha` es un instante dentro de ese día, que es lo que espera el
- * `PaymentWatcher`.
+ * Los días de la ventana que todavía no se cerraron, del más viejo al más
+ * nuevo. `fecha` es un instante dentro de ese día, que es lo que espera el
+ * `PaymentWatcher`. El día en curso nunca entra: su reporte no está completo.
  */
-export function diaACerrar(ahora: Date): { readonly clave: string; readonly fecha: Date } {
-  const fecha = new Date(ahora.getTime() - DIA_MS);
-  return { clave: diaBoliviano(fecha), fecha };
+export function diasACerrar(ahora: Date, cerrados: ReadonlySet<string>): readonly DiaACerrar[] {
+  const dias: DiaACerrar[] = [];
+  for (let atras = DIAS_DE_CIERRE; atras >= 1; atras -= 1) {
+    const fecha = new Date(ahora.getTime() - atras * DIA_MS);
+    const clave = diaBoliviano(fecha);
+    if (!cerrados.has(clave)) {
+      dias.push({ clave, fecha });
+    }
+  }
+  return dias;
+}
+
+/** Días de la lista que ya quedaron fuera de la ventana de cierre. */
+export function fueraDeVentana(ahora: Date, claves: Iterable<string>): readonly string[] {
+  const masViejo = diaBoliviano(new Date(ahora.getTime() - DIAS_DE_CIERRE * DIA_MS));
+  // Las claves `yyyy-MM-dd` se ordenan igual como texto que como fecha.
+  return [...claves].filter((clave) => clave < masViejo);
 }
 
 export type ResultadoCierre =
-  | { readonly tipo: 'YA_CERRADO' }
   | { readonly tipo: 'CERRADO'; readonly clave: string; readonly resumen: ResumenConciliacionDiaria }
   | { readonly tipo: 'ERROR'; readonly clave: string; readonly error: ErrorCasoUso };
 
 /**
- * Cierra el día anterior si todavía no se cerró.
- *
- * Un error no marca el día como cerrado: la próxima pasada lo reintenta. Un
- * cierre que falla en silencio es un día sin red de seguridad.
+ * ¿Quedó cerrado del todo? Un día con abonos que no se pudieron procesar no
+ * cuenta como cerrado: se vuelve a intentar en la próxima pasada.
  */
-export async function cerrarDiaSiCorresponde(
+export function cerroCompleto(resultado: ResultadoCierre): boolean {
+  return resultado.tipo === 'CERRADO' && resultado.resumen.conError.length === 0;
+}
+
+/** Cierra, en orden, los días de la ventana que falten. */
+export async function cerrarDiasPendientes(
   deps: DepsVerificacion,
   ahora: Date,
-  ultimoCerrado: string | null,
-): Promise<ResultadoCierre> {
-  const { clave, fecha } = diaACerrar(ahora);
-  if (clave === ultimoCerrado) {
-    return { tipo: 'YA_CERRADO' };
+  cerrados: ReadonlySet<string>,
+): Promise<readonly ResultadoCierre[]> {
+  const resultados: ResultadoCierre[] = [];
+  for (const { clave, fecha } of diasACerrar(ahora, cerrados)) {
+    const resultado = await conciliarDia(deps, fecha, ahora);
+    resultados.push(
+      esExito(resultado)
+        ? { tipo: 'CERRADO', clave, resumen: resultado.valor }
+        : { tipo: 'ERROR', clave, error: resultado.error },
+    );
   }
-
-  const resultado = await conciliarDia(deps, fecha, ahora);
-  return esExito(resultado)
-    ? { tipo: 'CERRADO', clave, resumen: resultado.valor }
-    : { tipo: 'ERROR', clave, error: resultado.error };
+  return resultados;
 }
 
 /**
- * Línea de log del cierre. Solo conteos: los ids de los abonos huérfanos se
+ * Línea de log del cierre. Solo conteos: los ids de los abonos para revisar se
  * listan aparte, y son claves del banco (`baneco:{qrId}:{transactionId}`), sin
  * datos del pagador (reglas #4 y #9).
  */
 export function describirCierre(clave: string, resumen: ResumenConciliacionDiaria): string {
-  return [
+  const partes = [
     `cierre ${clave}:`,
     `abonos=${String(resumen.abonosLeidos)}`,
     `confirmados=${String(resumen.confirmados.length)}`,
@@ -83,5 +109,9 @@ export function describirCierre(clave: string, resumen: ResumenConciliacionDiari
     `yaRegistrados=${String(resumen.yaRegistrados)}`,
     `sinCorroborar=${String(resumen.sinCorroborar.length)}`,
     `huerfanos=${String(resumen.huerfanos.length)}`,
-  ].join(' ');
+  ];
+  if (resumen.conError.length > 0) {
+    partes.push(`conError=${String(resumen.conError.length)}`);
+  }
+  return partes.join(' ');
 }

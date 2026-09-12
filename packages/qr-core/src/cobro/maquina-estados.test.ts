@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { esExito, esFallo } from '../comun/resultado.js';
+import { esExito, esFallo, exito } from '../comun/resultado.js';
+import { anularEnProveedor } from './anulacion.js';
 import {
   conciliar,
   POLITICA_POR_DEFECTO,
@@ -11,8 +12,23 @@ import { bs, enMinutos, T0, unCobro, unCobroEn, unQr } from '../pruebas/fixtures
 import { ESTADOS, ESTADOS_TERMINALES, type EstadoCobro } from './estados.js';
 import { transicionar, type EventoCobro, type QrAnulado, type TipoEvento } from './maquina-estados.js';
 
-/** Constancia de anulación del QR de fixture (`unQr()` usa `qr-000001`). */
-const ANULACION: QrAnulado = { referenciaProveedor: 'qr-000001', anuladoEn: T0 };
+/**
+ * Constancia de anulación real, por la única vía que existe. En los tests el
+ * anulador es un doble que siempre dice que sí.
+ */
+async function constancia(referenciaProveedor: string): Promise<QrAnulado> {
+  const anulador = { anular: () => Promise.resolve(exito(undefined)) };
+  const r = await anularEnProveedor(anulador, { referenciaProveedor }, T0);
+  if (!esExito(r)) {
+    throw new Error('el anulador de prueba no falla');
+  }
+  return r.valor;
+}
+
+/** Del QR de fixture: `unQr()` usa `qr-000001`. */
+const ANULACION = await constancia('qr-000001');
+/** De una versión anterior: no deja muerto al QR vigente. */
+const ANULACION_DE_OTRO_QR = await constancia('qr-anterior');
 
 /** Una detección que concilia contra el cobro por defecto. */
 const deteccionValida = registrarDeteccion({
@@ -73,6 +89,7 @@ const TRANSICIONES_ESPERADAS: ReadonlyArray<readonly [EstadoCobro, TipoEvento, E
   ['BORRADOR', 'QR_EMITIDO', 'QR_ACTIVO'],
   ['QR_ACTIVO', 'QR_ENVIADO', 'ENVIADO'],
   ['ENVIADO', 'COMPROBANTE_RECIBIDO', 'COMPROBANTE_RECIBIDO'],
+  ['QR_ACTIVO', 'PAGO_DETECTADO', 'PAGO_DETECTADO'],
   ['ENVIADO', 'PAGO_DETECTADO', 'PAGO_DETECTADO'],
   ['COMPROBANTE_RECIBIDO', 'PAGO_DETECTADO', 'PAGO_DETECTADO'],
   ['PAGO_DETECTADO', 'PAGO_CONCILIADO', 'CONFIRMADO'],
@@ -159,7 +176,15 @@ function eventosPorTipo(): Record<TipoEvento, true> {
 }
 
 describe('un QR pagable no se suelta sin anularlo en el proveedor (Baneco C4)', () => {
-  const deOtroQr: QrAnulado = { referenciaProveedor: 'qr-anterior', anuladoEn: T0 };
+  const deOtroQr = ANULACION_DE_OTRO_QR;
+
+  it('la constancia de anulación no se fabrica a mano', () => {
+    // Test de compilación, como el de ConciliacionAprobada: si el tipo dejara
+    // de estar marcado, `@ts-expect-error` sobraría y el typecheck fallaría.
+    // @ts-expect-error falta la marca nominal: solo sale de anularEnProveedor().
+    const falsa: QrAnulado = { referenciaProveedor: 'qr-000001', anuladoEn: T0 };
+    expect(falsa.referenciaProveedor).toBe('qr-000001');
+  });
 
   it.each(['QR_ACTIVO', 'ENVIADO'] as const)('%s no vence sin la anulación del QR vigente', (estado) => {
     // Anular una versión anterior no deja muerta la vigente.

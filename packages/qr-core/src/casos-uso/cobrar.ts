@@ -10,17 +10,23 @@
  * Invariantes que sostienen todos:
  *
  * - **Ninguna transición se aplica sin dejar evidencia.** `aplicar()` es el
- *   único camino, escribe la evidencia primero y el estado después.
+ *   único camino, escribe la evidencia primero y el estado después, y el
+ *   estado solo se escribe si el guardado sigue en el estado del que partió
+ *   la transición (una escritura concurrente no pisa a otra).
  * - **Antes de soltar un QR, se mira el banco y se lo anula allá.** El banco
  *   vence los QR por día, no por hora (respuesta C4 de Baneco): un cobro que
  *   vence, se renueva o se anula en nuestro reloj seguiría cobrable en el
  *   banco hasta la medianoche. La máquina de estados exige la constancia de
  *   anulación; estos casos de uso son los que la consiguen.
+ * - **Después de anular, se vuelve a mirar.** Entre la consulta y la anulación
+ *   el cliente pudo pagar. Una vez anulado, el QR ya no cambia: la segunda
+ *   consulta es la definitiva.
  * - **Se pregunta si la transición corresponde antes de tocar el banco.** Un
  *   QR emitido o anulado en el banco por un pedido que después resulta
  *   inválido es un efecto real sin su registro.
  */
 
+import { anularEnProveedor, type QrAnulado } from '../cobro/anulacion.js';
 import { qrEstaVencido, type Cobro, type QrEmitido } from '../cobro/cobro.js';
 import {
   tieneQrPagable,
@@ -28,7 +34,6 @@ import {
   verificarAdmision,
   type ErrorTransicion,
   type EventoCobro,
-  type QrAnulado,
   type RegistroEvidencia,
 } from '../cobro/maquina-estados.js';
 import { esExito, exito, fallo, type Resultado } from '../comun/resultado.js';
@@ -103,6 +108,11 @@ export type ErrorCasoUso =
 const dePuerto = (error: ErrorPuerto): ErrorCasoUso => ({ tipo: 'PUERTO', error });
 const deTransicion = (error: ErrorTransicion): ErrorCasoUso => ({ tipo: 'TRANSICION', error });
 
+/** Estados cuyo QR el cliente puede estar pagando ahora mismo. */
+const ESPERANDO_PAGO = ['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO'] as const;
+const esperaPago = (cobro: Cobro): boolean =>
+  (ESPERANDO_PAGO as readonly string[]).includes(cobro.estado);
+
 /**
  * Aplica una transición y la persiste.
  *
@@ -111,6 +121,11 @@ const deTransicion = (error: ErrorTransicion): ErrorCasoUso => ({ tipo: 'TRANSIC
  * es una inconsistencia auditable y detectable. Al revés —estado guardado sin
  * evidencia— quedaría un cobro confirmado sin rastro de por qué, que es
  * exactamente lo que la regla #8 existe para impedir.
+ *
+ * El guardado exige que el cobro siga en el estado del que partió la
+ * transición. Si otro proceso lo cambió mientras tanto (el satélite lo
+ * confirmó mientras el dueño lo anulaba), falla con `CONFLICTO` en vez de
+ * pisarlo.
  */
 export async function aplicar(
   deps: DepsPersistencia,
@@ -128,7 +143,7 @@ export async function aplicar(
     return fallo(dePuerto(guardadaEvidencia.error));
   }
 
-  const guardadoCobro = await deps.cobros.guardar(transicion.valor.cobro);
+  const guardadoCobro = await deps.cobros.guardar(transicion.valor.cobro, cobro.estado);
   if (!esExito(guardadoCobro)) {
     return fallo(dePuerto(guardadoCobro.error));
   }
@@ -212,13 +227,15 @@ export async function registrarComprobante(
 /**
  * Anula un cobro por decisión del dueño.
  *
- * En tres pasos, y en este orden:
+ * En este orden:
  * 1. Se pregunta al banco si el QR ya se pagó. Si se pagó, no se anula: un
  *    cobro vigente queda como está para que se verifique; uno vencido pasa a
  *    `EN_REVISION`, porque ahí hay plata real que alguien tiene que mirar.
  * 2. Se anula el QR en el banco, si todavía era pagable. Si el banco no lo
  *    anula, el cobro tampoco: seguiría cobrable y nadie lo miraría.
- * 3. Se registra la anulación, con origen `accion-manual` (regla #8).
+ * 3. Se vuelve a preguntar: el cliente pudo pagar entre 1 y 2. Si pagó, el
+ *    cobro no se anula (queda para que el satélite lo verifique).
+ * 4. Se registra la anulación, con origen `accion-manual` (regla #8).
  */
 export async function anular(
   deps: DepsAnulacion,
@@ -246,11 +263,19 @@ export async function anular(
 
   let anulacion: QrAnulado | null = null;
   if (qr !== null && tieneQrPagable(cobro)) {
-    const anulado = await anularEnProveedor(deps, qr, ahora);
+    const anulado = await anularQr(deps, qr, ahora);
     if (!esExito(anulado)) {
       return anulado;
     }
     anulacion = anulado.valor;
+
+    const despues = await deps.watcher.consultarCobro(qr.referenciaProveedor);
+    if (!esExito(despues)) {
+      return fallo(dePuerto(despues.error));
+    }
+    if (despues.valor !== null) {
+      return fallo({ tipo: 'ABONO_DETECTADO', cobroId: cobro.id });
+    }
   }
 
   const resultado = await aplicar(
@@ -284,7 +309,7 @@ export async function verificarPago(
   cobroInicial: Cobro,
   ahora: Date,
 ): Promise<Resultado<ResultadoVerificacion, ErrorCasoUso>> {
-  if (cobroInicial.estado !== 'ENVIADO' && cobroInicial.estado !== 'COMPROBANTE_RECIBIDO') {
+  if (!esperaPago(cobroInicial)) {
     return exito({ tipo: 'NO_CORRESPONDE', cobro: cobroInicial });
   }
 
@@ -368,41 +393,47 @@ export type ResultadoVigilancia =
   | { readonly tipo: 'VENTANA_AGOTADA'; readonly cobro: Cobro };
 
 /**
- * Lo que el satélite hace con cada cobro pendiente, en este orden:
+ * Lo que el satélite hace con cada cobro que espera un pago, en este orden:
  *
  * 1. **Primero, el banco.** Un pago hecho segundos antes del vencimiento
  *    tiene que conciliar, no terminar en un cobro vencido con la plata
  *    adentro. Por eso se verifica antes de mirar el reloj.
- * 2. Si no hay pago y el QR venció, **se anula en el banco** y recién
- *    entonces el cobro vence (o pasa a revisión, si el cliente había mandado
- *    comprobante). Si el banco no anula, el cobro queda como estaba y se
- *    reintenta en la próxima pasada: sigue pendiente, así que se lo sigue
- *    mirando.
+ * 2. Si no hay pago y el QR venció, **se anula en el banco**. Si el banco no
+ *    anula, el cobro queda como estaba y se reintenta en la próxima pasada:
+ *    sigue esperando pago, así que se lo sigue mirando.
+ * 3. **Se vuelve a mirar el banco.** El cliente pudo pagar entre 1 y 2; ya
+ *    anulado, el QR no cambia más, así que esta consulta es la última palabra.
+ *    Si pagó, concilia como cualquier pago.
+ * 4. Recién entonces el cobro vence (o pasa a revisión, si el cliente había
+ *    mandado comprobante).
  */
 export async function vigilar(
   deps: DepsVigilancia,
   cobro: Cobro,
   ahora: Date,
 ): Promise<Resultado<ResultadoVigilancia, ErrorCasoUso>> {
-  if (cobro.estado === 'ENVIADO' || cobro.estado === 'COMPROBANTE_RECIBIDO') {
-    const verificado = await verificarPago(deps, cobro, ahora);
-    if (!esExito(verificado) || verificado.valor.tipo !== 'SIN_ABONO') {
-      return verificado;
-    }
-  } else if (cobro.estado !== 'QR_ACTIVO') {
+  if (!esperaPago(cobro)) {
     return exito({ tipo: 'NO_CORRESPONDE', cobro });
+  }
+
+  const antes = await verificarPago(deps, cobro, ahora);
+  if (!esExito(antes) || antes.valor.tipo !== 'SIN_ABONO') {
+    return antes;
   }
 
   const qr = cobro.qrVigente;
   if (qr === null || !qrEstaVencido(cobro, ahora)) {
-    return exito(
-      cobro.estado === 'QR_ACTIVO' ? { tipo: 'NO_CORRESPONDE', cobro } : { tipo: 'SIN_ABONO', cobro },
-    );
+    return antes;
   }
 
-  const anulacion = await anularEnProveedor(deps, qr, ahora);
+  const anulacion = await anularQr(deps, qr, ahora);
   if (!esExito(anulacion)) {
     return anulacion;
+  }
+
+  const despues = await verificarPago(deps, cobro, ahora);
+  if (!esExito(despues) || despues.valor.tipo !== 'SIN_ABONO') {
+    return despues;
   }
 
   const agotada = cobro.estado === 'COMPROBANTE_RECIBIDO';
@@ -454,23 +485,39 @@ export type ResumenConciliacionDiaria = {
   readonly abonosLeidos: number;
   readonly confirmados: readonly string[];
   readonly enRevision: readonly string[];
-  /** Abonos de cobros que ya tenían su pago registrado (el caso normal). */
+  /** Abonos que ya figuran en la evidencia de su cobro (el caso normal). */
   readonly yaRegistrados: number;
   /**
-   * El reporte del día trae el pago, pero la consulta puntual no lo confirma.
-   * El banco se contradice: no se transiciona nada y lo mira una persona.
+   * El banco reporta el pago, pero ni la consulta puntual ni la evidencia lo
+   * respaldan. No se transiciona nada: lo mira una persona.
    */
   readonly sinCorroborar: readonly string[];
-  /** Abonos que no corresponden a ningún cobro vivo: plata sin dueño. */
+  /** Abonos que no corresponden a ningún cobro que los espere: plata sin dueño. */
   readonly huerfanos: readonly string[];
+  /**
+   * Abonos que no se pudieron procesar (un puerto falló). No cortan el resto
+   * del día; el cierre se reintenta y, como es idempotente, no duplica nada.
+   */
+  readonly conError: readonly { readonly idDeduplicacion: string; readonly error: ErrorCasoUso }[];
 };
+
+type DestinoAbono =
+  | 'confirmado'
+  | 'enRevision'
+  | 'yaRegistrado'
+  | 'sinCorroborar'
+  | 'huerfano';
 
 /**
  * Cierre del día: contrasta los abonos que informa el banco contra los cobros.
  *
  * Es la red de seguridad del polling. Cada abono se busca por su QR, en
  * **cualquier** estado del cobro: un pago de un cobro ya confirmado es el caso
- * normal, no un huérfano. Lo que nunca pasa es descartar un abono en silencio.
+ * normal, no un huérfano — siempre que figure en su evidencia. Lo que nunca
+ * pasa es descartar un abono en silencio.
+ *
+ * Es idempotente: correrlo dos veces sobre el mismo día no duplica nada, porque
+ * lo que ya se registró la primera vez figura en la evidencia la segunda.
  */
 export async function conciliarDia(
   deps: DepsVerificacion,
@@ -486,59 +533,29 @@ export async function conciliarDia(
   const enRevision: string[] = [];
   const sinCorroborar: string[] = [];
   const huerfanos: string[] = [];
+  const conError: { idDeduplicacion: string; error: ErrorCasoUso }[] = [];
   let yaRegistrados = 0;
 
   for (const abono of abonos.valor) {
-    const referencia = referenciaDe(abono.idDeduplicacion);
-    const encontrado =
-      referencia === null ? exito(null) : await deps.cobros.buscarPorReferenciaQr(referencia);
-    if (!esExito(encontrado)) {
-      return fallo(dePuerto(encontrado.error));
-    }
-    const cobro = encontrado.valor;
-    if (cobro === null) {
-      huerfanos.push(abono.idDeduplicacion);
+    const destino = await destinoDelAbono(deps, abono, ahora);
+    if (!esExito(destino)) {
+      conError.push({ idDeduplicacion: abono.idDeduplicacion, error: destino.error });
       continue;
     }
-
-    switch (cobro.estado) {
-      case 'ENVIADO':
-      case 'COMPROBANTE_RECIBIDO': {
-        const verificado = await verificarPago(deps, cobro, ahora);
-        if (!esExito(verificado)) {
-          return verificado;
-        }
-        if (verificado.valor.tipo === 'CONFIRMADO') {
-          confirmados.push(cobro.id);
-        } else if (verificado.valor.tipo === 'EN_REVISION') {
-          enRevision.push(cobro.id);
-        } else {
-          sinCorroborar.push(abono.idDeduplicacion);
-        }
+    switch (destino.valor.destino) {
+      case 'confirmado':
+        confirmados.push(destino.valor.cobroId);
         break;
-      }
-      case 'VENCIDO': {
-        // El reporte del banco es una consulta saliente autenticada: basta
-        // como detección (BANECO-1). Pero sobre un QR vencido no concilia
-        // sola: la decide una persona.
-        const revisado = await registrarAbonoTardio(deps, cobro, abono, ahora);
-        if (!esExito(revisado)) {
-          return revisado;
-        }
-        enRevision.push(cobro.id);
+      case 'enRevision':
+        enRevision.push(destino.valor.cobroId);
         break;
-      }
-      case 'PAGO_DETECTADO':
-      case 'CONFIRMADO':
-      case 'EN_REVISION':
-      case 'RECHAZADO':
+      case 'yaRegistrado':
         yaRegistrados += 1;
         break;
-      case 'BORRADOR':
-      case 'QR_ACTIVO':
-      case 'ANULADO':
-        // Pago sobre un QR que nunca se envió o que se anuló: no hay cobro que
-        // lo espere. Plata sin dueño, para una persona.
+      case 'sinCorroborar':
+        sinCorroborar.push(abono.idDeduplicacion);
+        break;
+      case 'huerfano':
         huerfanos.push(abono.idDeduplicacion);
         break;
     }
@@ -551,20 +568,82 @@ export async function conciliarDia(
     yaRegistrados,
     sinCorroborar,
     huerfanos,
+    conError,
   });
 }
 
+/** Qué hacer con un abono del reporte diario, según el cobro al que pertenece. */
+async function destinoDelAbono(
+  deps: DepsVerificacion,
+  abono: DeteccionDePago,
+  ahora: Date,
+): Promise<Resultado<{ readonly destino: DestinoAbono; readonly cobroId: string }, ErrorCasoUso>> {
+  const referencia = referenciaDe(abono.idDeduplicacion);
+  const encontrado =
+    referencia === null ? exito(null) : await deps.cobros.buscarPorReferenciaQr(referencia);
+  if (!esExito(encontrado)) {
+    return fallo(dePuerto(encontrado.error));
+  }
+  const cobro = encontrado.valor;
+  if (cobro === null) {
+    return exito({ destino: 'huerfano', cobroId: '' });
+  }
+  const cobroId = cobro.id;
+
+  switch (cobro.estado) {
+    case 'QR_ACTIVO':
+    case 'ENVIADO':
+    case 'COMPROBANTE_RECIBIDO': {
+      const verificado = await verificarPago(deps, cobro, ahora);
+      if (!esExito(verificado)) {
+        return verificado;
+      }
+      const tipo = verificado.valor.tipo;
+      return exito({
+        destino:
+          tipo === 'CONFIRMADO' ? 'confirmado' : tipo === 'EN_REVISION' ? 'enRevision' : 'sinCorroborar',
+        cobroId,
+      });
+    }
+    case 'VENCIDO': {
+      // El reporte del banco es una consulta saliente autenticada: basta
+      // como detección (BANECO-1). Pero sobre un QR vencido no concilia
+      // sola: la decide una persona.
+      const revisado = await registrarAbonoTardio(deps, cobro, abono, ahora);
+      return esExito(revisado) ? exito({ destino: 'enRevision', cobroId }) : revisado;
+    }
+    case 'PAGO_DETECTADO':
+    case 'CONFIRMADO':
+    case 'EN_REVISION':
+    case 'RECHAZADO': {
+      // Solo es "ya registrado" si **este** abono figura en la evidencia. Un
+      // cobro en revisión por comprobante sin pago, o uno ya confirmado con
+      // otro abono, no explica este.
+      const registros = await deps.evidencia.listarDeCobro(cobroId);
+      if (!esExito(registros)) {
+        return fallo(dePuerto(registros.error));
+      }
+      const figura = registros.valor.some(
+        (r) => r.datos['idDeduplicacion'] === abono.idDeduplicacion,
+      );
+      return exito({ destino: figura ? 'yaRegistrado' : 'sinCorroborar', cobroId });
+    }
+    case 'BORRADOR':
+    case 'ANULADO':
+      // Pago sobre un QR que nunca se emitió o que se anuló: no hay cobro que
+      // lo espere. Plata sin dueño, para una persona.
+      return exito({ destino: 'huerfano', cobroId });
+  }
+}
+
 /** Anula el QR en el proveedor y devuelve la constancia que exige la máquina. */
-async function anularEnProveedor(
+async function anularQr(
   deps: Pick<Dependencias, 'qr'>,
   qr: QrEmitido,
   ahora: Date,
 ): Promise<Resultado<QrAnulado, ErrorCasoUso>> {
-  const anulado = await deps.qr.anular(qr.referenciaProveedor);
-  if (!esExito(anulado)) {
-    return fallo(dePuerto(anulado.error));
-  }
-  return exito({ referenciaProveedor: qr.referenciaProveedor, anuladoEn: ahora });
+  const anulado = await anularEnProveedor(deps.qr, qr, ahora);
+  return esExito(anulado) ? anulado : fallo(dePuerto(anulado.error));
 }
 
 /** Lleva a `EN_REVISION` un cobro vencido cuyo QR el banco reporta pagado. */

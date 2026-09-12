@@ -6,10 +6,10 @@
  * devuelve un resumen — así se puede probar entera con mocks, en CI, sin banco
  * ni Firestore.
  *
- * Lo que hace, por cobro pendiente:
- * 1. Si el QR venció, marcarlo `VENCIDO`. **Antes** de consultar el banco: un
- *    cobro vencido ya no es candidato a confirmarse solo.
- * 2. Si sigue vigente, preguntarle al banco y conciliar (`verificarPago`).
+ * Por cada cobro pendiente llama a `vigilar()` de `qr-core`, que decide el
+ * orden: primero pregunta al banco, y solo si no hay pago y el QR venció, lo
+ * anula en el banco y vence el cobro. Ese orden es regla de negocio, y por eso
+ * vive en el dominio y no acá.
  *
  * El satélite **no renueva ni reenvía**: eso lo decide el dueño desde la
  * consola. Un proceso que renueva solo podría reemitir QRs indefinidamente
@@ -18,10 +18,9 @@
 
 import {
   esExito,
-  vencerSiCorresponde,
-  verificarPago,
+  vigilar,
   type Cobro,
-  type DepsVerificacion,
+  type DepsVigilancia,
   type ErrorCasoUso,
 } from '@mqs/qr-core';
 
@@ -36,7 +35,7 @@ export type ResumenPasada = {
 };
 
 export async function unaPasada(
-  deps: DepsVerificacion,
+  deps: DepsVigilancia,
   ahora: Date,
 ): Promise<ResumenPasada | { readonly errorFatal: ErrorCasoUso }> {
   const pendientes = await deps.cobros.listarPendientes();
@@ -90,30 +89,23 @@ type ResultadoCobro =
   | { readonly tipo: 'ERROR'; readonly error: ErrorCasoUso };
 
 async function revisarCobro(
-  deps: DepsVerificacion,
+  deps: DepsVigilancia,
   cobro: Cobro,
   ahora: Date,
 ): Promise<ResultadoCobro> {
-  // Primero el vencimiento: un QR vencido no puede confirmarse solo, y dejarlo
-  // en ENVIADO haría que el satélite lo consultara para siempre.
-  const trasVencimiento = await vencerSiCorresponde(deps, cobro, ahora);
-  if (!esExito(trasVencimiento)) {
-    return { tipo: 'ERROR', error: trasVencimiento.error };
-  }
-  if (trasVencimiento.valor.estado === 'VENCIDO') {
-    return { tipo: 'VENCIDO' };
+  const vigilado = await vigilar(deps, cobro, ahora);
+  if (!esExito(vigilado)) {
+    return { tipo: 'ERROR', error: vigilado.error };
   }
 
-  const verificado = await verificarPago(deps, trasVencimiento.valor, ahora);
-  if (!esExito(verificado)) {
-    return { tipo: 'ERROR', error: verificado.error };
-  }
-
-  switch (verificado.valor.tipo) {
+  switch (vigilado.valor.tipo) {
     case 'CONFIRMADO':
       return { tipo: 'CONFIRMADO' };
     case 'EN_REVISION':
+    case 'VENTANA_AGOTADA':
       return { tipo: 'EN_REVISION' };
+    case 'VENCIDO':
+      return { tipo: 'VENCIDO' };
     case 'SIN_ABONO':
       return { tipo: 'SIN_ABONO' };
     case 'NO_CORRESPONDE':

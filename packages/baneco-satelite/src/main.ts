@@ -26,6 +26,7 @@ import { esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
+import { cerrarDiasPendientes, cerroCompleto, describirCierre, fueraDeVentana } from './cierre.js';
 import { describirPasada, unaPasada } from './pasada.js';
 
 /**
@@ -77,11 +78,19 @@ async function main(): Promise<number> {
   console.log('▶ Satélite Baneco');
   console.log(`  Adaptadores: ${puertos.valor.resumen}`);
   console.log(unaSola ? '  Modo: una sola pasada.' : `  Intervalo: ${String(intervalo)} s.`);
-  console.log('  Verifica y concilia; no emite ni renueva QRs.\n');
+  console.log('  Verifica, concilia y anula en el banco los QRs que vencen; no emite ni renueva.');
+  console.log('  Cierra los días anteriores contra el reporte paidQR del banco.\n');
 
   // En un objeto y no en un `let`: el manejador de señal lo muta desde una
   // clausura, y TypeScript no puede ver eso en una variable local.
   const control = { corriendo: true };
+  /**
+   * Días bolivianos cerrados sin errores, y días intentados que todavía no.
+   * En memoria: al arrancar se revisa la ventana entera de nuevo, y como el
+   * cierre es idempotente, repetir un día no duplica nada.
+   */
+  const cerrados = new Set<string>();
+  const sinCerrar = new Set<string>();
   /** Se lee por función: así el análisis de flujo no la estrecha a `true`. */
   const sigue = (): boolean => control.corriendo;
   const detener = (senal: string): void => {
@@ -107,6 +116,36 @@ async function main(): Promise<number> {
       for (const { cobroId, error } of resultado.conError) {
         console.error(`  ! cobro ${cobroId}: ${error.tipo}`);
       }
+      const ahora = new Date();
+      for (const cierre of await cerrarDiasPendientes(puertos.valor.deps, ahora, cerrados)) {
+        if (cierre.tipo === 'CERRADO') {
+          console.log(`${ahora.toISOString()} ${describirCierre(cierre.clave, cierre.resumen)}`);
+          for (const id of [...cierre.resumen.huerfanos, ...cierre.resumen.sinCorroborar]) {
+            // Plata en la cuenta que ningún cobro explica: nunca se descarta.
+            console.warn(`  ! abono para revisar a mano: ${id}`);
+          }
+          for (const { idDeduplicacion, error } of cierre.resumen.conError) {
+            console.error(`  ! abono ${idDeduplicacion} sin procesar (${error.tipo}); se reintenta.`);
+          }
+        } else {
+          console.error(`  ! cierre ${cierre.clave} fallido (${cierre.error.tipo}); se reintenta.`);
+        }
+        if (cerroCompleto(cierre)) {
+          cerrados.add(cierre.clave);
+          sinCerrar.delete(cierre.clave);
+        } else {
+          sinCerrar.add(cierre.clave);
+        }
+      }
+      for (const clave of fueraDeVentana(ahora, sinCerrar)) {
+        // Salió de la ventana sin cerrarse: ya no se reintenta solo.
+        console.error(`✖ El día ${clave} quedó sin cerrar: conciliarlo a mano contra paidQR.`);
+        sinCerrar.delete(clave);
+      }
+      for (const clave of fueraDeVentana(ahora, cerrados)) {
+        cerrados.delete(clave);
+      }
+
       const sinEnviar = mensajeria.drenar();
       if (sinEnviar.length > 0) {
         console.warn(

@@ -14,6 +14,7 @@
 import type { Centavos } from '../comun/dinero.js';
 import type { Resultado } from '../comun/resultado.js';
 import type { Cobro, OrigenQr, QrEmitido } from '../cobro/cobro.js';
+import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
 
@@ -25,7 +26,16 @@ import type { DeteccionDePago } from '../conciliacion/deteccion.js';
  * empírico de errores del banco (pregunta E1), no para ramificar lógica.
  */
 export type ErrorPuerto = {
-  readonly tipo: 'INDISPONIBLE' | 'RECHAZADO_POR_PROVEEDOR' | 'RESPUESTA_INVALIDA' | 'NO_AUTORIZADO';
+  /**
+   * `CONFLICTO`: el dato cambió entre que se leyó y se quiso escribir (otro
+   * proceso lo modificó). No se reintenta a ciegas: hay que releer.
+   */
+  readonly tipo:
+    | 'INDISPONIBLE'
+    | 'RECHAZADO_POR_PROVEEDOR'
+    | 'RESPUESTA_INVALIDA'
+    | 'NO_AUTORIZADO'
+    | 'CONFLICTO';
   readonly mensaje: string;
   readonly reintentable: boolean;
   readonly codigoProveedor: string | null;
@@ -83,10 +93,23 @@ export interface MessagingProvider {
 /** Persistencia del cobro. Nada llama al SDK de Firestore fuera del adaptador. */
 export interface CobroRepository {
   obtener(id: string): Promise<Resultado<Cobro | null, ErrorPuerto>>;
-  guardar(cobro: Cobro): Promise<Resultado<void, ErrorPuerto>>;
   /**
-   * Cobros que el watcher debe seguir mirando (`ENVIADO`,
-   * `COMPROBANTE_RECIBIDO`). Es la pregunta del satélite, no la de la consola.
+   * Guarda el cobro.
+   *
+   * Con `estadoEsperado`, solo escribe si el cobro guardado sigue en ese
+   * estado —uno que todavía no existe cuenta como `BORRADOR`—; si no, falla
+   * con `CONFLICTO` sin escribir. Es lo que usa toda transición: sin eso, el
+   * dueño anulando un cobro que el satélite acaba de confirmar pisaría el
+   * `CONFIRMADO` con su copia vieja. Sin `estadoEsperado` escribe siempre
+   * (sembrar datos en tests y demos).
+   */
+  guardar(cobro: Cobro, estadoEsperado?: EstadoCobro): Promise<Resultado<void, ErrorPuerto>>;
+  /**
+   * Cobros que el watcher debe seguir mirando: los que esperan un pago
+   * (`QR_ACTIVO`, `ENVIADO`, `COMPROBANTE_RECIBIDO`). `QR_ACTIVO` está porque
+   * WhatsApp puede entregar el QR aunque reporte una falla, y porque su QR
+   * también hay que anularlo al vencer. Es la pregunta del satélite, no la de
+   * la consola.
    */
   listarPendientes(): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
 
@@ -99,6 +122,15 @@ export interface CobroRepository {
    * dejaría a una de las dos mal servida.
    */
   listarRecientes(limite: number): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
+
+  /**
+   * El cobro cuyo QR **vigente** tiene esta referencia del proveedor, en
+   * cualquier estado. `null` si no hay ninguno.
+   *
+   * Es la pregunta de la conciliación diaria: el banco informa pagos por QR, y
+   * un pago de un cobro ya confirmado no es un huérfano — es el caso normal.
+   */
+  buscarPorReferenciaQr(referenciaProveedor: string): Promise<Resultado<Cobro | null, ErrorPuerto>>;
   /**
    * Claves de deduplicación ya aplicadas a un cobro (regla #7).
    *

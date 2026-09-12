@@ -14,13 +14,34 @@
  * 2. Cada transición devuelve su `RegistroEvidencia` — con timestamp, origen y
  *    datos mínimos — para que el repositorio lo agregue. La evidencia es
  *    append-only (regla #8): esta función nunca reescribe nada, solo emite.
+ * 3. Un cobro **no abandona un QR que el cliente todavía puede pagar** sin la
+ *    constancia de haberlo anulado en el proveedor (`QrAnulado`). El banco
+ *    vence los QR por día, no por hora (respuesta C4 de Baneco): sin esta
+ *    guarda, un cobro vencido o anulado en nuestro reloj seguiría cobrable
+ *    en el banco, y el pago entraría sin que nadie lo mire.
  */
 
 import { exito, fallo, type Resultado } from '../comun/resultado.js';
 import type { ConciliacionAprobada, MotivoRechazo } from '../conciliacion/conciliar.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
+import type { QrAnulado } from './anulacion.js';
 import type { Cobro, QrEmitido } from './cobro.js';
 import { esTerminal, type EstadoCobro, type OrigenTransicion } from './estados.js';
+
+export type { QrAnulado };
+
+/**
+ * Estados en los que el QR vigente todavía se puede pagar en el proveedor.
+ *
+ * `VENCIDO` no está porque llegar ahí ya exigió anularlo; `PAGO_DETECTADO` no
+ * está porque el QR es de un solo uso y ya se pagó.
+ */
+const ESTADOS_CON_QR_PAGABLE: readonly EstadoCobro[] = ['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO'];
+
+/** ¿El cobro tiene un QR que el cliente todavía puede pagar? */
+export function tieneQrPagable(cobro: Cobro): boolean {
+  return cobro.qrVigente !== null && ESTADOS_CON_QR_PAGABLE.includes(cobro.estado);
+}
 
 export type EventoCobro =
   | { readonly tipo: 'QR_EMITIDO'; readonly qr: QrEmitido; readonly origen: OrigenTransicion }
@@ -45,9 +66,22 @@ export type EventoCobro =
       readonly motivo: MotivoRechazo;
       readonly origen: OrigenTransicion;
     }
-  | { readonly tipo: 'QR_VENCIDO'; readonly origen: OrigenTransicion }
+  | { readonly tipo: 'QR_VENCIDO'; readonly anulacion: QrAnulado; readonly origen: OrigenTransicion }
   | { readonly tipo: 'QR_RENOVADO'; readonly qr: QrEmitido; readonly origen: OrigenTransicion }
-  | { readonly tipo: 'VENTANA_AGOTADA'; readonly origen: OrigenTransicion }
+  | {
+      readonly tipo: 'VENTANA_AGOTADA';
+      readonly anulacion: QrAnulado;
+      readonly origen: OrigenTransicion;
+    }
+  | {
+      /**
+       * El banco reportó un pago sobre el QR de un cobro ya vencido. No se
+       * concilia solo: lo mira una persona, que decide si lo acepta.
+       */
+      readonly tipo: 'ABONO_TARDIO';
+      readonly deteccion: DeteccionDePago;
+      readonly origen: OrigenTransicion;
+    }
   | {
       readonly tipo: 'RESUELTO_MANUALMENTE';
       readonly decision: 'CONFIRMADO' | 'RECHAZADO';
@@ -55,7 +89,13 @@ export type EventoCobro =
       /** Solo una persona resuelve una revisión, y queda marcado como tal. */
       readonly origen: 'accion-manual';
     }
-  | { readonly tipo: 'ANULADO'; readonly motivo: string; readonly origen: OrigenTransicion };
+  | {
+      readonly tipo: 'ANULADO';
+      readonly motivo: string;
+      /** Obligatoria si el cobro tiene un QR pagable; `null` si no lo tiene. */
+      readonly anulacion: QrAnulado | null;
+      readonly origen: OrigenTransicion;
+    };
 
 export type TipoEvento = EventoCobro['tipo'];
 
@@ -90,38 +130,54 @@ export type ErrorTransicion =
       readonly tipo: 'VERSION_QR_INVALIDA';
       readonly esperada: number;
       readonly recibida: number;
-    };
+    }
+  | { readonly tipo: 'QR_SIN_ANULAR_EN_PROVEEDOR'; readonly referenciaProveedor: string };
 
 /** Estados desde los que cada evento puede disparar. Es la tabla de CLAUDE.md. */
 const ORIGENES_PERMITIDOS: Readonly<Record<TipoEvento, readonly EstadoCobro[]>> = {
   QR_EMITIDO: ['BORRADOR'],
   QR_ENVIADO: ['QR_ACTIVO'],
   COMPROBANTE_RECIBIDO: ['ENVIADO'],
-  PAGO_DETECTADO: ['ENVIADO', 'COMPROBANTE_RECIBIDO'],
+  // QR_ACTIVO también: si WhatsApp entregó el QR pero reportó una falla, el
+  // cliente puede pagarlo sin que el cobro haya pasado a ENVIADO. Manda el
+  // banco, no nuestro registro del envío (regla #1).
+  PAGO_DETECTADO: ['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO'],
   PAGO_CONCILIADO: ['PAGO_DETECTADO'],
   CONCILIACION_FALLIDA: ['PAGO_DETECTADO'],
   QR_VENCIDO: ['QR_ACTIVO', 'ENVIADO'],
   QR_RENOVADO: ['VENCIDO'],
   VENTANA_AGOTADA: ['COMPROBANTE_RECIBIDO'],
+  ABONO_TARDIO: ['VENCIDO'],
   RESUELTO_MANUALMENTE: ['EN_REVISION'],
   ANULADO: ['BORRADOR', 'QR_ACTIVO', 'ENVIADO', 'VENCIDO'],
 };
+
+/**
+ * ¿El cobro admite este evento en su estado actual? `null` si lo admite.
+ *
+ * Existe para que un caso de uso pueda preguntarlo **antes** de tocar el
+ * mundo: pedirle al banco que emita o anule un QR y recién después descubrir
+ * que la transición no correspondía deja un efecto real sin su cambio de
+ * estado.
+ */
+export function verificarAdmision(cobro: Cobro, tipo: TipoEvento): ErrorTransicion | null {
+  if (esTerminal(cobro.estado)) {
+    return { tipo: 'COBRO_TERMINAL', estado: cobro.estado };
+  }
+  if (!ORIGENES_PERMITIDOS[tipo].includes(cobro.estado)) {
+    return { tipo: 'TRANSICION_NO_PERMITIDA', desde: cobro.estado, evento: tipo };
+  }
+  return null;
+}
 
 export function transicionar(
   cobro: Cobro,
   evento: EventoCobro,
   ahora: Date,
 ): Resultado<TransicionAplicada, ErrorTransicion> {
-  if (esTerminal(cobro.estado)) {
-    return fallo({ tipo: 'COBRO_TERMINAL', estado: cobro.estado });
-  }
-
-  if (!ORIGENES_PERMITIDOS[evento.tipo].includes(cobro.estado)) {
-    return fallo({
-      tipo: 'TRANSICION_NO_PERMITIDA',
-      desde: cobro.estado,
-      evento: evento.tipo,
-    });
+  const inadmisible = verificarAdmision(cobro, evento.tipo);
+  if (inadmisible !== null) {
+    return fallo(inadmisible);
   }
 
   const aplicar = (
@@ -207,8 +263,13 @@ export function transicionar(
       // Un abono detectado que no concilia no se descarta: lo mira una persona.
       return aplicar('EN_REVISION', {}, { motivo: evento.motivo.tipo });
 
-    case 'QR_VENCIDO':
-      return aplicar('VENCIDO', {}, { qrVersion: cobro.qrVersion });
+    case 'QR_VENCIDO': {
+      const sinAnular = exigirAnulacion(cobro, evento.anulacion);
+      if (sinAnular !== null) {
+        return fallo(sinAnular);
+      }
+      return aplicar('VENCIDO', {}, { qrVersion: cobro.qrVersion, ...datosDeAnulacion(evento.anulacion) });
+    }
 
     case 'QR_RENOVADO': {
       const invalido = validarQr(evento.qr);
@@ -231,16 +292,70 @@ export function transicionar(
       );
     }
 
-    case 'VENTANA_AGOTADA':
+    case 'VENTANA_AGOTADA': {
       // Llegó comprobante pero el watcher nunca vio el abono. Lo mira una persona.
-      return aplicar('EN_REVISION', {}, { qrVersion: cobro.qrVersion });
+      const sinAnular = exigirAnulacion(cobro, evento.anulacion);
+      if (sinAnular !== null) {
+        return fallo(sinAnular);
+      }
+      return aplicar(
+        'EN_REVISION',
+        {},
+        { qrVersion: cobro.qrVersion, ...datosDeAnulacion(evento.anulacion) },
+      );
+    }
+
+    case 'ABONO_TARDIO':
+      // Plata real sobre un QR vencido: ni se descarta ni se confirma sola.
+      return aplicar(
+        'EN_REVISION',
+        {},
+        {
+          qrVersion: cobro.qrVersion,
+          idDeduplicacion: evento.deteccion.idDeduplicacion,
+          montoCentavos: evento.deteccion.montoCentavos,
+          ocurridoEn: evento.deteccion.ocurridoEn.toISOString(),
+          origenDeteccion: evento.deteccion.origen,
+        },
+      );
 
     case 'RESUELTO_MANUALMENTE':
       return aplicar(evento.decision, {}, { motivo: evento.motivo });
 
-    case 'ANULADO':
-      return aplicar('ANULADO', {}, { motivo: evento.motivo });
+    case 'ANULADO': {
+      const sinAnular = exigirAnulacion(cobro, evento.anulacion);
+      if (sinAnular !== null) {
+        return fallo(sinAnular);
+      }
+      return aplicar(
+        'ANULADO',
+        {},
+        {
+          motivo: evento.motivo,
+          ...(evento.anulacion === null ? { qrAnulado: null } : datosDeAnulacion(evento.anulacion)),
+        },
+      );
+    }
   }
+}
+
+/**
+ * Exige la constancia de anulación cuando el cobro tiene un QR pagable, y que
+ * sea **de ese** QR: anular una versión anterior no deja muerta la vigente.
+ */
+function exigirAnulacion(cobro: Cobro, anulacion: QrAnulado | null): ErrorTransicion | null {
+  if (!tieneQrPagable(cobro) || cobro.qrVigente === null) {
+    return null;
+  }
+  const vigente = cobro.qrVigente.referenciaProveedor;
+  if (anulacion === null || anulacion.referenciaProveedor !== vigente) {
+    return { tipo: 'QR_SIN_ANULAR_EN_PROVEEDOR', referenciaProveedor: vigente };
+  }
+  return null;
+}
+
+function datosDeAnulacion(anulacion: QrAnulado): Readonly<Record<string, ValorEvidencia>> {
+  return { qrAnulado: anulacion.referenciaProveedor, anuladoEn: anulacion.anuladoEn.toISOString() };
 }
 
 /** Todo QR tiene vencimiento explícito y posterior a su emisión (regla #6). */

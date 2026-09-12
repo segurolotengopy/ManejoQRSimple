@@ -10,6 +10,7 @@
  * su propio runner. Las aserciones son `throw` a secas por el mismo motivo.
  */
 
+import type { Cobro } from '../cobro/cobro.js';
 import { esExito, type Resultado } from '../comun/resultado.js';
 import type { CobroRepository, ErrorPuerto, EvidenceStore, PaymentWatcher, QrProvider, SolicitudQr } from './puertos.js';
 
@@ -133,7 +134,44 @@ export const CASOS_COBRO_REPOSITORY: ReadonlyArray<CasoDeContrato<CobroRepositor
       afirmar(cobro === null, 'un cobro inexistente no es una falla');
     },
   },
+  {
+    nombre: 'una referencia de QR desconocida devuelve null, no un error',
+    ejecutar: async (repo) => {
+      const cobro = exigirExito(await repo.buscarPorReferenciaQr('qr-inexistente'), 'buscar');
+      afirmar(cobro === null, 'un QR que no es de nadie no es una falla: es un huérfano');
+    },
+  },
+  {
+    nombre: 'una escritura sobre un estado viejo falla con CONFLICTO y no pisa el actual',
+    ejecutar: async (repo) => {
+      const cobro = cobroDeContrato();
+      exigirExito(await repo.guardar(cobro), 'guardado inicial');
+
+      // Alguien leyó el cobro cuando estaba en QR_ACTIVO; hoy está en ENVIADO.
+      const viejo = await repo.guardar({ ...cobro, estado: 'ANULADO' }, 'QR_ACTIVO');
+      afirmar(!esExito(viejo) && viejo.error.tipo === 'CONFLICTO', 'debe rechazar con CONFLICTO');
+      const actual = exigirExito(await repo.obtener(cobro.id), 'releer');
+      afirmar(actual?.estado === 'ENVIADO', 'el estado guardado no debe cambiar');
+
+      exigirExito(await repo.guardar({ ...cobro, estado: 'ANULADO' }, 'ENVIADO'), 'con el estado correcto');
+    },
+  },
 ];
+
+function cobroDeContrato(): Cobro {
+  return {
+    id: 'cobro-contrato-conflicto',
+    proveedor: 'baneco',
+    estado: 'ENVIADO',
+    montoCentavos: 12_345 as Cobro['montoCentavos'],
+    moneda: 'BOB',
+    qrVersion: 0,
+    qrVigente: null,
+    creadoEn: INSTANTE_DE_CONTRATO,
+    telefonoCliente: '+59171234567',
+    concepto: 'Caso de contrato',
+  };
+}
 
 /**
  * El "ahora" de los casos de contrato. Quien corre los casos contra un

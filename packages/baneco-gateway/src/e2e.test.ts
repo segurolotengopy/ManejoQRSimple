@@ -18,8 +18,8 @@ import {
   enviarQr,
   esExito,
   registrarComprobante,
-  vencerSiCorresponde,
   verificarPago,
+  vigilar,
   type Centavos,
   type Cobro,
   type Dependencias,
@@ -178,13 +178,15 @@ describe('flujo completo contra el adaptador real de Baneco', () => {
     const { deps } = armar();
     const cobro = await hastaEnviado(deps);
 
-    const vencido = await vencerSiCorresponde(deps, cobro, new Date('2021-06-18T12:00:00.000Z'));
-    expect(esExito(vencido) && vencido.valor.estado).toBe('VENCIDO');
+    // Primero pregunta al banco (el QR sigue activo, sin pago), después lo anula
+    // allá con cancelQR y recién entonces vence el cobro.
+    const vencido = await vigilar(deps, cobro, new Date('2021-06-18T12:00:00.000Z'));
+    expect(esExito(vencido) && vencido.valor.tipo).toBe('VENCIDO');
     if (!esExito(vencido)) return;
 
     const renovado = await emitirQr(
       deps,
-      vencido.valor,
+      vencido.valor.cobro,
       new Date('2021-06-21T12:00:00.000Z'),
       new Date('2021-06-18T12:01:00.000Z'),
     );

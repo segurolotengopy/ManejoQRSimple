@@ -103,7 +103,26 @@ function comoHttp(err: ErrorCasoUso): Respuesta {
       );
     case 'SIN_QR_VIGENTE':
       return error(409, 'SIN_QR_VIGENTE', 'El cobro todavía no tiene un QR emitido.');
+    case 'ABONO_DETECTADO':
+      return error(
+        409,
+        'ABONO_DETECTADO',
+        'El banco reporta un pago para este cobro: verificalo antes de anularlo.',
+      );
+    case 'ABONO_TARDIO':
+      return error(
+        409,
+        'ABONO_TARDIO',
+        'Llegó un pago al QR vencido: el cobro pasó a revisión y no se hizo la operación.',
+      );
     case 'PUERTO':
+      if (err.error.tipo === 'CONFLICTO') {
+        return error(
+          409,
+          'CONFLICTO',
+          'El cobro cambió mientras operabas (el satélite pudo haberlo actualizado). Actualizá y volvé a intentar.',
+        );
+      }
       return err.error.reintentable
         ? error(503, 'SERVICIO_NO_DISPONIBLE', 'Un servicio externo no respondió. Reintentá.')
         : error(502, 'PROVEEDOR_RECHAZO', 'Un servicio externo rechazó la operación.');

@@ -252,6 +252,30 @@ describe('ciclo de vida por la API', () => {
     expect((r.cuerpo as Record<string, unknown>)['estado']).toBe('ANULADO');
   });
 
+  it('no anula un cobro que el banco reporta pagado: 409 ABONO_DETECTADO', async () => {
+    // Anularlo dejaría la plata acreditada y el cobro muerto.
+    const { ctx, watcher } = armar();
+    const { id, cuerpo } = await crear(ctx);
+    const referencia = String(
+      (cuerpo['qrVigente'] as Record<string, unknown>)['referenciaProveedor'],
+    );
+    await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/enviar`));
+    watcher.cargarAbono(
+      referencia,
+      registrarDeteccion({
+        idDeduplicacion: `simulado:${referencia}`,
+        montoCentavos: monto(15_050),
+        ocurridoEn: AHORA,
+        origen: 'watcher-baneco',
+        referencia: null,
+      }),
+    );
+
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/anular`, { motivo: 'x' }));
+    expect(r.status).toBe(409);
+    expect((r.cuerpo as { error: { codigo: string } }).error.codigo).toBe('ABONO_DETECTADO');
+  });
+
   it('una operación sobre un cobro terminal responde 409, no 400', async () => {
     // El pedido está bien formado; lo que no corresponde es el estado.
     const { ctx } = armar();

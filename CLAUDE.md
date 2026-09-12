@@ -150,12 +150,13 @@ El código debe hacerlas **imposibles de violar**, no solo evitarlas.
 
 ```
 BORRADOR → QR_ACTIVO → ENVIADO
-    ENVIADO ──(watcher detecta abono)────────────► PAGO_DETECTADO → CONFIRMADO
+    QR_ACTIVO | ENVIADO ──(watcher detecta abono)► PAGO_DETECTADO → CONFIRMADO
     PAGO_DETECTADO ──(la conciliación rechaza)───► EN_REVISION
     ENVIADO ──(cliente envía comprobante)────────► COMPROBANTE_RECIBIDO
     COMPROBANTE_RECIBIDO ──(watcher detecta)─────► PAGO_DETECTADO
     COMPROBANTE_RECIBIDO ──(ventana agotada)─────► EN_REVISION
     QR_ACTIVO | ENVIADO ──(vence sin pago)───────► VENCIDO ──(renovar)──► QR_ACTIVO
+    VENCIDO ──(el banco reporta un abono tardío)─► EN_REVISION
     EN_REVISION ──(resolución manual del dueño)──► CONFIRMADO | RECHAZADO
     BORRADOR | QR_ACTIVO | ENVIADO | VENCIDO ────► ANULADO
 ```
@@ -167,6 +168,13 @@ BORRADOR → QR_ACTIVO → ENVIADO
 - Un abono detectado que **no** concilia (monto distinto, fuera de vigencia,
   duplicado) va a `EN_REVISION`, nunca se descarta en silencio ni se redondea
   para que entre. Es el mismo criterio del análisis Baneco §6.2.
+- **Un cobro no suelta un QR que todavía se puede pagar sin anularlo antes en
+  el proveedor.** El banco vence los QR por día, no por hora (Baneco C4): sin
+  anularlo, un cobro vencido o anulado en nuestro reloj seguiría cobrable hasta
+  la medianoche. `VENCIDO`, `ANULADO` y la ventana agotada exigen la constancia
+  de anulación (`QrAnulado`); si el banco no anula, el cobro no cambia y se
+  reintenta. Si aun así llega un pago sobre un QR vencido (carrera entre la
+  consulta y la anulación), va a `EN_REVISION`: plata real que decide una persona.
 - `CONFIRMADO`, `RECHAZADO` y `ANULADO` son terminales.
 - La renovación tras `VENCIDO` no crea un cobro nuevo: incrementa `qrVersion`
   del mismo cobro y reenvía por WhatsApp. El QR anterior queda en el historial.

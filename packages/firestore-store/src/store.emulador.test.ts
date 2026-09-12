@@ -134,12 +134,26 @@ describe('CobroRepositoryFirestore', () => {
     await repo.guardar(unCobro({ id: 'c2', estado: 'COMPROBANTE_RECIBIDO', qrVersion: 1, qrVigente: unQr() }));
     await repo.guardar(unCobro({ id: 'c3', estado: 'CONFIRMADO' }));
     await repo.guardar(unCobro({ id: 'c4', estado: 'BORRADOR' }));
+    await repo.guardar(unCobro({ id: 'c5', estado: 'QR_ACTIVO', qrVersion: 1, qrVigente: unQr() }));
 
     const pendientes = await repo.listarPendientes();
     expect(esExito(pendientes)).toBe(true);
     if (esExito(pendientes)) {
-      expect(pendientes.valor.map((c) => c.id).sort()).toEqual(['c1', 'c2']);
+      // QR_ACTIVO también: su QR es pagable y al vencer hay que anularlo.
+      expect(pendientes.valor.map((c) => c.id).sort()).toEqual(['c1', 'c2', 'c5']);
     }
+  });
+
+  it('encuentra el cobro por la referencia de su QR vigente, en cualquier estado', async () => {
+    // La conciliación diaria busca así: un pago de un cobro ya confirmado es
+    // el caso normal, no un huérfano.
+    const repo = new CobroRepositoryFirestore(db);
+    await repo.guardar(unCobro({ id: 'c1', estado: 'CONFIRMADO', qrVersion: 1, qrVigente: unQr(1) }));
+    await repo.guardar(unCobro({ id: 'c2', estado: 'ENVIADO', qrVersion: 2, qrVigente: unQr(2) }));
+
+    const encontrado = await repo.buscarPorReferenciaQr('qr-1');
+    expect(esExito(encontrado) && encontrado.valor?.id).toBe('c1');
+    expect(await repo.buscarPorReferenciaQr('qr-9')).toEqual({ ok: true, valor: null });
   });
 
   it('el historial de QRs es append-only: renovar agrega, no reemplaza', async () => {

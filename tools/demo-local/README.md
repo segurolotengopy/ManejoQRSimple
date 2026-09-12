@@ -36,7 +36,8 @@ Los cuatro cobros sembrados llevan a desenlaces distintos a propósito:
 | `demo:pagar -- demo-002 --monto 4549` | → **EN_REVISION** | Un centavo de menos. El monto no tiene tolerancia (regla #1). |
 | `demo:pagar -- demo-003 --tarde` | → **EN_REVISION** | Abono posterior al vencimiento, fuera de la tolerancia. |
 | No pagar `demo-003` | queda **ENVIADO** | El satélite lo sigue mirando. |
-| `demo-004` | → **VENCIDO** | Nace con vigencia negativa. |
+| `demo-004`, un minuto después + `satelite:demo` | → **VENCIDO** | Vence al minuto. El satélite pregunta al banco, anula el QR allá y recién entonces lo vence. |
+| Pestaña **Revisión** de la consola | demo-002 y demo-003 en la cola | Cada caso con su motivo, el pago del banco y qué hacer (docs/09). |
 | Repetir el mismo `demo:pagar` | nada cambia | El id del abono es la clave de deduplicación (regla #7). |
 
 `demo:estado` imprime el rastro append-only de cada cobro: se ve **por qué** cada uno

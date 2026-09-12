@@ -513,10 +513,11 @@ describe('conciliarDia()', () => {
     expect(esExito(otraVez) && otraVez.valor).toMatchObject({ enRevision: [], yaRegistrados: 1 });
   });
 
-  it('un abono que la evidencia del cobro no explica no se da por registrado', async () => {
+  it('un abono para un cobro en revisión que no lo tenía se adjunta: queda para decidir', async () => {
     // Comprobante sin pago → ventana agotada → EN_REVISION sin ninguna
-    // detección. Si el reporte del día trae un pago, nadie lo vio todavía.
-    const { deps, watcher } = armar();
+    // detección. Si el reporte del día trae el pago, no es "ya registrado":
+    // se adjunta a la evidencia para que quien revise lo vea y pueda aceptarlo.
+    const { deps, watcher, evidencia } = armar();
     const cobro = await hastaEnviado(deps);
     const conComprobante = await registrarComprobante(deps, cobro, 'wa-1', enMinutos(20));
     if (!esExito(conComprobante)) throw new Error('el comprobante debería registrarse');
@@ -525,9 +526,32 @@ describe('conciliarDia()', () => {
     watcher.cargarAbono(REFERENCIA, abono({ ocurridoEn: enMinutos(72 * 60 + 30) }));
 
     const r = await conciliarDia(deps, enMinutos(72 * 60 + 30), enMinutos(72 * 60 + 60));
+    expect(esExito(r) && r.valor).toMatchObject({ enRevision: ['cobro-1'], yaRegistrados: 0, sinCorroborar: [] });
+    expect((await ultimaEvidencia(evidencia))?.evento).toBe('DETECCION_EN_REVISION');
+  });
+
+  it('un segundo abono sobre un cobro ya confirmado no se da por registrado', async () => {
+    // El cobro se confirmó con tx-1; si el banco reporta además tx-2, ese
+    // pago no lo explica nada de lo que el sistema sabe.
+    const { deps, watcher } = armar();
+    const cobro = await hastaEnviado(deps);
+    watcher.cargarAbono(REFERENCIA, abono());
+    await verificarPago(deps, cobro, enMinutos(31));
+    watcher.cargarAbono(
+      REFERENCIA,
+      registrarDeteccion({
+        idDeduplicacion: 'baneco:mock-qr-000001:tx-2',
+        montoCentavos: bs(MONTO),
+        ocurridoEn: enMinutos(40),
+        origen: 'watcher-baneco',
+        referencia: null,
+      }),
+    );
+
+    const r = await conciliarDia(deps, enMinutos(30), enMinutos(50));
     expect(esExito(r) && r.valor).toMatchObject({
-      yaRegistrados: 0,
-      sinCorroborar: ['baneco:mock-qr-000001:tx-1'],
+      yaRegistrados: 1,
+      sinCorroborar: ['baneco:mock-qr-000001:tx-2'],
     });
   });
 

@@ -103,7 +103,17 @@ export type ErrorCasoUso =
    */
   | { readonly tipo: 'ABONO_DETECTADO'; readonly cobroId: string }
   /** Llegó un pago sobre el QR vencido: el cobro pasó a `EN_REVISION`. */
-  | { readonly tipo: 'ABONO_TARDIO'; readonly cobroId: string };
+  | { readonly tipo: 'ABONO_TARDIO'; readonly cobroId: string }
+  /**
+   * Se quiso confirmar a mano un caso sin ningún abono del banco en la
+   * evidencia. Primero hay que buscarlo en el banco (regla #1).
+   */
+  | { readonly tipo: 'SIN_DETECCION_DEL_BANCO'; readonly cobroId: string }
+  /**
+   * Se quiso aceptar un abono que ya no es el último que reportó el banco: la
+   * persona decidió mirando algo que cambió. Hay que volver a mirar.
+   */
+  | { readonly tipo: 'ABONO_DESACTUALIZADO'; readonly cobroId: string };
 
 const dePuerto = (error: ErrorPuerto): ErrorCasoUso => ({ tipo: 'PUERTO', error });
 const deTransicion = (error: ErrorTransicion): ErrorCasoUso => ({ tipo: 'TRANSICION', error });
@@ -626,7 +636,21 @@ async function destinoDelAbono(
       const figura = registros.valor.some(
         (r) => r.datos['idDeduplicacion'] === abono.idDeduplicacion,
       );
-      return exito({ destino: figura ? 'yaRegistrado' : 'sinCorroborar', cobroId });
+      if (figura) {
+        return exito({ destino: 'yaRegistrado', cobroId });
+      }
+      if (cobro.estado !== 'EN_REVISION') {
+        return exito({ destino: 'sinCorroborar', cobroId });
+      }
+      // En revisión y sin este abono: se adjunta, para que quien revise lo
+      // vea y pueda aceptarlo. El cobro sigue en revisión.
+      const adjuntado = await aplicar(
+        deps,
+        cobro,
+        { tipo: 'DETECCION_EN_REVISION', deteccion: abono, origen: abono.origen },
+        ahora,
+      );
+      return esExito(adjuntado) ? exito({ destino: 'enRevision', cobroId }) : adjuntado;
     }
     case 'BORRADOR':
     case 'ANULADO':

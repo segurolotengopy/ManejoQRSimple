@@ -74,6 +74,7 @@ export {
 // La constancia de anulación se exporta como tipo, no su fábrica: solo los
 // casos de uso la obtienen, anulando el QR de verdad.
 export type { QrAnulado } from './cobro/anulacion.js';
+export { aceptarAbono, type AbonoAceptado, type ErrorAceptacion } from './cobro/aceptacion.js';
 
 // Conciliación
 export {
@@ -90,6 +91,34 @@ export {
   type DeteccionDePago,
   type OrigenDeteccion,
 } from './conciliacion/deteccion.js';
+
+// Revisión manual
+export {
+  construirCaso,
+  MOTIVOS_REVISION,
+  nivelDeAlerta,
+  ordenarCasos,
+  POLITICA_REVISION_POR_DEFECTO,
+  resumirRevision,
+  ultimaDeteccion,
+  type AbonoRegistrado,
+  type CasoRevision,
+  type MotivoRevision,
+  type NivelAlerta,
+  type PoliticaRevision,
+  type ResumenRevision,
+  type UmbralesHoras,
+} from './revision/revision.js';
+export {
+  buscarAbonoEnRevision,
+  LIMITE_REVISION,
+  listarRevision,
+  resolverRevision,
+  type ColaRevision,
+  type DepsBusqueda,
+  type Resolucion,
+  type ResultadoBusqueda,
+} from './casos-uso/revisar.js';
 
 // Casos de uso: la orquestación del cobro sobre los puertos
 export {

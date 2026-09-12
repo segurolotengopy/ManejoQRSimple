@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { esExito, esFallo, exito } from '../comun/resultado.js';
+import { aceptarAbono, type AbonoAceptado } from './aceptacion.js';
 import { anularEnProveedor } from './anulacion.js';
 import {
   conciliar,
@@ -21,6 +22,16 @@ async function constancia(referenciaProveedor: string): Promise<QrAnulado> {
   const r = await anularEnProveedor(anulador, { referenciaProveedor }, T0);
   if (!esExito(r)) {
     throw new Error('el anulador de prueba no falla');
+  }
+  return r.valor;
+}
+
+/** Un abono aceptado por la única vía: el banco lo reportó para ese cobro. */
+function abonoAceptado(cobroId: string): AbonoAceptado {
+  const id = 'baneco:qr-000001:tx-1';
+  const r = aceptarAbono({ id: cobroId }, [{ cobroId, evento: 'PAGO_DETECTADO', datos: { idDeduplicacion: id } }], id);
+  if (!esExito(r)) {
+    throw new Error('el abono de fixture debería aceptarse');
   }
   return r.valor;
 }
@@ -77,6 +88,8 @@ function eventoDe(tipo: TipoEvento, cobroId = 'cobro-1'): EventoCobro {
       return { tipo, anulacion: ANULACION, origen: 'sistema' };
     case 'ABONO_TARDIO':
       return { tipo, deteccion: deteccionValida, origen: 'watcher-baneco' };
+    case 'DETECCION_EN_REVISION':
+      return { tipo, deteccion: deteccionValida, origen: 'watcher-baneco' };
     case 'RESUELTO_MANUALMENTE':
       return { tipo, decision: 'RECHAZADO', motivo: 'no aparece el abono', origen: 'accion-manual' };
     case 'ANULADO':
@@ -99,6 +112,7 @@ const TRANSICIONES_ESPERADAS: ReadonlyArray<readonly [EstadoCobro, TipoEvento, E
   ['ENVIADO', 'QR_VENCIDO', 'VENCIDO'],
   ['VENCIDO', 'QR_RENOVADO', 'QR_ACTIVO'],
   ['VENCIDO', 'ABONO_TARDIO', 'EN_REVISION'],
+  ['EN_REVISION', 'DETECCION_EN_REVISION', 'EN_REVISION'],
   ['EN_REVISION', 'RESUELTO_MANUALMENTE', 'RECHAZADO'],
   ['BORRADOR', 'ANULADO', 'ANULADO'],
   ['QR_ACTIVO', 'ANULADO', 'ANULADO'],
@@ -125,6 +139,7 @@ describe('transiciones permitidas', () => {
       {
         tipo: 'RESUELTO_MANUALMENTE',
         decision: 'CONFIRMADO',
+        abono: abonoAceptado('cobro-1'),
         motivo: 'abono verificado a mano en la consola',
         origen: 'accion-manual',
       },
@@ -133,9 +148,36 @@ describe('transiciones permitidas', () => {
     expect(esExito(r)).toBe(true);
     if (esExito(r)) {
       expect(r.valor.cobro.estado).toBe('CONFIRMADO');
-      // Queda marcado como manual justamente para que sea auditable.
+      // Queda marcado como manual justamente para que sea auditable, con el
+      // abono del banco que se aceptó.
       expect(r.valor.evidencia.origen).toBe('accion-manual');
+      expect(r.valor.evidencia.datos['idDeduplicacion']).toBe('baneco:qr-000001:tx-1');
     }
+  });
+
+  it('el abono aceptado para un cobro no confirma otro', () => {
+    const r = transicionar(
+      unCobroEn('EN_REVISION', { id: 'cobro-1' }),
+      {
+        tipo: 'RESUELTO_MANUALMENTE',
+        decision: 'CONFIRMADO',
+        abono: abonoAceptado('cobro-2'),
+        motivo: 'abono de otro cobro',
+        origen: 'accion-manual',
+      },
+      T0,
+    );
+    expect(r).toEqual({
+      ok: false,
+      error: { tipo: 'ABONO_DE_OTRO_COBRO', cobroId: 'cobro-1', abonoDe: 'cobro-2' },
+    });
+  });
+
+  it('un abono aceptado no se fabrica a mano (regla #1, también para la persona)', () => {
+    // Test de compilación, como el de ConciliacionAprobada.
+    // @ts-expect-error falta la marca nominal: solo sale de aceptarAbono().
+    const falso: AbonoAceptado = { cobroId: 'cobro-1', idDeduplicacion: 'inventado' };
+    expect(falso.cobroId).toBe('cobro-1');
   });
 });
 
@@ -170,6 +212,7 @@ function eventosPorTipo(): Record<TipoEvento, true> {
     QR_RENOVADO: true,
     VENTANA_AGOTADA: true,
     ABONO_TARDIO: true,
+    DETECCION_EN_REVISION: true,
     RESUELTO_MANUALMENTE: true,
     ANULADO: true,
   };

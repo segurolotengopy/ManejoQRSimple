@@ -124,6 +124,13 @@ export interface CobroRepository {
   listarRecientes(limite: number): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
 
   /**
+   * Cobros en un estado dado, hasta `limite`. Es la pregunta de la cola de
+   * revisión (`EN_REVISION`), que no puede depender de que el caso esté entre
+   * los más recientes: un caso viejo es justamente el más urgente.
+   */
+  listarPorEstado(estado: EstadoCobro, limite: number): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
+
+  /**
    * El cobro cuyo QR **vigente** tiene esta referencia del proveedor, en
    * cualquier estado. `null` si no hay ninguno.
    *

@@ -33,6 +33,31 @@ export const cuerpoAnular = z.object({
   motivo: z.string().min(1).max(200),
 });
 
+/**
+ * Resolución manual de un caso en revisión. El motivo es obligatorio y no
+ * trivial: es lo que un auditor va a leer para entender por qué una persona
+ * confirmó o rechazó un pago que el sistema no pudo decidir (regla #8).
+ */
+const motivoResolucion = z
+  .string()
+  .trim()
+  .min(10, 'contá en al menos 10 caracteres por qué decidís esto')
+  .max(300);
+
+/**
+ * Confirmar nombra el abono del banco que la persona vio en pantalla: si
+ * mientras decidía el banco reportó otro, el dominio lo rechaza y hay que
+ * volver a mirar.
+ */
+export const cuerpoResolver = z.discriminatedUnion('decision', [
+  z.object({
+    decision: z.literal('CONFIRMADO'),
+    idDeduplicacion: z.string().min(1).max(200),
+    motivo: motivoResolucion,
+  }),
+  z.object({ decision: z.literal('RECHAZADO'), motivo: motivoResolucion }),
+]);
+
 export const cuerpoComprobante = z.object({
   /** Identificador del mensaje en WhatsApp. Deduplica la doble entrega. */
   referenciaComprobante: z.string().min(1).max(200),

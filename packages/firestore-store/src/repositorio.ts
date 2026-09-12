@@ -181,6 +181,16 @@ export class CobroRepositoryFirestore implements CobroRepository {
     }
   }
 
+  /** Cobros en un estado dado. Índice de un solo campo: no hace falta declararlo. */
+  async listarPorEstado(estado: EstadoCobro, limite: number): Promise<Resultado<readonly Cobro[], ErrorPuerto>> {
+    try {
+      const snapshot = await this.cobros.where('estado', '==', estado).limit(limite).get();
+      return this.mapear(snapshot.docs);
+    } catch (causa) {
+      return fallo(comoErrorPuerto(causa, 'listarPorEstado'));
+    }
+  }
+
   /**
    * El cobro cuyo QR vigente tiene esta referencia. Firestore indexa solo los
    * campos anidados, así que no hace falta un índice compuesto.

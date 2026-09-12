@@ -162,6 +162,15 @@ de IPs de origen (solicitar al banco sus rangos públicos — dato pendiente, §
 rate-limiting, validación Zod estricta del payload, y registro de todo intento
 rechazado como evidencia.
 
+**Actualización 2026-09-11 (respuestas D2–D4 del banco).** El banco puede enviar un
+**Bearer Token o Basic Auth** en el webhook, reintenta **10 veces con 1 s de intervalo**
+y lo habilita **por correo** (no es obligatorio). El token se suma a las mitigaciones de
+arriba —comparado con `timingSafeEqual`, regla #10— pero **BANECO-1 no cambia**: un
+secreto estático compartido autentica al emisor, no prueba que el pago exista, y su
+filtración convertiría al webhook en un confirmador falso si se le diera ese poder. La
+ventana de reintentos de ~10 s refuerza que el webhook nunca puede ser la única vía de
+detección. Los rangos de IP (D1) siguen sin respuesta.
+
 ### 4.2 Capa 2 — Consulta activa `GET /api/qrsimple/v2/statusQR/{qrId}` (la fuente de verdad)
 
 Llamada autenticada (JWT sobre TLS contra el dominio del banco): devuelve
@@ -193,6 +202,13 @@ polling no alcanzó (p. ej. sistema caído). Toda discrepancia genera evidencia 
 corresponde, la detección tardía sigue el mismo camino `PAGO_DETECTADO → conciliación`.
 
 ### 4.4 Capa opcional — `POST /api/accounts/history` (verificación a nivel de cuenta)
+
+> **Actualización 2026-09-11 (F1–F3).** El banco indica que el endpoint es
+> **`accounts/queryMovements`** (el PDF dice `accounts/history`; gana la respuesta), con
+> hasta 90 días por consulta, sin paginación, y con el mismo usuario API. Cada pago QR
+> se acredita como movimiento individual con glosa (nombre del pagador, entidad de
+> origen, nota del QR); el abono consolidado por sucursal, sin glosa, **no** se habilita
+> porque impediría cuadrar el extracto contra cada cobro.
 
 El requisito 2 pide validar el pago "en la cuenta destino". Las tres capas anteriores
 validan a nivel de **QR** (que es lo que el banco liquida contra la cuenta indicada en
@@ -426,15 +442,23 @@ y puede hacerse ya.
 
 ## 9. Información faltante a solicitar al banco
 
-- Rangos de IP públicas desde los que invoca el webhook (para la allowlist).
-- Catálogo oficial de `responseCode`/`message` de error.
-- Vigencia del JWT y política de reintentos del webhook (el PDF no las documenta).
-- Límite máximo real de `dueDate` y monto máximo por transacción QR (normativa
-  BCB/ASFI + política Baneco) — completa los checkboxes de docs/02 §4 para este
-  proveedor.
-- Proceso formal de certificación/homologación previo a producción, si existe.
-- Confirmación de si el ambiente de certificación permite simular pagos de QR
-  (imprescindible para el Hito B2).
+Pedida el 2026-08-27 y **respondida el 2026-09-11** (detalle en
+`01-preguntas-al-banco.md`):
+
+- ~~Catálogo oficial de `responseCode`/`message`~~ — no existe (E1).
+- ~~Vigencia del JWT y política de reintentos del webhook~~ — 30 min (B1); 10
+  reintentos a 1 s (D3).
+- ~~Límite de `dueDate` y monto máximo~~ — del día a 2 años; sin límite de generación,
+  el límite es del pagador (C1, C2). Volcado en docs/02 §4.1.
+- ~~Proceso formal de certificación~~ — no existe (A1).
+- ~~Simulación de pagos en certificación~~ — no existe: se envía la imagen del QR por
+  correo y el banco lo paga (A2).
+
+Sigue faltando:
+
+- Rangos de IP públicas desde los que invoca el webhook (D1). Solo hace falta si se
+  habilita el webhook (Hito B3).
+- Cuenta de abono de pruebas (A4): el banco la envía con un usuario de pruebas.
 
 ## 10. Riesgos principales
 
@@ -442,11 +466,13 @@ y puede hacerse ya.
 |---|---|---|---|
 | R1 | Webhook falsificado confirma un pago inexistente | **Fraude** (el peor caso del dominio) | Regla BANECO-1: webhook nunca confirma; corroboración statusQR obligatoria; allowlist + token de ruta; test adversarial en B3. |
 | R2 | Credenciales de producción filtradas al repo | Compromiso de cuenta bancaria | §8.1 (saneado previo), gitleaks con patrón genérico, hook anti-secretos existente, custodia en gestor. |
-| R3 | Esquema de cifrado asumido ≠ real | Bloqueo de integración | Validación empírica en B0 contra el endpoint utilitario de certificación. |
+| R3 | Esquema de cifrado asumido ≠ real | Bloqueo de integración | **Cerrado (2026-09-12):** el vector oficial del PDF descifra con `crypto/aes.ts`. Queda el login de B0 como confirmación end-to-end. |
 | R4 | Functions sin salida a internet (Spark) | El adaptador no puede llamar al banco | Decisión D2 antes de B2; opción satélite ya probada por ADR-003. |
 | R5 | Pago sin webhook ni polling oportuno (caída) | Confirmación tardía | Capa 3 (paidQR diario + al re-arranque) garantiza cierre; evidencia de detección tardía. |
 | R6 | Doble detección (webhook + polling + batch) | Doble confirmación | Idempotencia por `qrId+transactionId` como id de documento (§6.3). |
 | R7 | Desalineación de montos por float | Conciliación errónea | §6.2: aritmética entera en el borde + tests de propiedad. |
+| R8 | QR pagable en el banco después de que el cobro lo abandonó (vencido en nuestro reloj, renovado o anulado): `dueDate` es un día, no un instante (C4) | Dinero acreditado sin registrarse; conciliación rota | **Abierto (2026-09-11).** Anular el QR en el banco (`cancelQR`, admitido sobre vencidos — C5) al vencer, renovar y anular; conciliación diaria como red. Ver `01-preguntas-al-banco.md`, hallazgos derivados. |
+| R9 | `transactionId` sin unicidad del lado del banco (C3): un `generateQR` reintentado tras un timeout puede dejar un QR pagable que no conocemos | Igual que R8 | **Abierto.** El cliente no reintenta `generateQR` por su cuenta; la conciliación diaria reporta el abono como huérfano. Requiere que la conciliación diaria corra (R8). |
 
 ---
 

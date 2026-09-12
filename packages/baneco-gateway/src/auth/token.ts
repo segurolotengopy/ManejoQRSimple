@@ -4,10 +4,11 @@
  * El token vive **solo en memoria del proceso**: no se persiste ni se registra
  * (análisis §6.1). Un JWT filtrado es acceso directo a la API del comercio.
  *
- * La vigencia real no está documentada (pregunta B1 al banco), así que en vez
- * de asumir un número se lee el `exp` del propio token y se renueva con
- * anticipación. Si el token no trae `exp` legible, se cae a una vigencia corta
- * y conservadora: mejor autenticar de más que operar con un token vencido.
+ * El banco declaró por escrito una vigencia de 30 minutos (pregunta B1,
+ * 2026-09-11). Aun así se lee el `exp` del propio token en vez de fijar el
+ * número: si el banco lo cambia, el cliente se entera solo. La vigencia
+ * declarada queda como respaldo para un token sin `exp` legible, y el
+ * reintento único ante 401 cubre el caso en que ese respaldo quede largo.
  */
 
 import { esExito, exito, fallo, type ErrorPuerto, type Resultado } from '@mqs/qr-core';
@@ -20,8 +21,8 @@ import { respuestaAutenticacion } from '../schemas.js';
 /** Margen con el que se renueva antes del vencimiento declarado por el token. */
 const MARGEN_RENOVACION_SEGUNDOS = 60;
 
-/** Vigencia asumida cuando el token no declara `exp` legible. */
-const VIGENCIA_CONSERVADORA_SEGUNDOS = 240;
+/** Vigencia declarada por el banco (B1), para un token sin `exp` legible. */
+const VIGENCIA_DECLARADA_SEGUNDOS = 30 * 60;
 
 export type Reloj = () => Date;
 
@@ -98,7 +99,7 @@ export class ProveedorDeToken {
     const exp = leerExp(token);
     const ahora = this.reloj().getTime();
     if (exp === null) {
-      return ahora + VIGENCIA_CONSERVADORA_SEGUNDOS * 1000;
+      return ahora + (VIGENCIA_DECLARADA_SEGUNDOS - MARGEN_RENOVACION_SEGUNDOS) * 1000;
     }
     return exp * 1000 - MARGEN_RENOVACION_SEGUNDOS * 1000;
   }

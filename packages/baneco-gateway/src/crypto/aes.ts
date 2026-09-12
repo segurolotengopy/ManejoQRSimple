@@ -1,17 +1,19 @@
 /**
  * Cifrado AES-256-CBC con IV antepuesto, como lo exige Baneco.
  *
- * Esquema (manual derivado §2, a confirmar contra el PDF oficial y la pregunta
- * B2 al banco): AES-256-CBC, padding PKCS7, IV aleatorio de 16 bytes
- * **antepuesto** al ciphertext, todo codificado en Base64.
+ * Esquema: AES-256-CBC, padding PKCS7, IV aleatorio de 16 bytes **antepuesto**
+ * al ciphertext, todo codificado en Base64. **Confirmado** (2026-09-12) con el
+ * vector oficial de la especificación v1.3.0 §5.1: este módulo descifra el
+ * ejemplo del banco al texto esperado. El vector no se versiona porque lleva la
+ * llave de certificación (ver `01-preguntas-al-banco.md`, nota B2).
+ *
+ * El banco sugirió usar su endpoint utilitario de cifrado (B2). No se usa en
+ * operación: recibe el texto plano y la llave en la query string, que es lo que
+ * terminan registrando proxies y logs de acceso.
  *
  * Se implementa con `node:crypto` y sin librerías nuevas. El IV sale de
  * `crypto.randomBytes()`, nunca de `Math.random()` (regla #10): un IV
  * predecible en CBC filtra información sobre el texto plano.
- *
- * **Este esquema es un supuesto hasta el Hito B0.** Lo confirma el endpoint
- * utilitario de certificación del banco, no nosotros. Si B0 lo refuta, el
- * cambio queda contenido en este archivo.
  */
 
 import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';

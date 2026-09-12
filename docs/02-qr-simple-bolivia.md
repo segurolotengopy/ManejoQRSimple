@@ -66,6 +66,23 @@ fuente operativa de verdad. Al mapear la consola (docs/03), registrar acá:
       un número de resolución — misma regla que la matriz de cumplimiento de
       segurolotengo-demo).
 
+### 4.1 Banco Económico — respondido por escrito (2026-09-11)
+
+Fuente: `docs/Integraciones/baneco/01-preguntas-al-banco.md` (nivel 1).
+
+- [x] Vigencia de `dueDate`: mínimo el día de generación, máximo 2 años (C1). Es una
+      **fecha**, no un instante: del lado del banco el QR es pagable hasta que
+      termina ese día, aunque el cobro ya haya vencido en nuestro reloj.
+- [x] Monto máximo por QR: el banco no limita la generación; el límite lo pone la
+      entidad del **pagador** (C2).
+- [x] Comisiones al receptor: se negocian con el ejecutivo de negocios (C9) —
+      pendiente comercial del dueño.
+- [x] QR tras el primer pago: `singleUse=true` lo agota. Un QR vencido no se puede
+      pagar, pero `statusQR` no informa un estado "vencido" (C4).
+- [x] Datos del pagador: el abono individual lleva en la glosa nombre del pagador,
+      entidad de origen y nota del QR (F1). Se descartan en el mapeo (regla #4).
+- [x] Reversiones: no existen para pagos QR (D8).
+
 ## 5. Camino a la API oficial
 
 El BCB anunció **OpenBCB** (oct-2025), una iniciativa de APIs estandarizadas

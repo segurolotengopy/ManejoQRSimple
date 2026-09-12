@@ -135,12 +135,19 @@ export const CASOS_COBRO_REPOSITORY: ReadonlyArray<CasoDeContrato<CobroRepositor
   },
 ];
 
+/**
+ * El "ahora" de los casos de contrato. Quien corre los casos contra un
+ * proveedor con reloj inyectable le pasa este instante: con el reloj real, la
+ * solicitud de ejemplo —que vence en una fecha fija— terminaría emitida
+ * después de su vencimiento en cuanto pase esa fecha.
+ */
+export const INSTANTE_DE_CONTRATO = new Date('2026-08-27T12:00:00.000Z');
+
 function solicitudDeEjemplo(): SolicitudQr {
-  const emitidoEn = new Date('2026-08-27T12:00:00.000Z');
   return {
     cobroId: 'cobro-contrato',
     montoCentavos: 12_345 as SolicitudQr['montoCentavos'],
-    venceEn: new Date(emitidoEn.getTime() + 72 * 3_600_000),
+    venceEn: new Date(INSTANTE_DE_CONTRATO.getTime() + 72 * 3_600_000),
     concepto: 'Caso de contrato',
     qrVersion: 1,
     origenEsperado: 'api-baneco',

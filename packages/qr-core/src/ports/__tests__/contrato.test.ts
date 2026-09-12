@@ -13,6 +13,7 @@ import {
   CASOS_EVIDENCE_STORE,
   CASOS_PAYMENT_WATCHER,
   CASOS_QR_PROVIDER,
+  INSTANTE_DE_CONTRATO,
 } from '../contrato.js';
 import {
   CobroRepositoryEnMemoria,
@@ -23,7 +24,9 @@ import {
 
 describe('contrato de QrProvider', () => {
   it.each(CASOS_QR_PROVIDER)('$nombre', async ({ ejecutar }) => {
-    await expect(ejecutar(new QrProviderEnMemoria())).resolves.toBeUndefined();
+    await expect(
+      ejecutar(new QrProviderEnMemoria(() => INSTANTE_DE_CONTRATO)),
+    ).resolves.toBeUndefined();
   });
 });
 

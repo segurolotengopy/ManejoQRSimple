@@ -14,6 +14,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { enrutar, type VerificadorDeToken } from './api/enrutador.js';
 import type { ContextoApi } from './api/handlers.js';
 import type { Metodo, Peticion } from './api/tipos.js';
+import type { RegistroEventos } from './registro.js';
 
 /** Tamaño máximo del cuerpo. Un pedido de cobro no necesita más que esto. */
 const LIMITE_CUERPO_BYTES = 64 * 1024;
@@ -23,6 +24,8 @@ export type OpcionesServidor = {
   readonly verificador: VerificadorDeToken;
   /** Origen permitido para la consola. Sin comodín: es una API de escritura. */
   readonly origenPermitido: string;
+  /** Logs de depuración: cada pedido con su estado y demora. */
+  readonly registro?: RegistroEventos;
 };
 
 export function crearServidor(opciones: OpcionesServidor): Server {
@@ -81,9 +84,41 @@ async function atender(
     token: tokenDe(req.headers.authorization),
   };
 
+  const inicio = Date.now();
   const respuesta = await enrutar(opciones.ctx, opciones.verificador, peticion);
   res.writeHead(respuesta.status, cabeceras);
   res.end(JSON.stringify(respuesta.cuerpo));
+
+  // Las lecturas exitosas no se registran: la consola consulta el estado cada
+  // pocos segundos, y esas líneas tapaban lo que importa en un buffer de 500.
+  // Sí queda toda escritura, todo error y (aparte) toda llamada al banco.
+  if (opciones.registro !== undefined && !(metodo === 'GET' && respuesta.status < 400)) {
+    const { status } = respuesta;
+    opciones.registro.agregar(
+      status >= 500 ? 'error' : status >= 400 ? 'aviso' : 'info',
+      'api',
+      `${metodo} ${peticion.ruta} → ${String(status)}${sufijoDeError(respuesta.cuerpo)} · ${String(Date.now() - inicio)} ms`,
+    );
+  }
+}
+
+/** ` CODIGO (tipo, responseCode N)` si la respuesta es un error de la API. */
+function sufijoDeError(cuerpo: unknown): string {
+  if (typeof cuerpo !== 'object' || cuerpo === null || !('error' in cuerpo)) {
+    return '';
+  }
+  const { error } = cuerpo;
+  if (typeof error !== 'object' || error === null || !('codigo' in error) || typeof error.codigo !== 'string') {
+    return '';
+  }
+  const detalle = 'detalle' in error && typeof error.detalle === 'object' && error.detalle !== null ? error.detalle : null;
+  const tipo = detalle !== null && 'tipo' in detalle && typeof detalle.tipo === 'string' ? detalle.tipo : null;
+  const codigo =
+    detalle !== null && 'codigoProveedor' in detalle && typeof detalle.codigoProveedor === 'string'
+      ? detalle.codigoProveedor
+      : null;
+  const extra = tipo === null ? '' : ` (${tipo}${codigo === null ? '' : `, responseCode ${codigo}`})`;
+  return ` ${error.codigo}${extra}`;
 }
 
 /** Lee el cuerpo con tope. Devuelve `null` si ya respondió por exceso. */

@@ -14,8 +14,11 @@ export {
   construirPuertos,
   describirError,
   MODOS,
+  type AlmacenImagenQr,
+  type LlamadaAlBanco,
   type ErrorComposicion,
   type Modo,
   type OpcionesComposicion,
   type PuertosArmados,
 } from './puertos.js';
+export { hablaConProduccion, verificarProduccion } from './produccion.js';

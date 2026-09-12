@@ -9,6 +9,7 @@ propios del proyecto sobre esta integración.
 |---|---|
 | `00-analisis-modulo-baneco.md` | Análisis de integración: cobertura de requisitos, encaje en puertos, diseño del adaptador `@mqs/baneco-gateway`, riesgos y plan por hitos. Incluye la resolución de las decisiones D1–D6 del dueño. |
 | `01-preguntas-al-banco.md` | Batería de preguntas al banco, por tema y prioridad. Enviada el 2026-08-27, **respondida el 2026-09-11** (queda abierta D1). Registra cada respuesta, qué cambia en el diseño y los hallazgos derivados. Fuente de nivel 1. |
+| `03-prueba-en-produccion.md` | Prueba controlada en producción con plata propia (el banco no simula pagos, A2): barreras, credenciales, arranque, las nueve pruebas y qué anotar. |
 | `manual-tecnico-derivado-SANEADO.md` | Copia saneada (sin credenciales) del manual derivado no oficial. Solo referencia; **gobierna el PDF oficial**. |
 
 ## Contenido NO versionado — `privado-no-gh/` (git-ignored)

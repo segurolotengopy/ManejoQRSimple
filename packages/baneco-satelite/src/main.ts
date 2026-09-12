@@ -21,6 +21,7 @@ import {
   MensajeriaNoConfigurada,
   construirPuertos,
   describirError,
+  verificarProduccion,
 } from '@mqs/composicion';
 import { esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
@@ -63,6 +64,13 @@ function conectarFirestore(): ReturnType<typeof getFirestore> | null {
 }
 
 async function main(): Promise<number> {
+  // Producción solo en la prueba controlada, y con los datos en el emulador.
+  const barrera = verificarProduccion(process.env);
+  if (barrera !== null) {
+    console.error(`✖ ${barrera}`);
+    return 1;
+  }
+
   const mensajeria = new MensajeriaNoConfigurada();
   const db = conectarFirestore();
 

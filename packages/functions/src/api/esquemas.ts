@@ -58,6 +58,11 @@ export const cuerpoResolver = z.discriminatedUnion('decision', [
   z.object({ decision: z.literal('RECHAZADO'), motivo: motivoResolucion }),
 ]);
 
+/** QR de prueba: el monto lo fija el servidor; acá solo se elige la vigencia. */
+export const cuerpoQrDePrueba = z.object({
+  vigenciaMinutos: z.number().int().min(2).max(24 * 60).optional(),
+});
+
 export const cuerpoComprobante = z.object({
   /** Identificador del mensaje en WhatsApp. Deduplica la doble entrega. */
   referenciaComprobante: z.string().min(1).max(200),

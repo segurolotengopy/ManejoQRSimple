@@ -6,14 +6,26 @@
  *
  * Uso:
  *   npm run api            # contra el emulador, adaptadores en mock
+ *   npm run prueba:api     # prueba controlada contra producción (docs/Integraciones/baneco/03)
  */
 
-import { MensajeriaNoConfigurada, construirPuertos, describirError } from '@mqs/composicion';
-import { esExito } from '@mqs/qr-core';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+import {
+  MensajeriaNoConfigurada,
+  construirPuertos,
+  describirError,
+  verificarProduccion,
+} from '@mqs/composicion';
+import { aDecimalBob, esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
 import { verificadorDeTokenFijo } from './auth.js';
+import { almacenEnDirectorio } from './imagenes.js';
+import { leerModoPrueba, reanudarCorrida, type ModoPrueba } from './modo-prueba.js';
+import { describirLlamada, RegistroEventos } from './registro.js';
 import { crearServidor } from './servidor.js';
 
 const PUERTO_POR_DEFECTO = 8787;
@@ -29,7 +41,7 @@ function conectarFirestore(): ReturnType<typeof getFirestore> {
   return getFirestore(app);
 }
 
-function main(): number {
+async function main(): Promise<number> {
   const verificador = verificadorDeTokenFijo(process.env['API_TOKEN_LOCAL']);
   if (verificador === null) {
     console.error(
@@ -41,16 +53,58 @@ function main(): number {
     return 1;
   }
 
+  // Producción solo en la prueba controlada, y con los datos en el emulador.
+  const barrera = verificarProduccion(process.env);
+  if (barrera !== null) {
+    console.error(`✖ ${barrera}`);
+    return 1;
+  }
+
+  // Las imágenes de QR van fuera del repo: identifican la cuenta de cobro.
+  const imagenes = almacenEnDirectorio(
+    process.env['QR_IMAGENES_DIR'] ?? join(homedir(), '.manejoqr', 'qrs'),
+  );
+
+  // Logs de depuración para la pestaña Logs. Los errores salen además por la terminal.
+  const registro = new RegistroEventos(undefined, (linea) => {
+    if (linea.nivel === 'error') {
+      console.error(`  ! [${linea.origen}] ${linea.texto}`);
+    }
+  });
+
   const db = conectarFirestore();
   const puertos = construirPuertos({
     env: process.env,
     db,
     mensajeria: new MensajeriaNoConfigurada(),
+    almacenImagenesQr: imagenes.guardar,
+    observarBanco: (llamada) => {
+      const { nivel, texto } = describirLlamada(llamada);
+      registro.agregar(nivel, 'banco', texto);
+    },
   });
   if (!esExito(puertos)) {
     console.error(`✖ No se pudieron armar los puertos: ${describirError(puertos.error)}`);
     return 1;
   }
+
+  let prueba: ModoPrueba | null = null;
+  if (process.env['MODO_PRUEBA_PRODUCCION'] === '1') {
+    const leido = leerModoPrueba(process.env, puertos.valor.resumen);
+    if (!esExito(leido)) {
+      console.error(`✖ ${leido.error}`);
+      return 1;
+    }
+    prueba = leido.valor;
+    // Reiniciar la API no pierde de vista los QRs de antes ni reinicia el cupo.
+    const previos = await puertos.valor.deps.cobros.listarRecientes(500);
+    if (!esExito(previos)) {
+      console.error('✖ No se pudo leer el emulador para retomar la prueba. ¿Está corriendo prueba:emulador?');
+      return 1;
+    }
+    reanudarCorrida(prueba, previos.valor, new Date());
+  }
+  registro.agregar('info', 'sistema', `API iniciada · ${puertos.valor.resumen}${prueba === null ? '' : ' · modo prueba'}`);
 
   const puerto = Number(process.env['API_PORT'] ?? String(PUERTO_POR_DEFECTO));
   const origenPermitido = process.env['API_ORIGEN_PERMITIDO'] ?? 'http://localhost:5173';
@@ -61,16 +115,31 @@ function main(): number {
       evidencia: puertos.valor.deps.evidencia,
       horasDeVigenciaPorDefecto: HORAS_VIGENCIA_POR_DEFECTO,
       ahora: () => new Date(),
+      leerImagenQr: imagenes.leer,
+      registro,
+      ...(prueba === null ? {} : { prueba }),
     },
     verificador,
     origenPermitido,
+    registro,
   });
 
   servidor.listen(puerto, () => {
     console.log(`▶ API de ManejoQRSimple en http://localhost:${String(puerto)}`);
     console.log(`  Adaptadores: ${puertos.valor.resumen}`);
     console.log(`  Origen permitido: ${origenPermitido}`);
-    console.log('  Autenticación: token fijo (Authorization: Bearer …)\n');
+    console.log('  Autenticación: token fijo (Authorization: Bearer …)');
+    if (prueba !== null) {
+      console.log(
+        prueba.produccion
+          ? `\n  ⚠ PRUEBA EN PRODUCCIÓN: QRs reales de Bs ${aDecimalBob(prueba.montoCentavos)}, ` +
+              `hasta ${String(prueba.maxQrs)} por corrida. Datos en el emulador local.`
+          : `\n  Modo prueba con el banco SIMULADO: los QRs no son reales (Bs ${aDecimalBob(prueba.montoCentavos)}, ` +
+              `hasta ${String(prueba.maxQrs)} por corrida).`,
+      );
+      console.log('    Al terminar: botón "Cerrar la prueba" en la consola (anula lo que no se pagó).');
+    }
+    console.log('');
   });
 
   const cerrar = (senal: string): void => {
@@ -89,7 +158,7 @@ function main(): number {
   return 0;
 }
 
-const codigo = main();
+const codigo = await main();
 if (codigo !== 0) {
   process.exit(codigo);
 }

@@ -39,9 +39,15 @@ export const creado = (cuerpo: unknown): Respuesta => ({ status: 201, cuerpo });
  * parsear texto; `mensaje` es para una persona. Nunca lleva datos del cobro ni
  * del cliente (reglas #4 y #9).
  */
-export const error = (status: number, codigo: string, mensaje: string): Respuesta => ({
+export const error = (
+  status: number,
+  codigo: string,
+  mensaje: string,
+  /** Detalle técnico para diagnosticar (tipo de falla, código del banco). Nunca datos personales. */
+  detalle?: Readonly<Record<string, unknown>>,
+): Respuesta => ({
   status,
-  cuerpo: { error: { codigo, mensaje } },
+  cuerpo: { error: { codigo, mensaje, ...(detalle === undefined ? {} : { detalle }) } },
 });
 
 export const noAutorizado = (): Respuesta =>

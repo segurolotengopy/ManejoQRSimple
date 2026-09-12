@@ -53,6 +53,40 @@ const solicitud: SolicitudQr = {
   origenEsperado: 'api-baneco',
 };
 
+describe('la imagen del QR', () => {
+  function proveedorCon(almacen: ((qrId: string, png: string) => Promise<string | null>) | null) {
+    const config = configDePrueba();
+    const transporte = new TransporteFalso();
+    const cliente = new ClienteBaneco(config, transporte.enviar, new ProveedorDeToken(config, transporte.enviar));
+    return new QrProviderBaneco(config, cliente, () => INSTANTE_DE_CONTRATO, almacen);
+  }
+
+  it('se guarda por fuera y el QR lleva su referencia y su hash', async () => {
+    const guardadas: string[] = [];
+    const proveedor = proveedorCon((qrId, png) => {
+      guardadas.push(`${qrId}:${png}`);
+      return Promise.resolve(`archivo:${qrId}.png`);
+    });
+
+    const r = await proveedor.emitir(solicitud);
+    expect(esExito(r)).toBe(true);
+    if (!esExito(r)) return;
+    expect(r.valor.imagenRef).toBe(`archivo:${QR_ACTIVO}.png`);
+    expect(r.valor.hashImagen).toMatch(/^[0-9a-f]{64}$/);
+    expect(guardadas).toEqual([`${QR_ACTIVO}:iVBORw0KGgo=`]);
+  });
+
+  it('si no se pudo guardar, el QR existe igual pero sin referencia ni hash', async () => {
+    const r = await proveedorCon(() => Promise.resolve(null)).emitir(solicitud);
+    expect(esExito(r) && r.valor).toMatchObject({ imagenRef: null, hashImagen: null });
+  });
+
+  it('sin almacén no se guarda nada', async () => {
+    const r = await proveedorCon(null).emitir(solicitud);
+    expect(esExito(r) && r.valor.imagenRef).toBeNull();
+  });
+});
+
 describe('tests de contrato de qr-core contra el adaptador de Baneco', () => {
   it.each(CASOS_QR_PROVIDER)('QrProvider — $nombre', async ({ ejecutar }) => {
     await expect(ejecutar(armar().proveedor)).resolves.toBeUndefined();

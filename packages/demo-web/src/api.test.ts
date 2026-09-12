@@ -32,6 +32,36 @@ describe('autenticación', () => {
   });
 });
 
+describe('prueba en producción', () => {
+  it('trae el detalle técnico del error para diagnosticar', async () => {
+    const api = conRespuesta(502, {
+      error: {
+        codigo: 'PROVEEDOR_RECHAZO',
+        mensaje: 'Un servicio externo rechazó la operación.',
+        detalle: { tipo: 'RECHAZADO_POR_PROVEEDOR', codigoProveedor: '99', mensajeTecnico: 'generateQR rechazado' },
+      },
+    });
+    const r = await api.generarQrDePrueba(5);
+    expect(!r.ok && r.error.detalle).toEqual({
+      tipo: 'RECHAZADO_POR_PROVEEDOR',
+      codigoProveedor: '99',
+      mensajeTecnico: 'generateQR rechazado',
+    });
+  });
+
+  it('pide el QR de prueba con la vigencia elegida; el monto no lo manda la consola', async () => {
+    let pedido = '';
+    let cuerpo: unknown = null;
+    const api = conRespuesta(201, { cobro: { id: 'x' }, imagen: null }, (url, init) => {
+      pedido = `${init.method ?? ''} ${url}`;
+      cuerpo = typeof init.body === 'string' ? JSON.parse(init.body) : null;
+    });
+    await api.generarQrDePrueba(30);
+    expect(pedido).toBe(`POST ${BASE}/api/pruebas/qr`);
+    expect(cuerpo).toEqual({ vigenciaMinutos: 30 });
+  });
+});
+
 describe('revisión', () => {
   it('pide la cola a /api/revision', async () => {
     let pedido = '';

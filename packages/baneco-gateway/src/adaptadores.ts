@@ -6,6 +6,8 @@
  * `qr-core` no sabe si detrás hay una API oficial o un scraper.
  */
 
+import { createHash } from 'node:crypto';
+
 import {
   aDecimalBob,
   esExito,
@@ -27,11 +29,22 @@ import { cifrar } from './crypto/aes.js';
 import { aDeteccion, aFechaBaneco } from './mapeo.js';
 import { ESTADO_QR, LIMITES, type PagoQr } from './schemas.js';
 
+/**
+ * Dónde guardar la imagen PNG que devuelve `generateQR`. Devuelve la referencia
+ * con la que después se la encuentra (`imagenRef`), o `null` si no se pudo.
+ *
+ * Se inyecta porque dónde viven los archivos es cosa del proceso, no del
+ * adaptador: la API del demo los deja en un directorio local fuera del repo; en
+ * producción irían a Storage (docs/02 §3).
+ */
+export type AlmacenImagenQr = (qrId: string, pngBase64: string) => Promise<string | null>;
+
 export class QrProviderBaneco implements QrProvider {
   constructor(
     private readonly config: ConfigBaneco,
     private readonly cliente: ClienteBaneco,
     private readonly reloj: () => Date = () => new Date(),
+    private readonly almacen: AlmacenImagenQr | null = null,
   ) {}
 
   async emitir(solicitud: SolicitudQr): Promise<Resultado<QrEmitido, ErrorPuerto>> {
@@ -60,15 +73,26 @@ export class QrProviderBaneco implements QrProvider {
       return respuesta;
     }
 
+    // La imagen nunca viaja inline por el dominio (docs/02 §3): se guarda por
+    // fuera y el cobro lleva su referencia y su hash, para la integridad de la
+    // evidencia. Si no se puede guardar, el QR igual existe en el banco: se
+    // informa con `imagenRef: null` y quien lo muestra lo dice.
+    const png = respuesta.valor.qrImageBase64;
+    const imagenRef =
+      png === null || this.almacen === null ? null : await this.almacen(respuesta.valor.qrId, png);
+    const hashImagen =
+      imagenRef === null || png === null
+        ? null
+        : createHash('sha256').update(Buffer.from(png, 'base64')).digest('hex');
+
     return exito({
       qrVersion: solicitud.qrVersion,
       referenciaProveedor: respuesta.valor.qrId,
       emitidoEn,
       venceEn: solicitud.venceEn,
       origen: 'api-baneco',
-      // La imagen se guarda en Storage por fuera; acá no viaja inline (docs/02 §3).
-      imagenRef: null,
-      hashImagen: null,
+      imagenRef,
+      hashImagen,
     });
   }
 

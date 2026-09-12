@@ -98,7 +98,14 @@ export type ResumenRevision = {
 export type ColaRevision = {
   readonly casos: readonly CasoRevision[];
   readonly resumen: ResumenRevision;
+  /** Hay más casos de los que entran en la cola: el resumen se queda corto. */
+  readonly truncado: boolean;
 };
+
+/** Confirmar nombra el abono que se vio en pantalla; rechazar no lo necesita. */
+export type Resolucion =
+  | { readonly decision: 'CONFIRMADO'; readonly idDeduplicacion: string; readonly motivo: string }
+  | { readonly decision: 'RECHAZADO'; readonly motivo: string };
 
 export type ErrorApi = {
   readonly codigo: string;
@@ -170,8 +177,8 @@ export class ClienteApi {
   }
 
   /** La decisión del dueño sobre un caso en revisión. El motivo queda en la evidencia. */
-  resolver(id: string, decision: 'CONFIRMADO' | 'RECHAZADO', motivo: string): Promise<Resultado<Cobro>> {
-    return this.accion(id, 'resolver', { decision, motivo });
+  resolver(id: string, resolucion: Resolucion): Promise<Resultado<Cobro>> {
+    return this.accion(id, 'resolver', resolucion);
   }
 
   /** Le pregunta al banco si hay un pago para un cobro en revisión. */

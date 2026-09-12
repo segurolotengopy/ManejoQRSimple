@@ -24,6 +24,7 @@
 import { exito, fallo, type Resultado } from '../comun/resultado.js';
 import type { ConciliacionAprobada, MotivoRechazo } from '../conciliacion/conciliar.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
+import type { AbonoAceptado } from './aceptacion.js';
 import type { QrAnulado } from './anulacion.js';
 import type { Cobro, QrEmitido } from './cobro.js';
 import { esTerminal, type EstadoCobro, type OrigenTransicion } from './estados.js';
@@ -96,11 +97,11 @@ export type EventoCobro =
       readonly tipo: 'RESUELTO_MANUALMENTE';
       readonly decision: 'CONFIRMADO';
       /**
-       * El abono del banco que la persona acepta. Confirmar a mano exige
-       * nombrarlo: sin una detección del banco no hay confirmación (regla #1),
-       * tampoco manual. Un comprobante no alcanza.
+       * El abono del banco que la persona acepta. Es un tipo marcado que solo
+       * fabrica `aceptarAbono()`, y solo si el banco lo reportó para este
+       * cobro: sin detección no hay confirmación (regla #1), tampoco manual.
        */
-      readonly idDeduplicacion: string;
+      readonly abono: AbonoAceptado;
       readonly motivo: string;
       /** Solo una persona resuelve una revisión, y queda marcado como tal. */
       readonly origen: 'accion-manual';
@@ -154,7 +155,7 @@ export type ErrorTransicion =
       readonly recibida: number;
     }
   | { readonly tipo: 'QR_SIN_ANULAR_EN_PROVEEDOR'; readonly referenciaProveedor: string }
-  | { readonly tipo: 'CONFIRMACION_SIN_DETECCION' };
+  | { readonly tipo: 'ABONO_DE_OTRO_COBRO'; readonly cobroId: string; readonly abonoDe: string };
 
 /** Estados desde los que cada evento puede disparar. Es la tabla de CLAUDE.md. */
 const ORIGENES_PERMITIDOS: Readonly<Record<TipoEvento, readonly EstadoCobro[]>> = {
@@ -359,13 +360,14 @@ export function transicionar(
       if (evento.decision === 'RECHAZADO') {
         return aplicar('RECHAZADO', {}, { motivo: evento.motivo });
       }
-      if (evento.idDeduplicacion.trim() === '') {
-        return fallo({ tipo: 'CONFIRMACION_SIN_DETECCION' });
+      // Como con la conciliación: el abono aceptado para un cobro no confirma otro.
+      if (evento.abono.cobroId !== cobro.id) {
+        return fallo({ tipo: 'ABONO_DE_OTRO_COBRO', cobroId: cobro.id, abonoDe: evento.abono.cobroId });
       }
       return aplicar(
         'CONFIRMADO',
         {},
-        { motivo: evento.motivo, idDeduplicacion: evento.idDeduplicacion },
+        { motivo: evento.motivo, idDeduplicacion: evento.abono.idDeduplicacion },
       );
 
     case 'ANULADO': {

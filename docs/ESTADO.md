@@ -254,6 +254,12 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
   anulado depende de que el banco lo trate como idempotente (C5 no lo responde). Lo
   sondea B0 (P4); si el banco devuelve error, el adaptador tiene que mapear ese
   `responseCode` a éxito.
+- **Operaciones simultáneas sobre un mismo caso en revisión** (B1 de la auditoría de
+  la consola): dos pestañas, un doble clic o una búsqueda durante el cierre diario
+  pueden dejar un registro de más en la evidencia (detección repetida o resolución no
+  aplicada). Nunca un doble `CONFIRMADO`, porque el estado se escribe con
+  precondición. Cerrarlo del todo exige ids de evidencia deterministas para los
+  eventos con detección, y evidencia y estado en la misma transacción.
 - **Las alertas de revisión viven en la consola abierta.** Con la consola cerrada
   nadie avisa. El paso natural, cuando exista `wa-bridge`, es avisar al dueño por
   WhatsApp los casos críticos.

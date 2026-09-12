@@ -51,7 +51,7 @@ describe('revisión', () => {
       cuerpo = typeof init.body === 'string' ? JSON.parse(init.body) : null;
     });
 
-    await api.resolver('x', 'RECHAZADO', 'el banco no registra ningún pago');
+    await api.resolver('x', { decision: 'RECHAZADO', motivo: 'el banco no registra ningún pago' });
     expect(cuerpo).toEqual({ decision: 'RECHAZADO', motivo: 'el banco no registra ningún pago' });
   });
 });

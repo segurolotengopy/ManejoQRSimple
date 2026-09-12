@@ -152,6 +152,12 @@ function comoHttp(err: ErrorCasoUso): Respuesta {
         'SIN_DETECCION_DEL_BANCO',
         'El banco no reportó ningún pago para este cobro: buscalo en el banco antes de confirmarlo. Un comprobante no alcanza.',
       );
+    case 'ABONO_DESACTUALIZADO':
+      return error(
+        409,
+        'ABONO_DESACTUALIZADO',
+        'El banco reportó otro pago mientras revisabas: actualizá y volvé a mirar el caso antes de decidir.',
+      );
     case 'PUERTO':
       if (err.error.tipo === 'CONFLICTO') {
         return error(
@@ -315,7 +321,11 @@ export async function verRevision(ctx: ContextoApi): Promise<Respuesta> {
     ctx.politicaRevision ?? POLITICA_REVISION_POR_DEFECTO,
   );
   return esExito(cola)
-    ? ok({ casos: cola.valor.casos.map(aVistaCaso), resumen: cola.valor.resumen })
+    ? ok({
+        casos: cola.valor.casos.map(aVistaCaso),
+        resumen: cola.valor.resumen,
+        truncado: cola.valor.truncado,
+      })
     : comoHttp(cola.error);
 }
 
@@ -334,13 +344,7 @@ export async function resolver(ctx: ContextoApi, id: string, cuerpo: unknown): P
   const cobro = await buscar(ctx, id);
   if (esRespuesta(cobro)) return cobro;
 
-  const resuelto = await resolverRevision(
-    ctx.deps,
-    cobro,
-    datos.data.decision,
-    datos.data.motivo,
-    ctx.ahora(),
-  );
+  const resuelto = await resolverRevision(ctx.deps, cobro, datos.data, ctx.ahora());
   return esExito(resuelto) ? ok(aVista(resuelto.valor)) : comoHttp(resuelto.error);
 }
 

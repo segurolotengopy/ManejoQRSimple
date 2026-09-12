@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { esExito, esFallo, exito } from '../comun/resultado.js';
+import { aceptarAbono, type AbonoAceptado } from './aceptacion.js';
 import { anularEnProveedor } from './anulacion.js';
 import {
   conciliar,
@@ -21,6 +22,16 @@ async function constancia(referenciaProveedor: string): Promise<QrAnulado> {
   const r = await anularEnProveedor(anulador, { referenciaProveedor }, T0);
   if (!esExito(r)) {
     throw new Error('el anulador de prueba no falla');
+  }
+  return r.valor;
+}
+
+/** Un abono aceptado por la única vía: el banco lo reportó para ese cobro. */
+function abonoAceptado(cobroId: string): AbonoAceptado {
+  const id = 'baneco:qr-000001:tx-1';
+  const r = aceptarAbono({ id: cobroId }, [{ cobroId, evento: 'PAGO_DETECTADO', datos: { idDeduplicacion: id } }], id);
+  if (!esExito(r)) {
+    throw new Error('el abono de fixture debería aceptarse');
   }
   return r.valor;
 }
@@ -128,7 +139,7 @@ describe('transiciones permitidas', () => {
       {
         tipo: 'RESUELTO_MANUALMENTE',
         decision: 'CONFIRMADO',
-        idDeduplicacion: 'baneco:qr-000001:tx-1',
+        abono: abonoAceptado('cobro-1'),
         motivo: 'abono verificado a mano en la consola',
         origen: 'accion-manual',
       },
@@ -144,19 +155,29 @@ describe('transiciones permitidas', () => {
     }
   });
 
-  it('confirmar a mano sin nombrar un abono del banco se rechaza (regla #1)', () => {
+  it('el abono aceptado para un cobro no confirma otro', () => {
     const r = transicionar(
-      unCobroEn('EN_REVISION'),
+      unCobroEn('EN_REVISION', { id: 'cobro-1' }),
       {
         tipo: 'RESUELTO_MANUALMENTE',
         decision: 'CONFIRMADO',
-        idDeduplicacion: '  ',
-        motivo: 'el cliente mandó el comprobante',
+        abono: abonoAceptado('cobro-2'),
+        motivo: 'abono de otro cobro',
         origen: 'accion-manual',
       },
       T0,
     );
-    expect(r).toEqual({ ok: false, error: { tipo: 'CONFIRMACION_SIN_DETECCION' } });
+    expect(r).toEqual({
+      ok: false,
+      error: { tipo: 'ABONO_DE_OTRO_COBRO', cobroId: 'cobro-1', abonoDe: 'cobro-2' },
+    });
+  });
+
+  it('un abono aceptado no se fabrica a mano (regla #1, también para la persona)', () => {
+    // Test de compilación, como el de ConciliacionAprobada.
+    // @ts-expect-error falta la marca nominal: solo sale de aceptarAbono().
+    const falso: AbonoAceptado = { cobroId: 'cobro-1', idDeduplicacion: 'inventado' };
+    expect(falso.cobroId).toBe('cobro-1');
   });
 });
 

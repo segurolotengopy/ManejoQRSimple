@@ -31,8 +31,8 @@ const RECOMENDACION: Readonly<Record<MotivoRevision, string>> = {
     'El cliente pagó tarde, pero pagó. Si la venta o el servicio siguen en pie, aceptá el pago; si ' +
     'ya no (precio o cupo vencidos), rechazá y devolvé el dinero.',
   DUPLICADO:
-    'Casi siempre es una doble lectura, no un segundo pago. Mirá el extracto en la app del banco: si ' +
-    'hay un solo crédito, rechazá; si hay dos, aceptá y devolvé el sobrante.',
+    'Es una doble lectura del mismo pago, no un segundo pago: no lo aceptes. Rechazalo y mirá el ' +
+    'extracto en la app del banco; si de verdad hay dos créditos, el segundo se devuelve por fuera.',
   ABONO_TARDIO:
     'El QR ya estaba vencido y anulado, pero el cliente pagó de verdad: casi siempre corresponde ' +
     'aceptarlo. No renueves ni reenvíes el cobro: le estarías pidiendo que pague dos veces.',

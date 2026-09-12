@@ -344,13 +344,17 @@ describe('revisión manual por la API', () => {
     expect(r.status).toBe(400);
   });
 
-  it('confirmar acepta el abono del banco', async () => {
+  it('confirmar acepta el abono del banco que se vio en pantalla', async () => {
     const { ctx, watcher } = armar();
-    const { id } = await casoConAbono(ctx, watcher);
+    const { id, referencia } = await casoConAbono(ctx, watcher);
     const r = await enrutar(
       ctx,
       aceptaTodo,
-      pedir('POST', `/api/cobros/${id}/resolver`, { decision: 'CONFIRMADO', motivo: 'se acepta el centavo de diferencia' }),
+      pedir('POST', `/api/cobros/${id}/resolver`, {
+        decision: 'CONFIRMADO',
+        idDeduplicacion: `baneco:${referencia}:tx-1`,
+        motivo: 'se acepta el centavo de diferencia',
+      }),
     );
     expect(r.status).toBe(200);
     expect((r.cuerpo as Record<string, unknown>)['estado']).toBe('CONFIRMADO');
@@ -362,7 +366,11 @@ describe('revisión manual por la API', () => {
     const r = await enrutar(
       ctx,
       aceptaTodo,
-      pedir('POST', `/api/cobros/${id}/resolver`, { decision: 'CONFIRMADO', motivo: 'el cliente mandó el comprobante' }),
+      pedir('POST', `/api/cobros/${id}/resolver`, {
+        decision: 'CONFIRMADO',
+        idDeduplicacion: 'wa-1',
+        motivo: 'el cliente mandó el comprobante',
+      }),
     );
     expect(r.status).toBe(409);
     expect((r.cuerpo as { error: { codigo: string } }).error.codigo).toBe('SIN_DETECCION_DEL_BANCO');

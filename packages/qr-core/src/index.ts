@@ -74,6 +74,7 @@ export {
 // La constancia de anulación se exporta como tipo, no su fábrica: solo los
 // casos de uso la obtienen, anulando el QR de verdad.
 export type { QrAnulado } from './cobro/anulacion.js';
+export { aceptarAbono, type AbonoAceptado, type ErrorAceptacion } from './cobro/aceptacion.js';
 
 // Conciliación
 export {
@@ -115,6 +116,7 @@ export {
   resolverRevision,
   type ColaRevision,
   type DepsBusqueda,
+  type Resolucion,
   type ResultadoBusqueda,
 } from './casos-uso/revisar.js';
 

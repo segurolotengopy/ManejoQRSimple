@@ -81,6 +81,13 @@ export function Revision(props: Props): React.JSX.Element {
         </p>
       )}
 
+      {cola.truncado && (
+        <p className="alerta" role="alert">
+          Hay más casos de los que entran en la cola: se muestran los primeros {casos.length}. Resolvé
+          estos para ver el resto — los contadores se quedan cortos.
+        </p>
+      )}
+
       {casos.length === 0 ? (
         <p className="vacio">No hay nada para revisar.</p>
       ) : (
@@ -135,7 +142,12 @@ function Caso({
       return;
     }
     setOcupado(true);
-    const r = await api.resolver(cobro.id, decision, motivo);
+    // Confirmar nombra el abono que se ve en pantalla: si el banco reportó
+    // otro mientras tanto, el dominio lo rechaza y hay que volver a mirar.
+    const r =
+      decision === 'CONFIRMADO' && abono !== null
+        ? await api.resolver(cobro.id, { decision, idDeduplicacion: abono.idDeduplicacion, motivo })
+        : await api.resolver(cobro.id, { decision: 'RECHAZADO', motivo });
     setOcupado(false);
     if (r.ok) {
       onCambio();

@@ -108,7 +108,12 @@ export type ErrorCasoUso =
    * Se quiso confirmar a mano un caso sin ningún abono del banco en la
    * evidencia. Primero hay que buscarlo en el banco (regla #1).
    */
-  | { readonly tipo: 'SIN_DETECCION_DEL_BANCO'; readonly cobroId: string };
+  | { readonly tipo: 'SIN_DETECCION_DEL_BANCO'; readonly cobroId: string }
+  /**
+   * Se quiso aceptar un abono que ya no es el último que reportó el banco: la
+   * persona decidió mirando algo que cambió. Hay que volver a mirar.
+   */
+  | { readonly tipo: 'ABONO_DESACTUALIZADO'; readonly cobroId: string };
 
 const dePuerto = (error: ErrorPuerto): ErrorCasoUso => ({ tipo: 'PUERTO', error });
 const deTransicion = (error: ErrorTransicion): ErrorCasoUso => ({ tipo: 'TRANSICION', error });

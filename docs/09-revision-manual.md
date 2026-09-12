@@ -75,9 +75,12 @@ El pago llegó después del vencimiento más la tolerancia (10 min).
 - Si ya no (el precio o el cupo vencieron), rechazá y devolvé el dinero.
 
 ### Pago ya usado (`DUPLICADO`)
-El banco reporta un pago que ya había confirmado otro paso del sistema.
-- Casi siempre es una **doble lectura**, no un segundo pago. Mirá el extracto: si hay un
-  solo crédito, rechazá. Si hay dos, aceptá y devolvé el sobrante.
+El banco reporta un pago cuya clave ya se había usado para conciliar este cobro. Con QR de
+un solo uso y la deduplicación por cobro, prácticamente no debería ocurrir.
+- Es una **doble lectura** del mismo pago: **no lo aceptes** — aceptarlo confirmaría con
+  una clave ya usada, no con un pago nuevo. Rechazalo.
+- Mirá el extracto en la app del banco. Si de verdad hay dos créditos, el segundo se
+  devuelve por fuera, y conviene reportarlo: significa que algo del sistema no funcionó.
 
 ### Pago a un QR vencido (`ABONO_TARDIO`)
 El QR ya estaba vencido y anulado, pero el pago entró (carrera de segundos entre la
@@ -114,3 +117,13 @@ rechazo.
   que se persistan.
 - **La marca de "revisión hecha" es local** del navegador (`localStorage`). No es
   evidencia ni se comparte entre dispositivos.
+- **Aceptar confirma el pago que ves en pantalla.** Si mientras decidías el banco reportó
+  otro (el cierre diario, o una búsqueda desde otra pestaña), la consola responde
+  "El banco reportó otro pago mientras revisabas": actualizá y volvé a mirar.
+- **Operaciones simultáneas sobre el mismo caso** (dos pestañas, doble clic, una búsqueda
+  justo durante el cierre diario) pueden dejar un registro de más en la evidencia: una
+  detección repetida, o una resolución que no se aplicó porque la otra ganó. **Nunca**
+  un doble `CONFIRMADO`: el estado se escribe con precondición. El rastro sigue siendo
+  auditable, pero conviene operar un caso desde una sola pestaña.
+- **La cola muestra hasta 200 casos.** Si hay más, la consola lo avisa y los contadores
+  se quedan cortos.

@@ -10,6 +10,7 @@ import {
   PaymentWatcherEnMemoria,
   QrProviderEnMemoria,
 } from '../ports/mocks.js';
+import { POLITICA_REVISION_POR_DEFECTO } from '../revision/revision.js';
 import { bs, enMinutos, T0, unCobro } from '../pruebas/fixtures.js';
 import {
   emitirQr,
@@ -23,6 +24,7 @@ import { buscarAbonoEnRevision, listarRevision, resolverRevision } from './revis
 
 const MONTO = 12_345;
 const REFERENCIA = 'mock-qr-000001';
+const ABONO_1 = `baneco:${REFERENCIA}:tx-1`;
 
 function armar() {
   const evidencia = new EvidenceStoreEnMemoria();
@@ -39,9 +41,9 @@ function armar() {
   return { deps, cobros, evidencia, watcher };
 }
 
-function abono(monto = MONTO, ocurridoEn = enMinutos(30)) {
+function abono(monto = MONTO, ocurridoEn = enMinutos(30), idDeduplicacion = ABONO_1) {
   return registrarDeteccion({
-    idDeduplicacion: `baneco:${REFERENCIA}:tx-1`,
+    idDeduplicacion,
     montoCentavos: bs(monto),
     ocurridoEn,
     origen: 'watcher-baneco',
@@ -49,8 +51,8 @@ function abono(monto = MONTO, ocurridoEn = enMinutos(30)) {
   });
 }
 
-async function enviado(deps: Dependencias) {
-  const emitido = await emitirQr(deps, unCobro({ montoCentavos: bs(MONTO) }), enMinutos(72 * 60), T0);
+async function enviado(deps: Dependencias, id = 'cobro-1') {
+  const emitido = await emitirQr(deps, unCobro({ id, montoCentavos: bs(MONTO) }), enMinutos(72 * 60), T0);
   if (!esExito(emitido)) throw new Error('emitir debería funcionar');
   const r = await enviarQr(deps, emitido.valor, T0);
   if (!esExito(r)) throw new Error('enviar debería funcionar');
@@ -87,8 +89,23 @@ describe('listarRevision()', () => {
     expect(esExito(r)).toBe(true);
     if (!esExito(r)) return;
     expect(r.valor.resumen).toEqual({ total: 1, criticos: 0, atrasados: 1 });
+    expect(r.valor.truncado).toBe(false);
     expect(r.valor.casos[0]).toMatchObject({ motivo: 'MONTO_NO_COINCIDE', nivel: 'ATRASADO' });
     expect(r.valor.casos[0]?.abono?.montoCentavos).toBe(MONTO - 1);
+  });
+
+  it('si hay más casos que el tope, lo dice en vez de callarlo', async () => {
+    const { deps, watcher } = armar();
+    for (const [i, id] of ['a', 'b'].entries()) {
+      const cobro = await enviado(deps, id);
+      const ref = `mock-qr-00000${String(i + 1)}`;
+      watcher.cargarAbono(ref, abono(MONTO - 1, enMinutos(30), `baneco:${ref}:tx-1`));
+      await verificarPago(deps, cobro, enMinutos(31));
+    }
+
+    const r = await listarRevision(deps, enMinutos(40), POLITICA_REVISION_POR_DEFECTO, 1);
+    expect(esExito(r) && r.valor.truncado).toBe(true);
+    expect(esExito(r) && r.valor.casos).toHaveLength(1);
   });
 });
 
@@ -96,33 +113,66 @@ describe('resolverRevision()', () => {
   it('confirmar acepta el abono del banco y queda como acción manual', async () => {
     const { deps, cobro, evidencia } = await enRevisionConAbono();
 
-    const r = await resolverRevision(deps, cobro, 'CONFIRMADO', 'el cliente pagó un centavo menos, se acepta', enMinutos(60));
+    const r = await resolverRevision(
+      deps,
+      cobro,
+      { decision: 'CONFIRMADO', idDeduplicacion: ABONO_1, motivo: 'el cliente pagó un centavo menos, se acepta' },
+      enMinutos(60),
+    );
     expect(esExito(r) && r.valor.estado).toBe('CONFIRMADO');
     const registros = await evidencia.listarDeCobro(cobro.id);
     const ultimo = esExito(registros) ? registros.valor.at(-1) : undefined;
-    expect(ultimo).toMatchObject({ origen: 'accion-manual', datos: { idDeduplicacion: `baneco:${REFERENCIA}:tx-1` } });
+    expect(ultimo).toMatchObject({ origen: 'accion-manual', datos: { idDeduplicacion: ABONO_1 } });
   });
 
   it('sin abono del banco no se puede confirmar, ni a mano (regla #1)', async () => {
     // El caso típico de fraude: comprobante falsificado, banco en silencio.
     const { deps, cobro, cobros } = await enRevisionSinAbono();
 
-    const r = await resolverRevision(deps, cobro, 'CONFIRMADO', 'el cliente mandó el comprobante', enMinutos(72 * 60 + 5));
+    const r = await resolverRevision(
+      deps,
+      cobro,
+      { decision: 'CONFIRMADO', idDeduplicacion: 'wa-1', motivo: 'el cliente mandó el comprobante' },
+      enMinutos(72 * 60 + 5),
+    );
     expect(!esExito(r) && r.error.tipo).toBe('SIN_DETECCION_DEL_BANCO');
+    const guardado = await cobros.obtener(cobro.id);
+    expect(esExito(guardado) && guardado.valor?.estado).toBe('EN_REVISION');
+  });
+
+  it('no confirma un abono que ya no es el último que reportó el banco', async () => {
+    // La persona miró el abono tx-1; mientras decidía, el banco reportó tx-2.
+    const { deps, cobro, watcher, cobros } = await enRevisionConAbono();
+    watcher.cargarAbono(REFERENCIA, abono(MONTO, enMinutos(35), `baneco:${REFERENCIA}:tx-2`));
+    const busqueda = await buscarAbonoEnRevision(deps, cobro, enMinutos(40));
+    expect(esExito(busqueda) && busqueda.valor.encontrado).toBe(true);
+
+    const r = await resolverRevision(
+      deps,
+      cobro,
+      { decision: 'CONFIRMADO', idDeduplicacion: ABONO_1, motivo: 'se acepta el centavo de diferencia' },
+      enMinutos(45),
+    );
+    expect(!esExito(r) && r.error.tipo).toBe('ABONO_DESACTUALIZADO');
     const guardado = await cobros.obtener(cobro.id);
     expect(esExito(guardado) && guardado.valor?.estado).toBe('EN_REVISION');
   });
 
   it('rechazar no necesita abono', async () => {
     const { deps, cobro } = await enRevisionSinAbono();
-    const r = await resolverRevision(deps, cobro, 'RECHAZADO', 'el banco no registra ningún pago', enMinutos(72 * 60 + 5));
+    const r = await resolverRevision(
+      deps,
+      cobro,
+      { decision: 'RECHAZADO', motivo: 'el banco no registra ningún pago' },
+      enMinutos(72 * 60 + 5),
+    );
     expect(esExito(r) && r.valor.estado).toBe('RECHAZADO');
   });
 
   it('solo resuelve cobros en revisión', async () => {
     const { deps } = armar();
     const cobro = await enviado(deps);
-    const r = await resolverRevision(deps, cobro, 'RECHAZADO', 'no corresponde acá', enMinutos(5));
+    const r = await resolverRevision(deps, cobro, { decision: 'RECHAZADO', motivo: 'no corresponde acá' }, enMinutos(5));
     expect(!esExito(r) && r.error.tipo).toBe('TRANSICION');
   });
 });
@@ -149,7 +199,12 @@ describe('buscarAbonoEnRevision()', () => {
       : [];
     expect(adjuntadas).toHaveLength(1);
 
-    const r = await resolverRevision(deps, primera.valor.cobro, 'CONFIRMADO', 'el banco sí registró el pago', enMinutos(72 * 60 + 7));
+    const r = await resolverRevision(
+      deps,
+      primera.valor.cobro,
+      { decision: 'CONFIRMADO', idDeduplicacion: ABONO_1, motivo: 'el banco sí registró el pago' },
+      enMinutos(72 * 60 + 7),
+    );
     expect(esExito(r) && r.valor.estado).toBe('CONFIRMADO');
   });
 });

@@ -8,7 +8,7 @@ propios del proyecto sobre esta integración.
 | Archivo | Qué es |
 |---|---|
 | `00-analisis-modulo-baneco.md` | Análisis de integración: cobertura de requisitos, encaje en puertos, diseño del adaptador `@mqs/baneco-gateway`, riesgos y plan por hitos. Incluye la resolución de las decisiones D1–D6 del dueño. |
-| `01-preguntas-al-banco.md` | Batería de preguntas al banco previa al desarrollo, por tema y prioridad. **Enviada por correo el 2026-08-27; a la espera de respuesta.** Las respuestas se registran ahí mismo. |
+| `01-preguntas-al-banco.md` | Batería de preguntas al banco, por tema y prioridad. Enviada el 2026-08-27, **respondida el 2026-09-11** (queda abierta D1). Registra cada respuesta, qué cambia en el diseño y los hallazgos derivados. Fuente de nivel 1. |
 | `manual-tecnico-derivado-SANEADO.md` | Copia saneada (sin credenciales) del manual derivado no oficial. Solo referencia; **gobierna el PDF oficial**. |
 
 ## Contenido NO versionado — `privado-no-gh/` (git-ignored)
@@ -43,18 +43,32 @@ parámetros ni endpoints distintos a los documentados.**
 `tools/baneco-b0/` sondea el ambiente de certificación y produce
 `02-hallazgos-certificacion.md` con un veredicto por cada punto de la tabla de abajo y
 por cada pregunta que se pueda contestar empíricamente. Se corre con
-`npm run baneco:b0` y **espera credenciales de certificación** (pregunta A3).
+`npm run baneco:b0`. Las credenciales de certificación del PDF son **de uso compartido**
+(respuesta A3) y sirven; falta la **cuenta de abono de pruebas** que el banco envía con
+un usuario de pruebas (A4). Sin ella B0 autentica pero no puede generar QRs.
 
-## Verificaciones pendientes contra el PDF oficial
+El camino de pago no se puede simular (A2): para capturar un `statusQR` pagado real hay
+que mandarle al banco la imagen de un QR vigente por correo y que lo paguen ellos.
+
+## Verificaciones contra el PDF oficial y el ambiente de certificación
 
 El adaptador (`packages/baneco-gateway`) se codificó desde el manual derivado saneado,
-que es fuente de nivel 4. Estos puntos hay que contrastarlos con el PDF —y confirmarlos
-empíricamente en el Hito B0— antes de considerarlos cerrados:
+que es fuente de nivel 4. Estado de cada punto tras la respuesta del banco:
 
-| # | Punto | Por qué importa |
+| # | Punto | Estado |
 |---|---|---|
-| V1 | **Versionado asimétrico de rutas.** El manual documenta `/api/qrsimple/generateQR` y `/api/qrsimple/cancelQR` sin `v2`, pero `/api/qrsimple/v2/statusQR/{id}` y `/api/qrsimple/v2/paidQR/{fecha}` con `v2`. | Una ruta equivocada es un 404 en la primera llamada real. Está codificado tal cual lo documenta el manual. |
-| V2 | **Esquema de cifrado AES** (§2 del manual): AES-256-CBC, PKCS7, IV de 16 bytes antepuesto, Base64. | Es un supuesto declarado (pregunta B2). Lo confirma el endpoint utilitario de certificación en B0, no nosotros. |
-| V3 | **Zona horaria de `paymentDate`/`paymentTime`.** Se interpretan en hora boliviana (UTC-4). | Pregunta D7. Un offset equivocado desplaza los pagos de día y rompe la conciliación diaria. Está aislado en una constante de `mapeo.ts`. |
-| V4 | **Nombre del campo de estado**: `statusQrCode` vs `statusQRCode`. | La espec. no es consistente. El adaptador acepta ambos: equivocarse significaría no detectar un pago. |
-| V5 | **Catálogo de `responseCode`.** No documentado en la v1.3.0. | Pregunta E1. Todo código distinto de 0 se trata como error opaco y se registra para construir el catálogo empírico. |
+| V1 | **Versionado asimétrico de rutas.** El manual documenta `/api/qrsimple/generateQR` y `/api/qrsimple/cancelQR` sin `v2`, pero `/api/qrsimple/v2/statusQR/{id}` y `/api/qrsimple/v2/paidQR/{fecha}` con `v2`. | ⏳ **Abierto.** El banco no lo trató. Una ruta equivocada es un 404 en la primera llamada real de B0. |
+| V2 | **Esquema de cifrado AES**: AES-256-CBC, PKCS7, IV de 16 bytes antepuesto, Base64. | ✅ **Confirmado** (2026-09-12) con el vector oficial del PDF §5.1: `crypto/aes.ts` lo descifra al texto esperado. Falta solo la confirmación end-to-end del login en B0. |
+| V3 | **Zona horaria de `paymentDate`/`paymentTime`.** Se interpretan en hora boliviana (UTC-4). | ✅ **Confirmado por escrito** (D7): fecha y hora del pago en hora de Bolivia. |
+| V4 | **Nombre del campo de estado**: `statusQrCode` vs `statusQRCode`. | ⏳ **Abierto.** El adaptador acepta ambos. B0 lo resuelve con el primer `statusQR`. |
+| V5 | **Catálogo de `responseCode`.** No documentado en la v1.3.0. | ✅ **Cerrado** (E1): no existe catálogo oficial; el `message` trae la descripción. El error opaco pasa a ser el diseño definitivo. |
+
+## Discrepancias entre la respuesta del banco y el PDF
+
+Por la jerarquía de arriba, gana la respuesta escrita:
+
+| Tema | PDF v1.3.0 | Respuesta del banco |
+|---|---|---|
+| Consulta de movimientos | `POST /api/accounts/history` (§8.1) | El endpoint es `accounts/queryMovements` (F2). |
+| Pago a proveedores | `POST /api/batchPayment/upload`, tipo `PROVIDERS` (§9.1) | "No se tiene este servicio, no está desarrollado" (G1). |
+| Endpoint de cifrado | `GET /api/authentication/encrypt` (§5.1) | Nombra `/api/authenticate/cypher` (B2). No se usa en operación de todos modos. |

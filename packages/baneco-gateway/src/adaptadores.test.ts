@@ -1,6 +1,7 @@
 import {
   CASOS_PAYMENT_WATCHER,
   CASOS_QR_PROVIDER,
+  INSTANTE_DE_CONTRATO,
   centavos,
   esExito,
   type Centavos,
@@ -36,7 +37,9 @@ function armar(opciones: OpcionesTransporte = {}) {
   return {
     config,
     transporte,
-    proveedor: new QrProviderBaneco(config, cliente),
+    // El reloj del contrato: con el real, el QR se emite después de la fecha
+    // fija en que vence la solicitud de ejemplo.
+    proveedor: new QrProviderBaneco(config, cliente, () => INSTANTE_DE_CONTRATO),
     watcher: new PaymentWatcherBaneco(cliente),
   };
 }

@@ -28,14 +28,21 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 import { describirPasada, unaPasada } from './pasada.js';
 
-const INTERVALO_POR_DEFECTO_SEGUNDOS = 180;
-const INTERVALO_MINIMO_SEGUNDOS = 30;
+/**
+ * El banco acepta consultar un QR pendiente desde los 10 s en venta en línea, y
+ * hoy no aplica rate limit (pregunta D6, 2026-09-11). El cobro por WhatsApp es
+ * venta en línea: 30 s detecta el pago mientras el cliente todavía espera la
+ * confirmación, sin acercarse al piso.
+ */
+const INTERVALO_POR_DEFECTO_SEGUNDOS = 30;
+const INTERVALO_MINIMO_SEGUNDOS = 10;
 
 function intervaloSegundos(): number {
   const crudo =
     process.env['BANECO_POLL_INTERVAL_SECONDS'] ?? String(INTERVALO_POR_DEFECTO_SEGUNDOS);
   const valor = Number(crudo);
-  // Un intervalo demasiado corto castiga al banco y al rate limit (pregunta D6).
+  // El piso es el que fijó el banco. Anunció que podría implementar un rate
+  // limit: bajar de ahí es pedir un bloqueo del usuario API.
   return Number.isInteger(valor) && valor >= INTERVALO_MINIMO_SEGUNDOS
     ? valor
     : INTERVALO_POR_DEFECTO_SEGUNDOS;

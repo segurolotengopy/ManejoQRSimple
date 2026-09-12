@@ -121,6 +121,7 @@ export {
   CASOS_EVIDENCE_STORE,
   CASOS_PAYMENT_WATCHER,
   CASOS_QR_PROVIDER,
+  INSTANTE_DE_CONTRATO,
   type CasoDeContrato,
 } from './ports/contrato.js';
 export {

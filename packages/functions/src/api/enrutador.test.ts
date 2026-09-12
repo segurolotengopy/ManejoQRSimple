@@ -37,7 +37,9 @@ function armar() {
     deps: {
       cobros,
       evidencia,
-      qr: new QrProviderEnMemoria(),
+      // El mismo reloj que la API: con el real, el QR se emite después de
+      // la fecha fija en que vence.
+      qr: new QrProviderEnMemoria(() => AHORA),
       watcher,
       mensajeria,
       politica: POLITICA_POR_DEFECTO,

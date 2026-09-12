@@ -69,8 +69,9 @@ function anotarCodigo(ctx: Contexto, operacion: string, contexto: string): void 
  * Que el login funcione **es** la validación del AES: el banco descifra con su
  * llave el password que ciframos nosotros. Si lo acepta, el esquema
  * —AES-256-CBC, PKCS7, IV de 16 bytes antepuesto, Base64— es el correcto.
- * No hace falta el endpoint utilitario, cuyo contrato además no está en
- * ninguna fuente documentada de este repositorio.
+ * El vector oficial del PDF ya lo confirmó sin red (nota B2 de
+ * `01-preguntas-al-banco.md`); esto es la confirmación end-to-end. No se usa
+ * el endpoint utilitario que sugirió el banco: lleva la llave en la URL.
  */
 export async function autenticar(ctx: Contexto): Promise<{
   readonly ok: boolean;
@@ -117,7 +118,7 @@ export async function autenticar(ctx: Contexto): Promise<{
   const exp = leerExp(token.valor);
   const vigencia =
     exp === null
-      ? 'El token no declara un `exp` legible; el cliente cae a una vigencia conservadora de 4 minutos.'
+      ? 'El token no declara un `exp` legible; el cliente cae a los 30 minutos que declaró el banco (B1).'
       : `El token declara \`exp\` = ${String(exp)} (${new Date(exp * 1000).toISOString()}), ` +
         `es decir ${String(Math.round((exp * 1000 - ctx.ahora.getTime()) / 60_000))} minutos desde la emisión.`;
 

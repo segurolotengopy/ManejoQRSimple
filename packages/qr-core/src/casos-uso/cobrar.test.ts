@@ -31,7 +31,9 @@ function armar() {
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
   const mensajeria = new MessagingProviderEnMemoria();
-  const qr = new QrProviderEnMemoria();
+  // Con el reloj de la prueba: con el real, el QR sale emitido "hoy" y vence
+  // en una fecha fija del pasado, y la máquina de estados lo rechaza.
+  const qr = new QrProviderEnMemoria(() => T0);
 
   const deps: Dependencias = {
     cobros,

@@ -34,10 +34,10 @@ export type ErrorMapeo =
 /**
  * Offset de Bolivia respecto de UTC. No hay horario de verano.
  *
- * El banco informa `paymentDate`/`paymentTime` sin zona horaria, así que se
- * interpretan en hora boliviana. **Es un supuesto** hasta que el banco responda
- * la pregunta D7; está acá, en una sola constante, para que confirmarlo o
- * corregirlo sea cambiar una línea.
+ * El banco informa `paymentDate`/`paymentTime` sin zona horaria. Confirmó por
+ * escrito que son fecha y hora del pago **en hora de Bolivia** (pregunta D7,
+ * 2026-09-11). Sigue en una sola constante: es el dato del que depende que un
+ * pago caiga en el día correcto de la conciliación diaria.
  */
 const OFFSET_BOLIVIA_HORAS = -4;
 

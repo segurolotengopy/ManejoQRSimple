@@ -147,6 +147,13 @@ export class CobroRepositoryEnMemoria implements CobroRepository {
     return Promise.resolve(exito(recientes));
   }
 
+  buscarPorReferenciaQr(referenciaProveedor: string): Ok<Cobro | null> {
+    const cobro = [...this.cobros.values()].find(
+      (c) => c.qrVigente?.referenciaProveedor === referenciaProveedor,
+    );
+    return Promise.resolve(exito(cobro ?? null));
+  }
+
   async deteccionesAplicadas(cobroId: string): Ok<readonly string[]> {
     const sembradas = this.deteccionesSembradas.get(cobroId) ?? [];
     if (this.evidencia === undefined) {

@@ -133,6 +133,13 @@ export const CASOS_COBRO_REPOSITORY: ReadonlyArray<CasoDeContrato<CobroRepositor
       afirmar(cobro === null, 'un cobro inexistente no es una falla');
     },
   },
+  {
+    nombre: 'una referencia de QR desconocida devuelve null, no un error',
+    ejecutar: async (repo) => {
+      const cobro = exigirExito(await repo.buscarPorReferenciaQr('qr-inexistente'), 'buscar');
+      afirmar(cobro === null, 'un QR que no es de nadie no es una falla: es un huérfano');
+    },
+  },
 ];
 
 /**

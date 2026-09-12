@@ -9,7 +9,10 @@ import {
 import { registrarDeteccion } from '../conciliacion/deteccion.js';
 import { bs, enMinutos, T0, unCobro, unCobroEn, unQr } from '../pruebas/fixtures.js';
 import { ESTADOS, ESTADOS_TERMINALES, type EstadoCobro } from './estados.js';
-import { transicionar, type EventoCobro, type TipoEvento } from './maquina-estados.js';
+import { transicionar, type EventoCobro, type QrAnulado, type TipoEvento } from './maquina-estados.js';
+
+/** Constancia de anulación del QR de fixture (`unQr()` usa `qr-000001`). */
+const ANULACION: QrAnulado = { referenciaProveedor: 'qr-000001', anuladoEn: T0 };
 
 /** Una detección que concilia contra el cobro por defecto. */
 const deteccionValida = registrarDeteccion({
@@ -51,15 +54,17 @@ function eventoDe(tipo: TipoEvento, cobroId = 'cobro-1'): EventoCobro {
     case 'CONCILIACION_FALLIDA':
       return { tipo, motivo: { tipo: 'SIN_QR_EMITIDO' }, origen: 'sistema' };
     case 'QR_VENCIDO':
-      return { tipo, origen: 'sistema' };
+      return { tipo, anulacion: ANULACION, origen: 'sistema' };
     case 'QR_RENOVADO':
       return { tipo, qr: unQr({ qrVersion: 2 }), origen: 'sistema' };
     case 'VENTANA_AGOTADA':
-      return { tipo, origen: 'sistema' };
+      return { tipo, anulacion: ANULACION, origen: 'sistema' };
+    case 'ABONO_TARDIO':
+      return { tipo, deteccion: deteccionValida, origen: 'watcher-baneco' };
     case 'RESUELTO_MANUALMENTE':
       return { tipo, decision: 'RECHAZADO', motivo: 'no aparece el abono', origen: 'accion-manual' };
     case 'ANULADO':
-      return { tipo, motivo: 'el cliente desistió', origen: 'accion-manual' };
+      return { tipo, motivo: 'el cliente desistió', anulacion: ANULACION, origen: 'accion-manual' };
   }
 }
 
@@ -76,6 +81,7 @@ const TRANSICIONES_ESPERADAS: ReadonlyArray<readonly [EstadoCobro, TipoEvento, E
   ['QR_ACTIVO', 'QR_VENCIDO', 'VENCIDO'],
   ['ENVIADO', 'QR_VENCIDO', 'VENCIDO'],
   ['VENCIDO', 'QR_RENOVADO', 'QR_ACTIVO'],
+  ['VENCIDO', 'ABONO_TARDIO', 'EN_REVISION'],
   ['EN_REVISION', 'RESUELTO_MANUALMENTE', 'RECHAZADO'],
   ['BORRADOR', 'ANULADO', 'ANULADO'],
   ['QR_ACTIVO', 'ANULADO', 'ANULADO'],
@@ -146,10 +152,78 @@ function eventosPorTipo(): Record<TipoEvento, true> {
     QR_VENCIDO: true,
     QR_RENOVADO: true,
     VENTANA_AGOTADA: true,
+    ABONO_TARDIO: true,
     RESUELTO_MANUALMENTE: true,
     ANULADO: true,
   };
 }
+
+describe('un QR pagable no se suelta sin anularlo en el proveedor (Baneco C4)', () => {
+  const deOtroQr: QrAnulado = { referenciaProveedor: 'qr-anterior', anuladoEn: T0 };
+
+  it.each(['QR_ACTIVO', 'ENVIADO'] as const)('%s no vence sin la anulación del QR vigente', (estado) => {
+    // Anular una versión anterior no deja muerta la vigente.
+    const r = transicionar(unCobroEn(estado), { tipo: 'QR_VENCIDO', anulacion: deOtroQr, origen: 'sistema' }, T0);
+    expect(r).toEqual({
+      ok: false,
+      error: { tipo: 'QR_SIN_ANULAR_EN_PROVEEDOR', referenciaProveedor: 'qr-000001' },
+    });
+  });
+
+  it('la ventana agotada también exige la anulación', () => {
+    const r = transicionar(
+      unCobroEn('COMPROBANTE_RECIBIDO'),
+      { tipo: 'VENTANA_AGOTADA', anulacion: deOtroQr, origen: 'sistema' },
+      T0,
+    );
+    expect(esFallo(r)).toBe(true);
+  });
+
+  it.each(['QR_ACTIVO', 'ENVIADO'] as const)('%s no se anula sin anular su QR en el banco', (estado) => {
+    const r = transicionar(
+      unCobroEn(estado),
+      { tipo: 'ANULADO', motivo: 'x', anulacion: null, origen: 'accion-manual' },
+      T0,
+    );
+    expect(esFallo(r)).toBe(true);
+  });
+
+  it.each(['BORRADOR', 'VENCIDO'] as const)(
+    '%s se anula sin constancia: no tiene un QR pagable',
+    (estado) => {
+      // Un borrador nunca tuvo QR; uno vencido ya lo anuló al vencer.
+      const r = transicionar(
+        unCobroEn(estado),
+        { tipo: 'ANULADO', motivo: 'x', anulacion: null, origen: 'accion-manual' },
+        T0,
+      );
+      expect(esExito(r) && r.valor.cobro.estado).toBe('ANULADO');
+    },
+  );
+
+  it('la evidencia del vencimiento registra qué QR se anuló y cuándo', () => {
+    const r = transicionar(unCobroEn('ENVIADO'), eventoDe('QR_VENCIDO'), T0);
+    expect(esExito(r) && r.valor.evidencia.datos).toMatchObject({
+      qrAnulado: 'qr-000001',
+      anuladoEn: T0.toISOString(),
+    });
+  });
+});
+
+describe('abono tardío: VENCIDO → EN_REVISION', () => {
+  it('un pago sobre un QR vencido no se descarta ni se confirma solo', () => {
+    const r = transicionar(unCobroEn('VENCIDO'), eventoDe('ABONO_TARDIO'), T0);
+    expect(esExito(r)).toBe(true);
+    if (esExito(r)) {
+      expect(r.valor.cobro.estado).toBe('EN_REVISION');
+      // Queda la detección, para que quien revise vea qué pagó el banco.
+      expect(r.valor.evidencia.datos).toMatchObject({
+        idDeduplicacion: 'baneco:qr-000001:tx-1',
+        montoCentavos: 12_345,
+      });
+    }
+  });
+});
 
 describe('estados terminales', () => {
   it.each(ESTADOS_TERMINALES)('%s no acepta ninguna transición', (estado) => {

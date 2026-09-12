@@ -26,6 +26,7 @@ import { esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
+import { cerrarDiaSiCorresponde, describirCierre } from './cierre.js';
 import { describirPasada, unaPasada } from './pasada.js';
 
 /**
@@ -77,11 +78,14 @@ async function main(): Promise<number> {
   console.log('▶ Satélite Baneco');
   console.log(`  Adaptadores: ${puertos.valor.resumen}`);
   console.log(unaSola ? '  Modo: una sola pasada.' : `  Intervalo: ${String(intervalo)} s.`);
-  console.log('  Verifica y concilia; no emite ni renueva QRs.\n');
+  console.log('  Verifica, concilia y anula en el banco los QRs que vencen; no emite ni renueva.');
+  console.log('  Cierra cada día el anterior contra el reporte paidQR del banco.\n');
 
   // En un objeto y no en un `let`: el manejador de señal lo muta desde una
   // clausura, y TypeScript no puede ver eso en una variable local.
   const control = { corriendo: true };
+  /** Último día boliviano cerrado. En memoria: al arrancar se vuelve a cerrar ayer. */
+  let ultimoCierre: string | null = null;
   /** Se lee por función: así el análisis de flujo no la estrecha a `true`. */
   const sigue = (): boolean => control.corriendo;
   const detener = (senal: string): void => {
@@ -107,6 +111,18 @@ async function main(): Promise<number> {
       for (const { cobroId, error } of resultado.conError) {
         console.error(`  ! cobro ${cobroId}: ${error.tipo}`);
       }
+      const cierre = await cerrarDiaSiCorresponde(puertos.valor.deps, new Date(), ultimoCierre);
+      if (cierre.tipo === 'CERRADO') {
+        ultimoCierre = cierre.clave;
+        console.log(`${new Date().toISOString()} ${describirCierre(cierre.clave, cierre.resumen)}`);
+        for (const id of [...cierre.resumen.huerfanos, ...cierre.resumen.sinCorroborar]) {
+          // Plata en la cuenta que ningún cobro explica: nunca se descarta.
+          console.warn(`  ! abono para revisar a mano: ${id}`);
+        }
+      } else if (cierre.tipo === 'ERROR') {
+        console.error(`  ! cierre ${cierre.clave} fallido (${cierre.error.tipo}); se reintenta.`);
+      }
+
       const sinEnviar = mensajeria.drenar();
       if (sinEnviar.length > 0) {
         console.warn(

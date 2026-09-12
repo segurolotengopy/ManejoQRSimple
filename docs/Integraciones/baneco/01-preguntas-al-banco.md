@@ -124,12 +124,18 @@ cruzarlas con el código:
    decisión del dueño. Un cliente que paga en esa ventana acredita dinero real que el
    satélite no ve, porque solo consulta el QR vigente de los cobros `ENVIADO` /
    `COMPROBANTE_RECIBIDO`. No es fraude —es plata que entra sin registrarse—, pero
-   rompe la conciliación. **Pendiente de PR propio.**
+   rompe la conciliación. **Resuelto (PR "cerrar la ventana de pago"):** vencer,
+   anular y la ventana agotada exigen anular antes el QR en el banco — lo exige la
+   máquina de estados, no la disciplina —, se consulta el banco antes de vencer, y
+   un pago que igual llegue sobre un QR vencido lleva el cobro a `EN_REVISION`.
 2. **La conciliación diaria existe pero nadie la corre (D7, C3).** `conciliarDia()` está
    en `qr-core` y reporta abonos huérfanos, que es justo la red para el hallazgo 1 y
    para el QR duplicado de C3. El satélite no la invoca. Con D7 ya se sabe cuándo
-   correrla: pasada la medianoche boliviana, sobre el día anterior. **Pendiente del
-   mismo PR.**
+   correrla: pasada la medianoche boliviana, sobre el día anterior. **Resuelto (mismo
+   PR):** el satélite cierra el día anterior al cambiar el día boliviano y al
+   arrancar. Además se corrigió un defecto que la habría hecho inservible: solo
+   comparaba contra los cobros pendientes, así que todo pago ya confirmado aparecía
+   como huérfano al día siguiente. Ahora busca el cobro por la referencia del QR.
 
 ## Supuestos de trabajo — estado tras la respuesta
 

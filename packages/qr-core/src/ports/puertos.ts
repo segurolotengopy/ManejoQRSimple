@@ -99,6 +99,15 @@ export interface CobroRepository {
    * dejaría a una de las dos mal servida.
    */
   listarRecientes(limite: number): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
+
+  /**
+   * El cobro cuyo QR **vigente** tiene esta referencia del proveedor, en
+   * cualquier estado. `null` si no hay ninguno.
+   *
+   * Es la pregunta de la conciliación diaria: el banco informa pagos por QR, y
+   * un pago de un cobro ya confirmado no es un huérfano — es el caso normal.
+   */
+  buscarPorReferenciaQr(referenciaProveedor: string): Promise<Resultado<Cobro | null, ErrorPuerto>>;
   /**
    * Claves de deduplicación ya aplicadas a un cobro (regla #7).
    *

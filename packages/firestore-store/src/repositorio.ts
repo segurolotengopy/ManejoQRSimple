@@ -156,6 +156,36 @@ export class CobroRepositoryFirestore implements CobroRepository {
     }
   }
 
+  /**
+   * El cobro cuyo QR vigente tiene esta referencia. Firestore indexa solo los
+   * campos anidados, así que no hace falta un índice compuesto.
+   */
+  async buscarPorReferenciaQr(referenciaProveedor: string): Promise<Resultado<Cobro | null, ErrorPuerto>> {
+    try {
+      const snapshot = await this.cobros
+        .where('qrVigente.referenciaProveedor', '==', referenciaProveedor)
+        .limit(2)
+        .get();
+      const cobros = this.mapear(snapshot.docs);
+      if (!esExito(cobros)) {
+        return cobros;
+      }
+      if (cobros.valor.length > 1) {
+        // Dos cobros con el mismo QR vigente: no se elige uno al azar para
+        // conciliarle un pago. Se corta y lo mira una persona.
+        return fallo({
+          tipo: 'RESPUESTA_INVALIDA',
+          mensaje: `Más de un cobro tiene el QR vigente ${referenciaProveedor}`,
+          reintentable: false,
+          codigoProveedor: null,
+        });
+      }
+      return exito(cobros.valor[0] ?? null);
+    } catch (causa) {
+      return fallo(comoErrorPuerto(causa, 'buscarPorReferenciaQr'));
+    }
+  }
+
   /** Convierte documentos a cobros, cortando ante el primero corrupto. */
   private mapear(
     docs: readonly { id: string; data: () => unknown }[],

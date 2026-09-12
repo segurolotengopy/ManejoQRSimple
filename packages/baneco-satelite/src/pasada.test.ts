@@ -3,14 +3,16 @@ import {
   EvidenceStoreEnMemoria,
   POLITICA_POR_DEFECTO,
   PaymentWatcherEnMemoria,
+  QrProviderEnMemoria,
   centavos,
   esExito,
   registrarDeteccion,
   type Centavos,
   type Cobro,
-  type DepsVerificacion,
+  type DepsVigilancia,
   type ErrorPuerto,
   type PaymentWatcher,
+  type Resultado,
 } from '@mqs/qr-core';
 import { describe, expect, it } from 'vitest';
 
@@ -60,20 +62,31 @@ function abono(referencia: string, monto = MONTO, cuando = new Date(T0.getTime()
   });
 }
 
-function armar(watcherPropio?: PaymentWatcher) {
+/** Un banco que no anula: está caído justo cuando el QR vence. */
+class QrQueNoAnula extends QrProviderEnMemoria {
+  override anular(): Promise<Resultado<void, ErrorPuerto>> {
+    return Promise.resolve({
+      ok: false,
+      error: { tipo: 'INDISPONIBLE', mensaje: 'banco caído', reintentable: true, codigoProveedor: null },
+    });
+  }
+}
+
+function armar(watcherPropio?: PaymentWatcher, qr: QrProviderEnMemoria = new QrProviderEnMemoria(() => T0)) {
   const evidencia = new EvidenceStoreEnMemoria();
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
   const mensajeria = new MensajeriaNoConfigurada();
 
-  const deps: DepsVerificacion = {
+  const deps: DepsVigilancia = {
     cobros,
     evidencia,
+    qr,
     watcher: watcherPropio ?? watcher,
     mensajeria,
     politica: POLITICA_POR_DEFECTO,
   };
-  return { deps, cobros, watcher, mensajeria, evidencia };
+  return { deps, cobros, watcher, mensajeria, evidencia, qr };
 }
 
 function comoResumen(r: Awaited<ReturnType<typeof unaPasada>>): ResumenPasada {
@@ -121,9 +134,9 @@ describe('unaPasada()', () => {
     expect(resumen.enRevision).toEqual(['cobro-1']);
   });
 
-  it('vence el cobro antes de consultar al banco, no después', async () => {
-    // Un QR vencido no puede confirmarse solo, y dejarlo en ENVIADO haría que
-    // el satélite lo consultara para siempre.
+  it('pregunta al banco antes de vencer: un pago en término confirma aunque el QR ya venció', async () => {
+    // Si venciera primero, el pago de último minuto quedaría en un cobro
+    // vencido con la plata adentro.
     const { deps, cobros, watcher } = armar();
     await cobros.guardar(unCobro());
     watcher.cargarAbono('qr-1', abono('qr-1'));
@@ -131,10 +144,35 @@ describe('unaPasada()', () => {
     const muyTarde = new Date(T0.getTime() + 100 * 3_600_000);
     const resumen = comoResumen(await unaPasada(deps, muyTarde));
 
+    expect(resumen.confirmados).toEqual(['cobro-1']);
+    expect(resumen.vencidos).toEqual([]);
+  });
+
+  it('sin pago al vencer, anula el QR en el banco y vence el cobro', async () => {
+    // Anularlo es lo que impide que el cliente lo pague hasta la medianoche
+    // (el banco vence los QR por día, respuesta C4).
+    const { deps, cobros, qr } = armar();
+    await cobros.guardar(unCobro());
+
+    const muyTarde = new Date(T0.getTime() + 100 * 3_600_000);
+    const resumen = comoResumen(await unaPasada(deps, muyTarde));
+
     expect(resumen.vencidos).toEqual(['cobro-1']);
-    expect(resumen.confirmados).toEqual([]);
+    expect(qr.estaAnulado('qr-1')).toBe(true);
     const guardado = await cobros.obtener('cobro-1');
     expect(esExito(guardado) && guardado.valor?.estado).toBe('VENCIDO');
+  });
+
+  it('si el banco no anula el QR, el cobro sigue pendiente y se reintenta', async () => {
+    const { deps, cobros } = armar(undefined, new QrQueNoAnula(() => T0));
+    await cobros.guardar(unCobro());
+
+    const muyTarde = new Date(T0.getTime() + 100 * 3_600_000);
+    const resumen = comoResumen(await unaPasada(deps, muyTarde));
+
+    expect(resumen.conError.map((e) => e.cobroId)).toEqual(['cobro-1']);
+    const guardado = await cobros.obtener('cobro-1');
+    expect(esExito(guardado) && guardado.valor?.estado).toBe('ENVIADO');
   });
 
   it('procesa varios cobros en una pasada', async () => {

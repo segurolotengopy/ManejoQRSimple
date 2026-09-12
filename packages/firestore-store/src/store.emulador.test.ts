@@ -142,6 +142,18 @@ describe('CobroRepositoryFirestore', () => {
     }
   });
 
+  it('encuentra el cobro por la referencia de su QR vigente, en cualquier estado', async () => {
+    // La conciliación diaria busca así: un pago de un cobro ya confirmado es
+    // el caso normal, no un huérfano.
+    const repo = new CobroRepositoryFirestore(db);
+    await repo.guardar(unCobro({ id: 'c1', estado: 'CONFIRMADO', qrVersion: 1, qrVigente: unQr(1) }));
+    await repo.guardar(unCobro({ id: 'c2', estado: 'ENVIADO', qrVersion: 2, qrVigente: unQr(2) }));
+
+    const encontrado = await repo.buscarPorReferenciaQr('qr-1');
+    expect(esExito(encontrado) && encontrado.valor?.id).toBe('c1');
+    expect(await repo.buscarPorReferenciaQr('qr-9')).toEqual({ ok: true, valor: null });
+  });
+
   it('el historial de QRs es append-only: renovar agrega, no reemplaza', async () => {
     const repo = new CobroRepositoryFirestore(db);
     const cobro = unCobro({ estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr(1) });

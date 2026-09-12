@@ -60,9 +60,12 @@ export {
   type OrigenTransicion,
 } from './cobro/estados.js';
 export {
+  tieneQrPagable,
   transicionar,
+  verificarAdmision,
   type ErrorTransicion,
   type EventoCobro,
+  type QrAnulado,
   type RegistroEvidencia,
   type TipoEvento,
   type TransicionAplicada,
@@ -94,14 +97,18 @@ export {
   enviarQr,
   registrarComprobante,
   renovarYReenviar,
-  vencerSiCorresponde,
   verificarPago,
+  vigilar,
   type Dependencias,
+  type DepsAnulacion,
   type DepsEmision,
   type DepsPersistencia,
+  type DepsRenovacion,
   type DepsVerificacion,
+  type DepsVigilancia,
   type ErrorCasoUso,
   type ResultadoVerificacion,
+  type ResultadoVigilancia,
   type ResumenConciliacionDiaria,
 } from './casos-uso/cobrar.js';
 

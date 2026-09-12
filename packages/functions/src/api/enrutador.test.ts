@@ -8,6 +8,7 @@ import {
   centavos,
   esExito,
   registrarDeteccion,
+  vigilar,
   type Centavos,
 } from '@mqs/qr-core';
 import { describe, expect, it } from 'vitest';
@@ -82,6 +83,9 @@ describe('autenticación', () => {
     ['POST', '/api/cobros/x/anular'],
     ['POST', '/api/cobros/x/comprobante'],
     ['POST', '/api/cobros/x/verificar'],
+    ['GET', '/api/revision'],
+    ['POST', '/api/cobros/x/resolver'],
+    ['POST', '/api/cobros/x/buscar-abono'],
   ];
 
   it.each(rutas)('%s %s exige token', async (metodo, ruta) => {
@@ -284,6 +288,105 @@ describe('ciclo de vida por la API', () => {
 
     const r = await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/enviar`));
     expect(r.status).toBe(409);
+  });
+});
+
+describe('revisión manual por la API', () => {
+  /** Un cobro con abono por un centavo menos: en revisión y confirmable. */
+  async function casoConAbono(ctx: ContextoApi, watcher: PaymentWatcherEnMemoria) {
+    const { id, cuerpo } = await crear(ctx);
+    const referencia = String((cuerpo['qrVigente'] as Record<string, unknown>)['referenciaProveedor']);
+    await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/enviar`));
+    watcher.cargarAbono(
+      referencia,
+      registrarDeteccion({
+        idDeduplicacion: `baneco:${referencia}:tx-1`,
+        montoCentavos: monto(15_049),
+        ocurridoEn: AHORA,
+        origen: 'watcher-baneco',
+        referencia: null,
+      }),
+    );
+    await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/verificar`));
+    return { id, referencia };
+  }
+
+  /** Un comprobante que el banco nunca vio: en revisión y sin nada que aceptar. */
+  async function casoSinAbono(ctx: ContextoApi) {
+    const { id, cuerpo } = await crear(ctx);
+    const referencia = String((cuerpo['qrVigente'] as Record<string, unknown>)['referenciaProveedor']);
+    await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/enviar`));
+    await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/comprobante`, { referenciaComprobante: 'wa-1' }));
+    const guardado = await ctx.deps.cobros.obtener(id);
+    if (!esExito(guardado) || guardado.valor === null) throw new Error('el cobro debería existir');
+    // El satélite, pasadas las 72 h: anula el QR y lo manda a revisión.
+    await vigilar(ctx.deps, guardado.valor, new Date(AHORA.getTime() + 73 * 3_600_000));
+    return { id, referencia };
+  }
+
+  it('GET /api/revision muestra el caso con su motivo, el abono y si es confirmable', async () => {
+    const { ctx, watcher } = armar();
+    await casoConAbono(ctx, watcher);
+
+    const r = await enrutar(ctx, aceptaTodo, pedir('GET', '/api/revision'));
+    expect(r.status).toBe(200);
+    const cuerpo = r.cuerpo as { casos: Record<string, unknown>[]; resumen: Record<string, number> };
+    expect(cuerpo.resumen['total']).toBe(1);
+    expect(cuerpo.casos[0]).toMatchObject({ motivo: 'MONTO_NO_COINCIDE', confirmable: true, abono: { monto: '150.49' } });
+    // El teléfono sale enmascarado también acá (regla #9).
+    expect(JSON.stringify(cuerpo)).not.toContain('+59171234567');
+  });
+
+  it('resolver exige un motivo de verdad, no un "ok"', async () => {
+    const { ctx, watcher } = armar();
+    const { id } = await casoConAbono(ctx, watcher);
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/resolver`, { decision: 'CONFIRMADO', motivo: 'ok' }));
+    expect(r.status).toBe(400);
+  });
+
+  it('confirmar acepta el abono del banco', async () => {
+    const { ctx, watcher } = armar();
+    const { id } = await casoConAbono(ctx, watcher);
+    const r = await enrutar(
+      ctx,
+      aceptaTodo,
+      pedir('POST', `/api/cobros/${id}/resolver`, { decision: 'CONFIRMADO', motivo: 'se acepta el centavo de diferencia' }),
+    );
+    expect(r.status).toBe(200);
+    expect((r.cuerpo as Record<string, unknown>)['estado']).toBe('CONFIRMADO');
+  });
+
+  it('sin abono del banco no se confirma: 409 SIN_DETECCION_DEL_BANCO', async () => {
+    const { ctx } = armar();
+    const { id } = await casoSinAbono(ctx);
+    const r = await enrutar(
+      ctx,
+      aceptaTodo,
+      pedir('POST', `/api/cobros/${id}/resolver`, { decision: 'CONFIRMADO', motivo: 'el cliente mandó el comprobante' }),
+    );
+    expect(r.status).toBe(409);
+    expect((r.cuerpo as { error: { codigo: string } }).error.codigo).toBe('SIN_DETECCION_DEL_BANCO');
+  });
+
+  it('buscar-abono pregunta al banco y, si aparece el pago, lo adjunta', async () => {
+    const { ctx, watcher } = armar();
+    const { id, referencia } = await casoSinAbono(ctx);
+
+    const antes = await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/buscar-abono`));
+    expect((antes.cuerpo as Record<string, unknown>)['encontrado']).toBe(false);
+
+    watcher.cargarAbono(
+      referencia,
+      registrarDeteccion({
+        idDeduplicacion: `baneco:${referencia}:tx-1`,
+        montoCentavos: monto(15_050),
+        ocurridoEn: AHORA,
+        origen: 'watcher-baneco',
+        referencia: null,
+      }),
+    );
+    const despues = await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/buscar-abono`));
+    expect((despues.cuerpo as Record<string, unknown>)['encontrado']).toBe(true);
   });
 });
 

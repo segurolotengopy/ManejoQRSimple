@@ -77,6 +77,8 @@ function eventoDe(tipo: TipoEvento, cobroId = 'cobro-1'): EventoCobro {
       return { tipo, anulacion: ANULACION, origen: 'sistema' };
     case 'ABONO_TARDIO':
       return { tipo, deteccion: deteccionValida, origen: 'watcher-baneco' };
+    case 'DETECCION_EN_REVISION':
+      return { tipo, deteccion: deteccionValida, origen: 'watcher-baneco' };
     case 'RESUELTO_MANUALMENTE':
       return { tipo, decision: 'RECHAZADO', motivo: 'no aparece el abono', origen: 'accion-manual' };
     case 'ANULADO':
@@ -99,6 +101,7 @@ const TRANSICIONES_ESPERADAS: ReadonlyArray<readonly [EstadoCobro, TipoEvento, E
   ['ENVIADO', 'QR_VENCIDO', 'VENCIDO'],
   ['VENCIDO', 'QR_RENOVADO', 'QR_ACTIVO'],
   ['VENCIDO', 'ABONO_TARDIO', 'EN_REVISION'],
+  ['EN_REVISION', 'DETECCION_EN_REVISION', 'EN_REVISION'],
   ['EN_REVISION', 'RESUELTO_MANUALMENTE', 'RECHAZADO'],
   ['BORRADOR', 'ANULADO', 'ANULADO'],
   ['QR_ACTIVO', 'ANULADO', 'ANULADO'],
@@ -125,6 +128,7 @@ describe('transiciones permitidas', () => {
       {
         tipo: 'RESUELTO_MANUALMENTE',
         decision: 'CONFIRMADO',
+        idDeduplicacion: 'baneco:qr-000001:tx-1',
         motivo: 'abono verificado a mano en la consola',
         origen: 'accion-manual',
       },
@@ -133,9 +137,26 @@ describe('transiciones permitidas', () => {
     expect(esExito(r)).toBe(true);
     if (esExito(r)) {
       expect(r.valor.cobro.estado).toBe('CONFIRMADO');
-      // Queda marcado como manual justamente para que sea auditable.
+      // Queda marcado como manual justamente para que sea auditable, con el
+      // abono del banco que se aceptó.
       expect(r.valor.evidencia.origen).toBe('accion-manual');
+      expect(r.valor.evidencia.datos['idDeduplicacion']).toBe('baneco:qr-000001:tx-1');
     }
+  });
+
+  it('confirmar a mano sin nombrar un abono del banco se rechaza (regla #1)', () => {
+    const r = transicionar(
+      unCobroEn('EN_REVISION'),
+      {
+        tipo: 'RESUELTO_MANUALMENTE',
+        decision: 'CONFIRMADO',
+        idDeduplicacion: '  ',
+        motivo: 'el cliente mandó el comprobante',
+        origen: 'accion-manual',
+      },
+      T0,
+    );
+    expect(r).toEqual({ ok: false, error: { tipo: 'CONFIRMACION_SIN_DETECCION' } });
   });
 });
 
@@ -170,6 +191,7 @@ function eventosPorTipo(): Record<TipoEvento, true> {
     QR_RENOVADO: true,
     VENTANA_AGOTADA: true,
     ABONO_TARDIO: true,
+    DETECCION_EN_REVISION: true,
     RESUELTO_MANUALMENTE: true,
     ANULADO: true,
   };

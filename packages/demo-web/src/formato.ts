@@ -17,7 +17,7 @@ const DESCRIPCION: Readonly<Record<EstadoCobro, string>> = {
   COMPROBANTE_RECIBIDO: 'El cliente mandó comprobante — todavía sin confirmar',
   PAGO_DETECTADO: 'El banco reportó un abono, falta conciliarlo',
   CONFIRMADO: 'Pago confirmado contra el banco',
-  EN_REVISION: 'Necesita que lo mires: el abono no concilió',
+  EN_REVISION: 'Necesita que lo mires: resolvelo en la pestaña Revisión',
   RECHAZADO: 'Rechazado tras revisión manual',
   VENCIDO: 'El QR venció sin pago',
   ANULADO: 'Anulado',
@@ -104,8 +104,9 @@ export function accionesPosibles(estado: EstadoCobro): readonly string[] {
     case 'BORRADOR':
       return ['anular'];
     default:
-      // CONFIRMADO, RECHAZADO y ANULADO son terminales; PAGO_DETECTADO y
-      // EN_REVISION los resuelve el satélite o una persona fuera de la consola.
+      // CONFIRMADO, RECHAZADO y ANULADO son terminales; PAGO_DETECTADO lo
+      // resuelve el satélite, y EN_REVISION se decide en la pestaña Revisión,
+      // que exige un pago del banco para aceptar.
       return [];
   }
 }

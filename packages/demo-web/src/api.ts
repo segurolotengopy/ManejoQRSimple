@@ -60,6 +60,46 @@ export type DetalleCobro = {
   readonly evidencia: readonly RegistroEvidencia[];
 };
 
+export type NivelAlerta = 'AL_DIA' | 'ATRASADO' | 'CRITICO';
+
+export type MotivoRevision =
+  | 'MONTO_NO_COINCIDE'
+  | 'FUERA_DE_VIGENCIA'
+  | 'DUPLICADO'
+  | 'ABONO_TARDIO'
+  | 'VENTANA_AGOTADA'
+  | 'OTRO';
+
+/** El pago que reportó el banco para un caso en revisión. */
+export type AbonoEnRevision = {
+  readonly idDeduplicacion: string;
+  /** Decimal como texto, igual que el monto del cobro (regla #5). */
+  readonly monto: string;
+  readonly ocurridoEn: string;
+};
+
+export type CasoRevision = {
+  readonly cobro: Cobro;
+  readonly motivo: MotivoRevision;
+  readonly nivel: NivelAlerta;
+  readonly enRevisionDesde: string;
+  readonly horasEnRevision: number;
+  /** Lo decide el dominio: sin un pago del banco, no se puede aceptar. */
+  readonly confirmable: boolean;
+  readonly abono: AbonoEnRevision | null;
+};
+
+export type ResumenRevision = {
+  readonly total: number;
+  readonly criticos: number;
+  readonly atrasados: number;
+};
+
+export type ColaRevision = {
+  readonly casos: readonly CasoRevision[];
+  readonly resumen: ResumenRevision;
+};
+
 export type ErrorApi = {
   readonly codigo: string;
   readonly mensaje: string;
@@ -122,6 +162,21 @@ export class ClienteApi {
   /** Le pregunta al banco ahora, sin esperar al satélite. */
   verificar(id: string): Promise<Resultado<{ resultado: string; cobro: Cobro }>> {
     return this.pedir('POST', `/api/cobros/${encodeURIComponent(id)}/verificar`, {});
+  }
+
+  /** La cola de revisión manual, lo más urgente primero. */
+  listarRevision(): Promise<Resultado<ColaRevision>> {
+    return this.pedir<ColaRevision>('GET', '/api/revision');
+  }
+
+  /** La decisión del dueño sobre un caso en revisión. El motivo queda en la evidencia. */
+  resolver(id: string, decision: 'CONFIRMADO' | 'RECHAZADO', motivo: string): Promise<Resultado<Cobro>> {
+    return this.accion(id, 'resolver', { decision, motivo });
+  }
+
+  /** Le pregunta al banco si hay un pago para un cobro en revisión. */
+  buscarAbono(id: string): Promise<Resultado<{ encontrado: boolean; cobro: Cobro }>> {
+    return this.pedir('POST', `/api/cobros/${encodeURIComponent(id)}/buscar-abono`, {});
   }
 
   private accion(id: string, accion: string, cuerpo: unknown = {}): Promise<Resultado<Cobro>> {

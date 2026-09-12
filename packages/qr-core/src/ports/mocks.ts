@@ -162,6 +162,12 @@ export class CobroRepositoryEnMemoria implements CobroRepository {
     return Promise.resolve(exito(recientes));
   }
 
+  listarPorEstado(estado: EstadoCobro, limite: number): Ok<readonly Cobro[]> {
+    return Promise.resolve(
+      exito([...this.cobros.values()].filter((c) => c.estado === estado).slice(0, limite)),
+    );
+  }
+
   buscarPorReferenciaQr(referenciaProveedor: string): Ok<Cobro | null> {
     const cobro = [...this.cobros.values()].find(
       (c) => c.qrVigente?.referenciaProveedor === referenciaProveedor,

@@ -156,6 +156,20 @@ export const CASOS_COBRO_REPOSITORY: ReadonlyArray<CasoDeContrato<CobroRepositor
       exigirExito(await repo.guardar({ ...cobro, estado: 'ANULADO' }, 'ENVIADO'), 'con el estado correcto');
     },
   },
+  {
+    nombre: 'listar por estado devuelve solo los cobros de ese estado',
+    ejecutar: async (repo) => {
+      const base = cobroDeContrato();
+      exigirExito(await repo.guardar({ ...base, id: 'contrato-revision', estado: 'EN_REVISION' }), 'guardar');
+      exigirExito(await repo.guardar({ ...base, id: 'contrato-enviado', estado: 'ENVIADO' }), 'guardar');
+
+      const enRevision = exigirExito(await repo.listarPorEstado('EN_REVISION', 10), 'listar');
+      afirmar(
+        enRevision.length === 1 && enRevision[0]?.id === 'contrato-revision',
+        'la cola de revisión no puede mezclar otros estados',
+      );
+    },
+  },
 ];
 
 function cobroDeContrato(): Cobro {

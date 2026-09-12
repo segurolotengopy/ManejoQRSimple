@@ -83,3 +83,49 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .evidencia time { color: var(--tenue); font-variant-numeric: tabular-nums; }
 .evidencia em { grid-column: 2; color: var(--tenue); font-style: normal; font-size: 0.75rem; }
+
+/* Pestañas y alertas */
+header { gap: 1rem; }
+.pestanas { display: flex; gap: 0.25rem; margin-right: auto; margin-left: 1.5rem; }
+.pestana { border-color: transparent; background: transparent; color: var(--tenue); }
+.pestana.activa { color: var(--texto); border-color: var(--borde); background: var(--panel); }
+.insignia {
+  display: inline-block; min-width: 1.4rem; margin-left: 0.4rem; padding: 0 0.35rem;
+  border-radius: 999px; font-size: 0.72rem; font-weight: 700; color: var(--fondo);
+  background: var(--espera); text-align: center;
+}
+.insignia.atencion { background: var(--atencion); }
+.insignia.mal { background: var(--mal); }
+.tenue { color: var(--tenue); font-size: 0.85rem; }
+.alerta {
+  background: #2a2413; border: 1px solid var(--atencion); color: #fde68a;
+  padding: 0.75rem 1rem; border-radius: 6px;
+}
+button.primario { border-color: var(--bien); color: var(--bien); }
+
+/* Cola de revisión */
+.revision { display: grid; gap: 1rem; }
+.resumen-revision {
+  background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; padding: 1rem;
+  display: grid; gap: 0.4rem;
+}
+.resumen-revision p { margin: 0; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.resumen-revision .acciones { margin: 0.4rem 0 0; }
+.cola { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+.caso {
+  background: var(--panel); border: 1px solid var(--borde); border-left: 4px solid var(--espera);
+  border-radius: 8px; padding: 1rem;
+}
+.caso.atencion { border-left-color: var(--atencion); }
+.caso.mal { border-left-color: var(--mal); }
+.caso header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; justify-content: flex-start; }
+.caso header time { margin-left: auto; color: var(--tenue); font-size: 0.8rem; }
+.caso dl { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem; margin: 0 0 0.75rem; font-size: 0.9rem; }
+.caso dt { color: var(--tenue); }
+.caso dd { margin: 0; }
+.diferencia { color: var(--atencion); font-style: normal; }
+.recomendacion {
+  margin: 0 0 0.75rem; padding: 0.6rem 0.8rem; border-radius: 6px; font-size: 0.85rem;
+  background: var(--fondo); border: 1px dashed var(--borde);
+}
+.caso .acciones { margin-bottom: 0; }

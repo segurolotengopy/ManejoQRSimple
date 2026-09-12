@@ -2,15 +2,23 @@
  * La consola del comerciante.
  *
  * Componentes deliberadamente delgados: piden a `ClienteApi`, muestran lo que
- * vuelve y traducen con `formato.ts`. **Ninguna decisión de negocio vive acá**
- * — la lista de acciones que se ofrecen es una conveniencia visual, y el que
- * decide de verdad es el dominio, que responde 409 si algo no corresponde.
- * Cuando eso pasa, la consola muestra el error tal cual: no lo esconde.
+ * vuelve y traducen con `formato.ts` y `alertas.ts`. **Ninguna decisión de
+ * negocio vive acá** — la lista de acciones que se ofrecen es una conveniencia
+ * visual, y el que decide de verdad es el dominio, que responde 409 si algo no
+ * corresponde. Cuando eso pasa, la consola muestra el error tal cual: no lo
+ * esconde.
+ *
+ * Dos pestañas: los cobros y la cola de revisión. La cola se consulta sola
+ * cada minuto aunque se esté en la otra pestaña, porque su trabajo es avisar:
+ * el título del navegador lleva la cantidad de casos, la pestaña se colorea
+ * según el más urgente y, si el dueño lo permite, un caso crítico nuevo dispara
+ * un aviso del sistema operativo.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { Cobro, DetalleCobro, ErrorApi, ClienteApi } from './api.js';
+import type { ClienteApi, Cobro, ColaRevision, DetalleCobro, ErrorApi, ResumenRevision } from './api.js';
+import { nuevosCriticos, tituloDePagina, tonoInsignia } from './alertas.js';
 import {
   accionesPosibles,
   describirEstado,
@@ -19,14 +27,50 @@ import {
   tonoDeEstado,
   vigenciaRestante,
 } from './formato.js';
+import { Revision, type EstadoAvisos } from './Revision.js';
 
 type Props = { readonly api: ClienteApi };
 
+const TITULO = 'Cobros por QR';
+const INTERVALO_REVISION_MS = 60_000;
+const CLAVE_ULTIMA_REVISION = 'mqs.ultimaRevision';
+
+/** `localStorage` puede no estar (navegación privada, políticas): no rompe la consola. */
+function leerUltimaRevision(): string | null {
+  try {
+    return globalThis.localStorage.getItem(CLAVE_ULTIMA_REVISION);
+  } catch {
+    return null;
+  }
+}
+
+function estadoAvisos(): EstadoAvisos {
+  if (typeof Notification === 'undefined' || Notification.permission === 'denied') {
+    return 'no-disponibles';
+  }
+  return Notification.permission === 'granted' ? 'activos' : 'inactivos';
+}
+
+/** El aviso lleva solo conteos: nada del cobro ni del cliente sale de la página (regla #9). */
+function avisar(criticos: number): void {
+  if (estadoAvisos() !== 'activos') {
+    return;
+  }
+  new Notification('Cobros en revisión', {
+    body: `${String(criticos)} caso(s) crítico(s) esperando revisión.`,
+  });
+}
+
 export function App({ api }: Props): React.JSX.Element {
+  const [vista, setVista] = useState<'cobros' | 'revision'>('cobros');
   const [cobros, setCobros] = useState<readonly Cobro[]>([]);
   const [detalle, setDetalle] = useState<DetalleCobro | null>(null);
+  const [cola, setCola] = useState<ColaRevision | null>(null);
   const [error, setError] = useState<ErrorApi | null>(null);
   const [cargando, setCargando] = useState(false);
+  const [ultimaRevision, setUltimaRevision] = useState<string | null>(leerUltimaRevision);
+  const [avisos, setAvisos] = useState<EstadoAvisos>(estadoAvisos);
+  const resumenAnterior = useRef<ResumenRevision | null>(null);
 
   const refrescar = useCallback(async (): Promise<void> => {
     setCargando(true);
@@ -40,9 +84,37 @@ export function App({ api }: Props): React.JSX.Element {
     }
   }, [api]);
 
+  const refrescarRevision = useCallback(async (): Promise<void> => {
+    const r = await api.listarRevision();
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    setCola(r.valor);
+    const nuevos = nuevosCriticos(resumenAnterior.current, r.valor.resumen);
+    resumenAnterior.current = r.valor.resumen;
+    if (nuevos > 0) {
+      avisar(nuevos);
+    }
+  }, [api]);
+
   useEffect(() => {
     void refrescar();
   }, [refrescar]);
+
+  useEffect(() => {
+    void refrescarRevision();
+    const id = setInterval(() => {
+      void refrescarRevision();
+    }, INTERVALO_REVISION_MS);
+    return () => {
+      clearInterval(id);
+    };
+  }, [refrescarRevision]);
+
+  useEffect(() => {
+    document.title = tituloDePagina(TITULO, cola?.resumen ?? null);
+  }, [cola]);
 
   const abrir = async (id: string): Promise<void> => {
     const r = await api.verCobro(id);
@@ -54,11 +126,59 @@ export function App({ api }: Props): React.JSX.Element {
     }
   };
 
+  const marcarRevisado = (): void => {
+    const ahora = new Date().toISOString();
+    try {
+      globalThis.localStorage.setItem(CLAVE_ULTIMA_REVISION, ahora);
+    } catch {
+      // Sin almacenamiento, la marca dura lo que dure la pestaña abierta.
+    }
+    setUltimaRevision(ahora);
+  };
+
+  const activarAvisos = (): void => {
+    void Notification.requestPermission().then(() => {
+      setAvisos(estadoAvisos());
+    });
+  };
+
+  const resumen = cola?.resumen ?? null;
+
   return (
     <div className="app">
       <header>
-        <h1>Cobros por QR</h1>
-        <button type="button" onClick={() => void refrescar()} disabled={cargando}>
+        <h1>{TITULO}</h1>
+        <nav className="pestanas">
+          <button
+            type="button"
+            className={vista === 'cobros' ? 'pestana activa' : 'pestana'}
+            onClick={() => {
+              setVista('cobros');
+            }}
+          >
+            Cobros
+          </button>
+          <button
+            type="button"
+            className={vista === 'revision' ? 'pestana activa' : 'pestana'}
+            onClick={() => {
+              setVista('revision');
+            }}
+          >
+            Revisión
+            {resumen !== null && resumen.total > 0 && (
+              <span className={`insignia ${tonoInsignia(resumen)}`}>{resumen.total}</span>
+            )}
+          </button>
+        </nav>
+        <button
+          type="button"
+          onClick={() => {
+            void refrescar();
+            void refrescarRevision();
+          }}
+          disabled={cargando}
+        >
           {cargando ? 'Actualizando…' : 'Actualizar'}
         </button>
       </header>
@@ -69,34 +189,52 @@ export function App({ api }: Props): React.JSX.Element {
         </p>
       )}
 
-      <main>
-        <section>
-          <FormularioNuevoCobro
-            api={api}
-            onCreado={() => {
-              void refrescar();
-            }}
-            onError={setError}
-          />
-          <ListaCobros cobros={cobros} onAbrir={(id) => void abrir(id)} />
-        </section>
-
-        <section>
-          {detalle === null ? (
-            <p className="vacio">Elegí un cobro para ver su detalle y su rastro de evidencia.</p>
-          ) : (
-            <Detalle
+      {vista === 'revision' ? (
+        <Revision
+          api={api}
+          cola={cola}
+          ultimaRevision={ultimaRevision}
+          avisos={avisos}
+          onCambio={() => {
+            void refrescarRevision();
+            void refrescar();
+          }}
+          onError={setError}
+          onMarcarRevisado={marcarRevisado}
+          onActivarAvisos={activarAvisos}
+        />
+      ) : (
+        <main>
+          <section>
+            <FormularioNuevoCobro
               api={api}
-              detalle={detalle}
-              onCambio={() => {
-                void abrir(detalle.cobro.id);
+              onCreado={() => {
                 void refrescar();
               }}
               onError={setError}
             />
-          )}
-        </section>
-      </main>
+            <ListaCobros cobros={cobros} onAbrir={(id) => void abrir(id)} />
+          </section>
+
+          <section>
+            {detalle === null ? (
+              <p className="vacio">Elegí un cobro para ver su detalle y su rastro de evidencia.</p>
+            ) : (
+              <Detalle
+                api={api}
+                detalle={detalle}
+                onCambio={() => {
+                  void abrir(detalle.cobro.id);
+                  void refrescar();
+                  // Una verificación puede mandar el cobro a revisión.
+                  void refrescarRevision();
+                }}
+                onError={setError}
+              />
+            )}
+          </section>
+        </main>
+      )}
     </div>
   );
 }

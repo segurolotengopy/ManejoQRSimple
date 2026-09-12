@@ -14,18 +14,24 @@
 import {
   aDecimalBob,
   anular as anularCobro,
+  buscarAbonoEnRevision,
   desdeDecimalBob,
   emitirQr,
   enmascararTelefono,
   enviarQr,
   esExito,
+  listarRevision,
+  POLITICA_REVISION_POR_DEFECTO,
   registrarComprobante,
   renovarYReenviar,
+  resolverRevision,
   verificarPago,
+  type CasoRevision,
   type Cobro,
   type Dependencias,
   type ErrorCasoUso,
   type EvidenceStore,
+  type PoliticaRevision,
   type RegistroEvidencia,
 } from '@mqs/qr-core';
 import { randomUUID } from 'node:crypto';
@@ -35,6 +41,7 @@ import {
   cuerpoComprobante,
   cuerpoCrearCobro,
   cuerpoRenovar,
+  cuerpoResolver,
 } from './esquemas.js';
 import { creado, error, noEncontrado, ok, type Respuesta } from './tipos.js';
 
@@ -46,6 +53,8 @@ export type ContextoApi = {
   /** Vigencia por defecto de un QR nuevo. */
   readonly horasDeVigenciaPorDefecto: number;
   readonly ahora: () => Date;
+  /** Umbrales de alerta de la cola de revisión. Por defecto, los del dominio. */
+  readonly politicaRevision?: PoliticaRevision;
 };
 
 /** Vista pública de un cobro. Lo que la consola puede ver, y nada más. */
@@ -71,6 +80,28 @@ function aVista(cobro: Cobro): Record<string, unknown> {
             venceEn: cobro.qrVigente.venceEn.toISOString(),
             origen: cobro.qrVigente.origen,
             imagenRef: cobro.qrVigente.imagenRef,
+          },
+  };
+}
+
+/** Vista de un caso de revisión: el cobro, por qué está ahí y qué pagó el banco. */
+function aVistaCaso(caso: CasoRevision): Record<string, unknown> {
+  return {
+    cobro: aVista(caso.cobro),
+    motivo: caso.motivo,
+    nivel: caso.nivel,
+    enRevisionDesde: caso.enRevisionDesde.toISOString(),
+    horasEnRevision: Math.floor(caso.horasEnRevision),
+    // Sin un abono del banco no se puede confirmar, ni a mano (regla #1). La
+    // consola lo usa para no ofrecer un botón que el dominio va a rechazar.
+    confirmable: caso.abono !== null,
+    abono:
+      caso.abono === null
+        ? null
+        : {
+            idDeduplicacion: caso.abono.idDeduplicacion,
+            monto: aDecimalBob(caso.abono.montoCentavos),
+            ocurridoEn: caso.abono.ocurridoEn.toISOString(),
           },
   };
 }
@@ -114,6 +145,12 @@ function comoHttp(err: ErrorCasoUso): Respuesta {
         409,
         'ABONO_TARDIO',
         'Llegó un pago al QR vencido: el cobro pasó a revisión y no se hizo la operación.',
+      );
+    case 'SIN_DETECCION_DEL_BANCO':
+      return error(
+        409,
+        'SIN_DETECCION_DEL_BANCO',
+        'El banco no reportó ningún pago para este cobro: buscalo en el banco antes de confirmarlo. Un comprobante no alcanza.',
       );
     case 'PUERTO':
       if (err.error.tipo === 'CONFLICTO') {
@@ -268,6 +305,54 @@ export async function comprobante(ctx: ContextoApi, id: string, cuerpo: unknown)
     ctx.ahora(),
   );
   return esExito(registrado) ? ok(aVista(registrado.valor)) : comoHttp(registrado.error);
+}
+
+/** `GET /api/revision` — la cola de revisión manual, lo más urgente primero. */
+export async function verRevision(ctx: ContextoApi): Promise<Respuesta> {
+  const cola = await listarRevision(
+    ctx.deps,
+    ctx.ahora(),
+    ctx.politicaRevision ?? POLITICA_REVISION_POR_DEFECTO,
+  );
+  return esExito(cola)
+    ? ok({ casos: cola.valor.casos.map(aVistaCaso), resumen: cola.valor.resumen })
+    : comoHttp(cola.error);
+}
+
+/**
+ * `POST /api/cobros/:id/resolver` — la decisión del dueño sobre un caso.
+ *
+ * Confirmar acepta el último abono que reportó el banco; sin abono, el dominio
+ * lo rechaza con 409. Esta capa no decide nada de eso: valida y traduce.
+ */
+export async function resolver(ctx: ContextoApi, id: string, cuerpo: unknown): Promise<Respuesta> {
+  const datos = cuerpoResolver.safeParse(cuerpo);
+  if (!datos.success) {
+    return error(400, 'CUERPO_INVALIDO', datos.error.issues[0]?.message ?? 'cuerpo inválido');
+  }
+
+  const cobro = await buscar(ctx, id);
+  if (esRespuesta(cobro)) return cobro;
+
+  const resuelto = await resolverRevision(
+    ctx.deps,
+    cobro,
+    datos.data.decision,
+    datos.data.motivo,
+    ctx.ahora(),
+  );
+  return esExito(resuelto) ? ok(aVista(resuelto.valor)) : comoHttp(resuelto.error);
+}
+
+/** `POST /api/cobros/:id/buscar-abono` — pregunta al banco por un cobro en revisión. */
+export async function buscarAbono(ctx: ContextoApi, id: string): Promise<Respuesta> {
+  const cobro = await buscar(ctx, id);
+  if (esRespuesta(cobro)) return cobro;
+
+  const busqueda = await buscarAbonoEnRevision(ctx.deps, cobro, ctx.ahora());
+  return esExito(busqueda)
+    ? ok({ encontrado: busqueda.valor.encontrado, cobro: aVista(busqueda.valor.cobro) })
+    : comoHttp(busqueda.error);
 }
 
 /**

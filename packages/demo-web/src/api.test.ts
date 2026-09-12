@@ -32,6 +32,30 @@ describe('autenticación', () => {
   });
 });
 
+describe('revisión', () => {
+  it('pide la cola a /api/revision', async () => {
+    let pedido = '';
+    const cola = { casos: [], resumen: { total: 0, criticos: 0, atrasados: 0 } };
+    const api = conRespuesta(200, cola, (url, init) => {
+      pedido = `${init.method ?? ''} ${url}`;
+    });
+
+    const r = await api.listarRevision();
+    expect(pedido).toBe(`GET ${BASE}/api/revision`);
+    expect(r).toEqual({ ok: true, valor: cola });
+  });
+
+  it('resolver manda la decisión y el motivo', async () => {
+    let cuerpo: unknown = null;
+    const api = conRespuesta(200, { id: 'x' }, (_url, init) => {
+      cuerpo = typeof init.body === 'string' ? JSON.parse(init.body) : null;
+    });
+
+    await api.resolver('x', 'RECHAZADO', 'el banco no registra ningún pago');
+    expect(cuerpo).toEqual({ decision: 'RECHAZADO', motivo: 'el banco no registra ningún pago' });
+  });
+});
+
 describe('errores', () => {
   it('traduce el error de la API conservando su código', async () => {
     const api = conRespuesta(409, {

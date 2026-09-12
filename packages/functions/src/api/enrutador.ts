@@ -14,13 +14,16 @@
 
 import {
   anular,
+  buscarAbono,
   comprobante,
   crearCobro,
   enviar,
   listarCobros,
   renovar,
+  resolver,
   verCobro,
   verificar,
+  verRevision,
   type ContextoApi,
 } from './handlers.js';
 import { error, noAutorizado, noEncontrado, type Peticion, type Respuesta } from './tipos.js';
@@ -29,6 +32,7 @@ import { error, noAutorizado, noEncontrado, type Peticion, type Respuesta } from
 export type VerificadorDeToken = (token: string) => Promise<string | null>;
 
 const PREFIJO = '/api/cobros';
+const REVISION = '/api/revision';
 
 export async function enrutar(
   ctx: ContextoApi,
@@ -48,6 +52,10 @@ export async function enrutar(
 
 async function despachar(ctx: ContextoApi, peticion: Peticion): Promise<Respuesta> {
   const { metodo, ruta, cuerpo } = peticion;
+
+  if (ruta === REVISION) {
+    return metodo === 'GET' ? verRevision(ctx) : metodoNoPermitido();
+  }
 
   if (ruta === PREFIJO) {
     return metodo === 'GET' ? listarCobros(ctx) : crearCobro(ctx, cuerpo);
@@ -83,6 +91,10 @@ async function despachar(ctx: ContextoApi, peticion: Peticion): Promise<Respuest
       return comprobante(ctx, id, cuerpo);
     case 'verificar':
       return verificar(ctx, id);
+    case 'resolver':
+      return resolver(ctx, id, cuerpo);
+    case 'buscar-abono':
+      return buscarAbono(ctx, id);
     default:
       return noEncontrado();
   }

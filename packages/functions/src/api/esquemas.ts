@@ -33,6 +33,20 @@ export const cuerpoAnular = z.object({
   motivo: z.string().min(1).max(200),
 });
 
+/**
+ * Resolución manual de un caso en revisión. El motivo es obligatorio y no
+ * trivial: es lo que un auditor va a leer para entender por qué una persona
+ * confirmó o rechazó un pago que el sistema no pudo decidir (regla #8).
+ */
+export const cuerpoResolver = z.object({
+  decision: z.enum(['CONFIRMADO', 'RECHAZADO']),
+  motivo: z
+    .string()
+    .trim()
+    .min(10, 'contá en al menos 10 caracteres por qué decidís esto')
+    .max(300),
+});
+
 export const cuerpoComprobante = z.object({
   /** Identificador del mensaje en WhatsApp. Deduplica la doble entrega. */
   referenciaComprobante: z.string().min(1).max(200),

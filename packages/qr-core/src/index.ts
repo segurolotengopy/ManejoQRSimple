@@ -91,6 +91,33 @@ export {
   type OrigenDeteccion,
 } from './conciliacion/deteccion.js';
 
+// Revisión manual
+export {
+  construirCaso,
+  MOTIVOS_REVISION,
+  nivelDeAlerta,
+  ordenarCasos,
+  POLITICA_REVISION_POR_DEFECTO,
+  resumirRevision,
+  ultimaDeteccion,
+  type AbonoRegistrado,
+  type CasoRevision,
+  type MotivoRevision,
+  type NivelAlerta,
+  type PoliticaRevision,
+  type ResumenRevision,
+  type UmbralesHoras,
+} from './revision/revision.js';
+export {
+  buscarAbonoEnRevision,
+  LIMITE_REVISION,
+  listarRevision,
+  resolverRevision,
+  type ColaRevision,
+  type DepsBusqueda,
+  type ResultadoBusqueda,
+} from './casos-uso/revisar.js';
+
 // Casos de uso: la orquestación del cobro sobre los puertos
 export {
   anular,

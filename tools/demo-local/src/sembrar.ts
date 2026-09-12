@@ -30,8 +30,10 @@ const SEMILLA: readonly { readonly id: string; readonly monto: number; readonly 
   { id: 'demo-001', monto: 15_000, concepto: 'Consulta odontológica', horasDeVigencia: 72 },
   { id: 'demo-002', monto: 4_550, concepto: 'Delivery pedido #4482', horasDeVigencia: 72 },
   { id: 'demo-003', monto: 120_000, concepto: 'Alquiler de equipo — septiembre', horasDeVigencia: 72 },
-  // Este nace ya vencido: sirve para ver al satélite marcarlo VENCIDO.
-  { id: 'demo-004', monto: 8_900, concepto: 'Reparación de notebook', horasDeVigencia: -1 },
+  // Vence al minuto: sirve para ver al satélite anular el QR en el banco y
+  // marcarlo VENCIDO. No puede nacer vencido: la máquina de estados rechaza un
+  // QR cuyo vencimiento no es posterior a su emisión (regla #6).
+  { id: 'demo-004', monto: 8_900, concepto: 'Reparación de notebook', horasDeVigencia: 1 / 60 },
 ];
 
 function cobroInicial(semilla: (typeof SEMILLA)[number]): Cobro {
@@ -80,7 +82,12 @@ async function main(): Promise<number> {
 
     const emitido = await emitirQr(deps, cobroInicial(semilla), venceEn, AHORA);
     if (!esExito(emitido)) {
-      console.error(`  ✖ ${semilla.id}: no se pudo emitir el QR (${emitido.error.tipo})`);
+      const yaExiste = emitido.error.tipo === 'PUERTO' && emitido.error.error.tipo === 'CONFLICTO';
+      console.error(
+        yaExiste
+          ? `  ✖ ${semilla.id}: ya existe en otro estado y no se pisa. Reiniciá el emulador para sembrar de cero.`
+          : `  ✖ ${semilla.id}: no se pudo emitir el QR (${emitido.error.tipo})`,
+      );
       continue;
     }
 
@@ -91,7 +98,10 @@ async function main(): Promise<number> {
     }
     const cobro = enviado.valor;
 
-    const vigencia = semilla.horasDeVigencia < 0 ? 'YA VENCIDO' : `${String(semilla.horasDeVigencia)} h`;
+    const vigencia =
+      semilla.horasDeVigencia < 1
+        ? `${String(Math.round(semilla.horasDeVigencia * 60))} min`
+        : `${String(semilla.horasDeVigencia)} h`;
     console.log(
       `  ✓ ${cobro.id}  ${cobro.estado.padEnd(9)} Bs ${aDecimalBob(cobro.montoCentavos).padStart(9)}  ` +
         `qr=${cobro.qrVigente?.referenciaProveedor ?? '—'}  vence en ${vigencia}`,

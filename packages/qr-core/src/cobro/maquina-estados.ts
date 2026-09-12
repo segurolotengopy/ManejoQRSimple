@@ -83,10 +83,32 @@ export type EventoCobro =
       readonly origen: OrigenTransicion;
     }
   | {
+      /**
+       * El banco reportó un pago para un cobro que ya está en revisión (el
+       * cierre diario lo encontró, o el dueño lo buscó). Queda en la evidencia
+       * para que quien revise lo vea; el cobro sigue en revisión.
+       */
+      readonly tipo: 'DETECCION_EN_REVISION';
+      readonly deteccion: DeteccionDePago;
+      readonly origen: OrigenTransicion;
+    }
+  | {
       readonly tipo: 'RESUELTO_MANUALMENTE';
-      readonly decision: 'CONFIRMADO' | 'RECHAZADO';
+      readonly decision: 'CONFIRMADO';
+      /**
+       * El abono del banco que la persona acepta. Confirmar a mano exige
+       * nombrarlo: sin una detección del banco no hay confirmación (regla #1),
+       * tampoco manual. Un comprobante no alcanza.
+       */
+      readonly idDeduplicacion: string;
       readonly motivo: string;
       /** Solo una persona resuelve una revisión, y queda marcado como tal. */
+      readonly origen: 'accion-manual';
+    }
+  | {
+      readonly tipo: 'RESUELTO_MANUALMENTE';
+      readonly decision: 'RECHAZADO';
+      readonly motivo: string;
       readonly origen: 'accion-manual';
     }
   | {
@@ -131,7 +153,8 @@ export type ErrorTransicion =
       readonly esperada: number;
       readonly recibida: number;
     }
-  | { readonly tipo: 'QR_SIN_ANULAR_EN_PROVEEDOR'; readonly referenciaProveedor: string };
+  | { readonly tipo: 'QR_SIN_ANULAR_EN_PROVEEDOR'; readonly referenciaProveedor: string }
+  | { readonly tipo: 'CONFIRMACION_SIN_DETECCION' };
 
 /** Estados desde los que cada evento puede disparar. Es la tabla de CLAUDE.md. */
 const ORIGENES_PERMITIDOS: Readonly<Record<TipoEvento, readonly EstadoCobro[]>> = {
@@ -148,6 +171,7 @@ const ORIGENES_PERMITIDOS: Readonly<Record<TipoEvento, readonly EstadoCobro[]>> 
   QR_RENOVADO: ['VENCIDO'],
   VENTANA_AGOTADA: ['COMPROBANTE_RECIBIDO'],
   ABONO_TARDIO: ['VENCIDO'],
+  DETECCION_EN_REVISION: ['EN_REVISION'],
   RESUELTO_MANUALMENTE: ['EN_REVISION'],
   ANULADO: ['BORRADOR', 'QR_ACTIVO', 'ENVIADO', 'VENCIDO'],
 };
@@ -319,8 +343,30 @@ export function transicionar(
         },
       );
 
+    case 'DETECCION_EN_REVISION':
+      return aplicar(
+        'EN_REVISION',
+        {},
+        {
+          idDeduplicacion: evento.deteccion.idDeduplicacion,
+          montoCentavos: evento.deteccion.montoCentavos,
+          ocurridoEn: evento.deteccion.ocurridoEn.toISOString(),
+          origenDeteccion: evento.deteccion.origen,
+        },
+      );
+
     case 'RESUELTO_MANUALMENTE':
-      return aplicar(evento.decision, {}, { motivo: evento.motivo });
+      if (evento.decision === 'RECHAZADO') {
+        return aplicar('RECHAZADO', {}, { motivo: evento.motivo });
+      }
+      if (evento.idDeduplicacion.trim() === '') {
+        return fallo({ tipo: 'CONFIRMACION_SIN_DETECCION' });
+      }
+      return aplicar(
+        'CONFIRMADO',
+        {},
+        { motivo: evento.motivo, idDeduplicacion: evento.idDeduplicacion },
+      );
 
     case 'ANULADO': {
       const sinAnular = exigirAnulacion(cobro, evento.anulacion);

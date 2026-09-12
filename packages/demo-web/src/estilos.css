@@ -129,3 +129,43 @@ button.primario { border-color: var(--bien); color: var(--bien); }
   background: var(--fondo); border: 1px dashed var(--borde);
 }
 .caso .acciones { margin-bottom: 0; }
+
+/* Logs */
+.logs-seccion { display: grid; gap: 0.75rem; }
+.logs-seccion select {
+  background: var(--fondo); color: var(--texto); border: 1px solid var(--borde);
+  border-radius: 6px; padding: 0.35rem; font: inherit;
+}
+.logs {
+  list-style: none; margin: 0; padding: 0.75rem; background: var(--panel); border: 1px solid var(--borde);
+  border-radius: 8px; font-family: ui-monospace, monospace; font-size: 0.78rem; max-height: 70vh; overflow: auto;
+}
+.logs li { padding: 0.15rem 0; white-space: pre-wrap; word-break: break-word; border-bottom: 1px solid #1c2029; }
+.logs li.aviso { color: #fde68a; }
+.logs li.error { color: #fecaca; }
+
+/* Prueba en producción */
+.pruebas { display: grid; gap: 1rem; }
+.vigencia { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--tenue); }
+.vigencia select, .checklist select, .checklist input {
+  background: var(--fondo); color: var(--texto); border: 1px solid var(--borde);
+  border-radius: 6px; padding: 0.35rem; font: inherit;
+}
+.prueba-cuerpo { display: grid; grid-template-columns: auto 1fr; gap: 1rem; margin-bottom: 0.75rem; }
+@media (max-width: 700px) { .prueba-cuerpo { grid-template-columns: 1fr; } }
+/* El QR necesita fondo blanco y márgenes para que la cámara lo lea. */
+img.qr { width: 240px; height: 240px; background: #fff; padding: 12px; border-radius: 8px; image-rendering: pixelated; }
+.problemas { list-style: none; margin: 0 0 0.6rem; padding: 0; display: grid; gap: 0.35rem; font-size: 0.88rem; }
+.problemas li { padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid var(--borde); }
+.problemas li.error { border-color: var(--mal); color: #fecaca; }
+.problemas li.aviso { border-color: var(--atencion); color: #fde68a; }
+.problemas li.ok { border-color: var(--bien); color: #bbf7d0; }
+.checklist { background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; padding: 1rem; overflow-x: auto; }
+.checklist h3 { font-size: 0.9rem; margin: 0 0 0.6rem; }
+.checklist table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-bottom: 1rem; }
+.checklist th, .checklist td { text-align: left; padding: 0.4rem; border-bottom: 1px solid var(--borde); vertical-align: top; }
+.checklist input { width: 100%; min-width: 10rem; }
+.informe {
+  width: 100%; background: var(--fondo); color: var(--texto); border: 1px solid var(--borde);
+  border-radius: 6px; padding: 0.6rem; font-family: ui-monospace, monospace; font-size: 0.8rem;
+}

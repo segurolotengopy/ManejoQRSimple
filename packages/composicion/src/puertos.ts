@@ -23,7 +23,10 @@ import {
   QrProviderBaneco,
   leerConfig,
   transporteFetch,
+  transporteObservado,
+  type AlmacenImagenQr,
   type ConfigBaneco,
+  type LlamadaAlBanco,
 } from '@mqs/baneco-gateway';
 import {
   CobroRepositoryFirestore,
@@ -78,7 +81,19 @@ export type OpcionesComposicion = {
    * que llega es `MensajeriaNoConfigurada`, que falla a propósito.
    */
   readonly mensajeria: MessagingProvider;
+  /**
+   * Dónde guardar la imagen del QR que devuelve el banco. Sin almacén, el QR
+   * se emite igual pero nadie puede verlo para pagarlo.
+   */
+  readonly almacenImagenesQr?: AlmacenImagenQr;
+  /**
+   * Se entera de cada llamada al banco (ruta, estado, `responseCode`, demora),
+   * para los logs de depuración. Nunca recibe cuerpos ni credenciales.
+   */
+  readonly observarBanco?: (llamada: LlamadaAlBanco) => void;
 };
+
+export type { AlmacenImagenQr, LlamadaAlBanco };
 
 export type PuertosArmados = {
   readonly deps: Dependencias;
@@ -122,7 +137,7 @@ export function construirPuertos(
     if (!esExito(config)) {
       return fallo({ tipo: 'CONFIG_BANECO', detalle: config.error.tipo });
     }
-    baneco = construirBaneco(config.valor);
+    baneco = construirBaneco(config.valor, opciones.almacenImagenesQr ?? null, opciones.observarBanco ?? null);
   }
 
   const qr = elegirQr(modoQr.valor, baneco);
@@ -162,12 +177,16 @@ export function construirPuertos(
   });
 }
 
-function construirBaneco(config: ConfigBaneco): { qr: QrProvider; watcher: PaymentWatcher } {
-  const transporte = transporteFetch();
+function construirBaneco(
+  config: ConfigBaneco,
+  almacen: AlmacenImagenQr | null,
+  observar: ((llamada: LlamadaAlBanco) => void) | null,
+): { qr: QrProvider; watcher: PaymentWatcher } {
+  const transporte = observar === null ? transporteFetch() : transporteObservado(transporteFetch(), observar);
   const tokens = new ProveedorDeToken(config, transporte);
   const cliente = new ClienteBaneco(config, transporte, tokens);
   return {
-    qr: new QrProviderBaneco(config, cliente),
+    qr: new QrProviderBaneco(config, cliente, undefined, almacen),
     watcher: new PaymentWatcherBaneco(cliente),
   };
 }

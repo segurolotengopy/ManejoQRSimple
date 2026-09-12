@@ -15,14 +15,20 @@
 import {
   anular,
   buscarAbono,
+  cerrarPrueba,
   comprobante,
   crearCobro,
   enviar,
+  generarQrDePrueba,
   listarCobros,
   renovar,
   resolver,
+  sondearAnulacion,
   verCobro,
   verificar,
+  verLogs,
+  verPrueba,
+  verQr,
   verRevision,
   type ContextoApi,
 } from './handlers.js';
@@ -33,6 +39,7 @@ export type VerificadorDeToken = (token: string) => Promise<string | null>;
 
 const PREFIJO = '/api/cobros';
 const REVISION = '/api/revision';
+const PRUEBAS = '/api/pruebas';
 
 export async function enrutar(
   ctx: ContextoApi,
@@ -57,6 +64,21 @@ async function despachar(ctx: ContextoApi, peticion: Peticion): Promise<Respuest
     return metodo === 'GET' ? verRevision(ctx) : metodoNoPermitido();
   }
 
+  if (ruta === '/api/logs') {
+    return metodo === 'GET' ? verLogs(ctx) : metodoNoPermitido();
+  }
+
+  // Sin modo prueba, estas rutas responden 404 como cualquier ruta inexistente.
+  if (ruta === PRUEBAS) {
+    return metodo === 'GET' ? verPrueba(ctx) : metodoNoPermitido();
+  }
+  if (ruta === `${PRUEBAS}/qr`) {
+    return metodo === 'POST' ? generarQrDePrueba(ctx, cuerpo) : metodoNoPermitido();
+  }
+  if (ruta === `${PRUEBAS}/cerrar`) {
+    return metodo === 'POST' ? cerrarPrueba(ctx) : metodoNoPermitido();
+  }
+
   if (ruta === PREFIJO) {
     return metodo === 'GET' ? listarCobros(ctx) : crearCobro(ctx, cuerpo);
   }
@@ -74,6 +96,10 @@ async function despachar(ctx: ContextoApi, peticion: Peticion): Promise<Respuest
 
   if (accion === undefined) {
     return metodo === 'GET' ? verCobro(ctx, id) : metodoNoPermitido();
+  }
+
+  if (accion === 'qr') {
+    return metodo === 'GET' ? verQr(ctx, id) : metodoNoPermitido();
   }
 
   if (metodo !== 'POST') {
@@ -95,6 +121,8 @@ async function despachar(ctx: ContextoApi, peticion: Peticion): Promise<Respuest
       return resolver(ctx, id, cuerpo);
     case 'buscar-abono':
       return buscarAbono(ctx, id);
+    case 'sondear-anulacion':
+      return sondearAnulacion(ctx, id);
     default:
       return noEncontrado();
   }

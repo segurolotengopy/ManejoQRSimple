@@ -17,7 +17,19 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { ClienteApi, Cobro, ColaRevision, DetalleCobro, ErrorApi, ResumenRevision } from './api.js';
+import type {
+  ClienteApi,
+  Cobro,
+  ColaRevision,
+  DetalleCobro,
+  ErrorApi,
+  EstadoPrueba,
+  LineaLog,
+  ResumenRevision,
+} from './api.js';
+import { lineaDeError } from './formatoLogs.js';
+import { Logs } from './Logs.js';
+import { Pruebas } from './Pruebas.js';
 import { nuevosCriticos, tituloDePagina, tonoInsignia } from './alertas.js';
 import {
   accionesPosibles,
@@ -62,11 +74,23 @@ function avisar(criticos: number): void {
 }
 
 export function App({ api }: Props): React.JSX.Element {
-  const [vista, setVista] = useState<'cobros' | 'revision'>('cobros');
+  const [vista, setVista] = useState<'cobros' | 'revision' | 'pruebas' | 'logs'>('cobros');
+  /** Errores que vio esta consola, para la pestaña Logs (los últimos 200). */
+  const [logsLocales, setLogsLocales] = useState<readonly LineaLog[]>([]);
+  /** Solo si la API corre en modo prueba en producción; si no, la pestaña no aparece. */
+  const [prueba, setPrueba] = useState<EstadoPrueba | null>(null);
   const [cobros, setCobros] = useState<readonly Cobro[]>([]);
   const [detalle, setDetalle] = useState<DetalleCobro | null>(null);
   const [cola, setCola] = useState<ColaRevision | null>(null);
-  const [error, setError] = useState<ErrorApi | null>(null);
+  const [error, setErrorVisible] = useState<ErrorApi | null>(null);
+
+  /** Muestra el error y lo deja en la pestaña Logs. */
+  const setError = useCallback((e: ErrorApi | null): void => {
+    setErrorVisible(e);
+    if (e !== null) {
+      setLogsLocales((previas) => [...previas.slice(-199), lineaDeError(e, previas.length + 1, new Date())]);
+    }
+  }, []);
   const [cargando, setCargando] = useState(false);
   const [ultimaRevision, setUltimaRevision] = useState<string | null>(leerUltimaRevision);
   const [avisos, setAvisos] = useState<EstadoAvisos>(estadoAvisos);
@@ -82,7 +106,7 @@ export function App({ api }: Props): React.JSX.Element {
     } else {
       setError(r.error);
     }
-  }, [api]);
+  }, [api, setError]);
 
   const refrescarRevision = useCallback(async (): Promise<void> => {
     const r = await api.listarRevision();
@@ -96,11 +120,18 @@ export function App({ api }: Props): React.JSX.Element {
     if (nuevos > 0) {
       avisar(nuevos);
     }
-  }, [api]);
+  }, [api, setError]);
 
   useEffect(() => {
     void refrescar();
   }, [refrescar]);
+
+  useEffect(() => {
+    void api.verPrueba().then((r) => {
+      // 404 = la API no está en modo prueba: no hay pestaña, y no es un error.
+      setPrueba(r.ok ? r.valor : null);
+    });
+  }, [api]);
 
   useEffect(() => {
     void refrescarRevision();
@@ -170,6 +201,29 @@ export function App({ api }: Props): React.JSX.Element {
               <span className={`insignia ${tonoInsignia(resumen)}`}>{resumen.total}</span>
             )}
           </button>
+          {prueba !== null && (
+            <button
+              type="button"
+              className={vista === 'pruebas' ? 'pestana activa' : 'pestana'}
+              onClick={() => {
+                setVista('pruebas');
+              }}
+            >
+              Pruebas{' '}
+              <span className={`insignia ${prueba.produccion ? 'mal' : 'espera'}`}>
+                {prueba.produccion ? 'PROD' : 'SIM'}
+              </span>
+            </button>
+          )}
+          <button
+            type="button"
+            className={vista === 'logs' ? 'pestana activa' : 'pestana'}
+            onClick={() => {
+              setVista('logs');
+            }}
+          >
+            Logs
+          </button>
         </nav>
         <button
           type="button"
@@ -189,7 +243,11 @@ export function App({ api }: Props): React.JSX.Element {
         </p>
       )}
 
-      {vista === 'revision' ? (
+      {vista === 'logs' ? (
+        <Logs api={api} locales={logsLocales} />
+      ) : vista === 'pruebas' && prueba !== null ? (
+        <Pruebas api={api} estado={prueba} onEstado={setPrueba} onError={setError} />
+      ) : vista === 'revision' ? (
         <Revision
           api={api}
           cola={cola}

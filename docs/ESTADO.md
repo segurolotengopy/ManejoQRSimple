@@ -4,10 +4,9 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-12 (sesión "respuestas de Baneco" — respuestas del
-banco registradas y mergeadas (#20); ventana de pago del QR cerrada y cierre diario en el
-satélite (PR #21); consola de revisión manual con alertas (PR #24, apilado sobre #21).
-Los dos PRs esperan la autorización del dueño)
+**Última actualización:** 2026-09-12 (sesión "respuestas de Baneco" — #20, #21 y #24
+mergeados; herramientas para la prueba controlada en producción listas en
+`feat/prueba-produccion`, a la espera de autorización y de la contraseña del usuario API)
 
 ---
 
@@ -106,11 +105,17 @@ Los dos PRs esperan la autorización del dueño)
     que llega sobre un QR vencido va a revisión manual (evento `ABONO_TARDIO`). Los
     casos en revisión se atienden desde una consola con alertas, con revisión
     periódica. Implementado en PR #21 y PR #24.
-15. **Pendiente de OK del dueño — `QR_ACTIVO → PAGO_DETECTADO`** (propuesto en PR
+15. **Aceptada al autorizar #21 (2026-09-12) — `QR_ACTIVO → PAGO_DETECTADO`** (propuesto en PR
     #21 a raíz de la auditoría de seguridad): si WhatsApp entrega el QR pero reporta
     una falla, el cliente puede pagar un cobro que nunca pasó a `ENVIADO`. Manda el
     banco, no nuestro registro del envío (regla #1). Autorizar #21 es aceptar este
     cambio al diagrama de CLAUDE.md.
+16. **Prueba controlada en producción (2026-09-12):** como el banco no simula pagos
+    (A2), el ciclo completo se valida en producción con plata propia desde cuentas
+    internas: QRs de Bs 1, hasta 10 por corrida, datos en el emulador local,
+    credenciales en `~/.manejoqr/baneco-prod.env` (600, fuera del repo; Claude Code no
+    las lee). No es el pase a producción. Guía:
+    `docs/Integraciones/baneco/03-prueba-en-produccion.md`.
 
 ## Estado actual
 
@@ -191,7 +196,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       **30 s** (piso 10 s); y 25 tests que dependían de la fecha, arreglados (regla
       para tests nuevos: **todo proveedor con reloj inyectable recibe el reloj del
       test**).
-- [x] **2026-09-12 — Ventana de pago del QR cerrada (PR #21, abierto).** Rama
+- [x] **2026-09-12 — Ventana de pago del QR cerrada (PR #21, mergeado).** Rama
       `feat/cerrar-ventana-de-pago`, dos commits (el cambio y las correcciones de la
       auditoría de seguridad):
       - La máquina de estados exige una constancia `QrAnulado` (tipo marcado, solo la
@@ -211,7 +216,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
         registrado si figura en la evidencia.
       - Verificado: 516 tests, emulador 16/16, y en vivo (demo-004 venció con
         `qrAnulado` en la evidencia).
-- [x] **2026-09-12 — Consola de revisión manual (PR #24, apilado sobre #21, abierto).**
+- [x] **2026-09-12 — Consola de revisión manual (PR #24, mergeado).**
       Rama `feat/consola-revision`:
       - Dominio: `qr-core/src/revision/revision.ts` arma cada caso desde la evidencia
         (motivo, desde cuándo, abono del banco, nivel de alerta). Umbrales: con pago
@@ -229,12 +234,29 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       - Guía operativa: `docs/09-revision-manual.md`.
       - Verificado: 584 tests, y en vivo en el navegador (cola, insignia, título,
         diferencia de monto, resolución por la API con evidencia `accion-manual`).
+- [x] **2026-09-12 — Herramientas de la prueba en producción (rama
+      `feat/prueba-produccion`).** Barrera de producción compartida
+      (`composicion/src/produccion.ts`); modo prueba de la API con topes de monto y
+      cantidad (`functions/src/modo-prueba.ts`); imagen del QR guardada fuera del repo
+      (`functions/src/imagenes.ts`, adaptador con `AlmacenImagenQr`); endpoints
+      `/api/pruebas`, `/api/pruebas/qr`, `/api/pruebas/cerrar`, `/api/cobros/:id/qr` y
+      `/api/cobros/:id/sondear-anulacion`; errores con detalle técnico (tipo y
+      `responseCode`); pestaña **Pruebas** en la consola con QR para escanear,
+      seguimiento del pago, diagnóstico y el checklist de las nueve pruebas con informe;
+      scripts `prueba:*`. Pestaña **Logs** (pedidos a la API que escriben o fallan, y
+      toda llamada al banco con ruta, HTTP, `responseCode` y demora; sin cuerpos ni
+      secretos). Auditoría de seguridad: el cupo cubre también el formulario común y
+      "renovar" (vigencia topeada en 24 h), la corrida se retoma del emulador al
+      reiniciar la API, y el cierre recorre todos los cobros abiertos. Verificado en
+      vivo con el banco simulado (QR, "Ya pagué", `CONFIRMADO`, revisión por pago
+      tardío, logs); la consola usa la hora del servidor (el navegador integrado
+      mostró un reloj desfasado).
 
 ### En espera (bloqueos externos)
 
 | Qué | Desde | Bloquea | Mientras tanto |
 |---|---|---|---|
-| Autorización del dueño: PR #21 y luego PR #24 | 2026-09-12 | Que la ventana de pago y la consola lleguen a `main` | Los dos PRs tienen checks en verde. |
+| Contraseña del usuario API de producción (no viene en el documento del banco) y número de la cuenta de cobro | 2026-09-12 | La prueba en producción (P1) | Si falta la contraseña, se gestiona en agencia (B4). |
 | Cuenta de abono de pruebas de Baneco (A4) | 2026-09-11 | Que B0 genere QRs (sin ella solo prueba el login) | El login y el cifrado se pueden probar ya con las credenciales compartidas del PDF. |
 | Catálogo de bancos (D9) | 2026-09-12 | Nada (deseable) | El banco dijo adjuntarlo y no llegó: pedirlo de nuevo. |
 | Pago manual de un QR de prueba por el banco (A2) | — | Capturar un `statusQR` pagado y un `paidQR` reales → fixtures reales | Hace falta primero el modo "pago asistido" de B0. |
@@ -284,11 +306,16 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 ### Próximo paso (retomar acá)
 
-**Dueño:**
+**Dueño — prueba en producción** (guía: `docs/Integraciones/baneco/03-prueba-en-produccion.md`):
 
-1. Revisar y **autorizar PR #21** (ventana de pago). Autorizarlo incluye aceptar el
-   cambio al diagrama `QR_ACTIVO → PAGO_DETECTADO` (decisión 15). Después, autorizar
-   **PR #24** (consola de revisión), que está apilado encima.
+0. Autorizar el PR de la prueba en producción (rama `feat/prueba-produccion`). Con la
+   contraseña del usuario API y la cuenta de cobro, crear `~/.manejoqr/baneco-prod.env`
+   (§2), levantar las cuatro terminales (§3) y hacer P1–P8 desde la pestaña Pruebas; P9
+   al día siguiente. Pasarle el informe a Claude Code.
+
+**Dueño — lo demás:**
+
+1. ~~Autorizar #21 y #24~~ — mergeados el 2026-09-12.
 2. Pedirle al oficial de Baneco, en un mismo correo: el **usuario y la cuenta de
    abono de pruebas** (A4), el **catálogo de bancos** que no llegó (D9) y, si
    interesa, los manuales de **Bec QR Connect** (G2). Cargar `BANECO_CERT_*` en el
@@ -304,9 +331,10 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 **Claude Code:**
 
-1. Tras la autorización: mergear #21 (squash, con constancia de la autorización en
-   el mensaje), **rebasar #24 sobre `main`** —el squash de #21 deja sus commits
-   originales en la rama de #24—, esperar los checks y mergear #24.
+1. ~~Mergear #21 y #24~~ — hecho. Con el informe de la prueba en producción:
+   documentar los hallazgos en `02-hallazgos-produccion.md`, reemplazar las fixtures
+   derivadas de la espec. por respuestas reales saneadas, y ajustar el adaptador a
+   los `responseCode` observados (doble anulación, anular un QR pagado).
 2. **Hito B0**, apenas llegue la cuenta de pruebas: correr `npm run baneco:b0`
    (primero el login, que confirma end-to-end el cifrado y resuelve V1/V4) y agregar
    el modo **pago asistido** (A2): un QR que no se anula, su PNG en

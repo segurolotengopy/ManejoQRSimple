@@ -31,9 +31,10 @@ export const PAQUETE = '@mqs/baneco-gateway' as const;
  */
 export const EL_WEBHOOK_CONFIRMA_PAGOS = false;
 
-export { PaymentWatcherBaneco, QrProviderBaneco } from './adaptadores.js';
+export { PaymentWatcherBaneco, QrProviderBaneco, type AlmacenImagenQr } from './adaptadores.js';
 export { ProveedorDeToken, leerExp, type Reloj } from './auth/token.js';
 export { ClienteBaneco, type EstadoDeQr, type ResultadoGenerarQr } from './client/qr.js';
+export { transporteObservado, type LlamadaAlBanco } from './client/observacion.js';
 export {
   errorDeEstado,
   errorPuerto,

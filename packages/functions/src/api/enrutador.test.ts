@@ -9,8 +9,14 @@ import {
   esExito,
   registrarDeteccion,
   vigilar,
+  exito,
+  fallo,
   type Centavos,
+  type QrProvider,
 } from '@mqs/qr-core';
+
+import { leerModoPrueba } from '../modo-prueba.js';
+import { RegistroEventos } from '../registro.js';
 import { describe, expect, it } from 'vitest';
 
 import { enrutar, type VerificadorDeToken } from './enrutador.js';
@@ -86,6 +92,11 @@ describe('autenticación', () => {
     ['GET', '/api/revision'],
     ['POST', '/api/cobros/x/resolver'],
     ['POST', '/api/cobros/x/buscar-abono'],
+    ['GET', '/api/pruebas'],
+    ['POST', '/api/pruebas/qr'],
+    ['POST', '/api/pruebas/cerrar'],
+    ['GET', '/api/cobros/x/qr'],
+    ['POST', '/api/cobros/x/sondear-anulacion'],
   ];
 
   it.each(rutas)('%s %s exige token', async (metodo, ruta) => {
@@ -395,6 +406,175 @@ describe('revisión manual por la API', () => {
     );
     const despues = await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/buscar-abono`));
     expect((despues.cuerpo as Record<string, unknown>)['encontrado']).toBe(true);
+  });
+});
+
+describe('prueba controlada en producción', () => {
+  function conPrueba(maxQrs = 10) {
+    const base = armar();
+    const modo = leerModoPrueba({ PRUEBA_MAX_QRS: String(maxQrs) }, 'qr=mock watcher=mock');
+    if (!esExito(modo)) throw new Error('modo de prueba inválido');
+    return { ...base, ctx: { ...base.ctx, prueba: modo.valor } };
+  }
+
+  const cuerpoDe = (r: { cuerpo: unknown }) => r.cuerpo as Record<string, unknown>;
+  const codigoDe = (r: { cuerpo: unknown }) => (r.cuerpo as { error: { codigo: string } }).error.codigo;
+
+  async function qrDePrueba(ctx: ContextoApi): Promise<string> {
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/pruebas/qr', { vigenciaMinutos: 5 }));
+    return String((cuerpoDe(r)['cobro'] as Record<string, unknown>)['id']);
+  }
+
+  it('sin modo prueba, las rutas de prueba no existen', async () => {
+    const { ctx } = armar();
+    expect((await enrutar(ctx, aceptaTodo, pedir('GET', '/api/pruebas'))).status).toBe(404);
+    expect((await enrutar(ctx, aceptaTodo, pedir('POST', '/api/pruebas/qr', {}))).status).toBe(404);
+  });
+
+  it('muestra los topes que fija el servidor', async () => {
+    const r = await enrutar(conPrueba().ctx, aceptaTodo, pedir('GET', '/api/pruebas'));
+    expect(r.status).toBe(200);
+    expect(cuerpoDe(r)).toMatchObject({ activo: true, monto: '1.00', maxQrs: 10, restantes: 10 });
+  });
+
+  it('genera un QR por el monto de prueba y lo suma a la corrida', async () => {
+    const { ctx } = conPrueba();
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/pruebas/qr', { vigenciaMinutos: 5 }));
+    expect(r.status).toBe(201);
+    expect(cuerpoDe(r)['cobro']).toMatchObject({ estado: 'QR_ACTIVO', monto: '1.00' });
+    // El mock no devuelve imagen; el adaptador de Baneco sí.
+    expect(cuerpoDe(r)['imagen']).toBeNull();
+
+    const estado = await enrutar(ctx, aceptaTodo, pedir('GET', '/api/pruebas'));
+    expect(cuerpoDe(estado)).toMatchObject({ restantes: 9 });
+    expect(cuerpoDe(estado)['cobros']).toHaveLength(1);
+  });
+
+  it('no pasa del tope de QRs de la corrida', async () => {
+    const { ctx } = conPrueba(1);
+    await qrDePrueba(ctx);
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/pruebas/qr', {}));
+    expect(r.status).toBe(409);
+    expect(codigoDe(r)).toBe('LIMITE_DE_PRUEBA');
+  });
+
+  it('el formulario común tampoco supera el monto de prueba', async () => {
+    const { ctx } = conPrueba();
+    const caro = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/cobros', COBRO_VALIDO));
+    expect(caro.status).toBe(400);
+    expect(codigoDe(caro)).toBe('MONTO_SOBRE_LIMITE_DE_PRUEBA');
+
+    const justo = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/cobros', { ...COBRO_VALIDO, monto: '1.00' }));
+    expect(justo.status).toBe(201);
+  });
+
+  it('cerrar la prueba anula en el banco lo que no se pagó', async () => {
+    const { ctx } = conPrueba();
+    await qrDePrueba(ctx);
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/pruebas/cerrar', {}));
+    expect(r.status).toBe(200);
+    expect((cuerpoDe(r)['resultados'] as { resultado: string }[])[0]?.resultado).toBe('ANULADO');
+  });
+
+  it('el sondeo de anulación solo va sobre QRs que nadie va a pagar', async () => {
+    const { ctx } = conPrueba();
+    const id = await qrDePrueba(ctx);
+
+    const vivo = await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/sondear-anulacion`, {}));
+    expect(vivo.status).toBe(409);
+    expect(codigoDe(vivo)).toBe('NO_SONDEABLE');
+
+    await enrutar(ctx, aceptaTodo, pedir('POST', '/api/pruebas/cerrar', {}));
+    const anulado = await enrutar(ctx, aceptaTodo, pedir('POST', `/api/cobros/${id}/sondear-anulacion`, {}));
+    expect(anulado.status).toBe(200);
+    expect(cuerpoDe(anulado)).toMatchObject({ anulado: true, detalle: null });
+  });
+
+  it('un cobro que no es de la corrida no se sondea', async () => {
+    const { ctx } = conPrueba();
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/cobros/ajeno/sondear-anulacion', {}));
+    expect(r.status).toBe(404);
+    expect(codigoDe(r)).toBe('NO_ES_DE_PRUEBA');
+  });
+
+  it('el formulario común también consume cupo y entra en la corrida', async () => {
+    // Si no, se podrían emitir QRs reales sin tope y "Cerrar la prueba" no los vería.
+    const { ctx } = conPrueba(1);
+    const creado = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/cobros', { ...COBRO_VALIDO, monto: '1.00' }));
+    expect(creado.status).toBe(201);
+
+    const otro = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/pruebas/qr', {}));
+    expect(codigoDe(otro)).toBe('LIMITE_DE_PRUEBA');
+    const estado = await enrutar(ctx, aceptaTodo, pedir('GET', '/api/pruebas'));
+    expect(cuerpoDe(estado)['cobros']).toEqual([cuerpoDe(creado)['id']]);
+  });
+
+  it('la vigencia de un cobro común queda topeada en 24 h', async () => {
+    const { ctx } = conPrueba();
+    const r = await enrutar(
+      ctx,
+      aceptaTodo,
+      pedir('POST', '/api/cobros', { ...COBRO_VALIDO, monto: '1.00', horasDeVigencia: 24 * 30 }),
+    );
+    const qr = cuerpoDe(r)['qrVigente'] as { venceEn: string };
+    expect(new Date(qr.venceEn).getTime() - AHORA.getTime()).toBe(24 * 3_600_000);
+  });
+
+  it('informa la hora del servidor, para no depender del reloj del navegador', async () => {
+    const r = await enrutar(conPrueba().ctx, aceptaTodo, pedir('GET', '/api/pruebas'));
+    expect(cuerpoDe(r)['ahora']).toBe(AHORA.toISOString());
+  });
+
+  it('sin imagen guardada, el QR no se sirve', async () => {
+    const { ctx } = conPrueba();
+    const id = await qrDePrueba(ctx);
+    const r = await enrutar(ctx, aceptaTodo, pedir('GET', `/api/cobros/${id}/qr`));
+    expect(r.status).toBe(404);
+    expect(codigoDe(r)).toBe('SIN_IMAGEN');
+  });
+
+  it('un rechazo del banco trae el detalle técnico para diagnosticar', async () => {
+    const base = armar();
+    const rechaza: QrProvider = {
+      emitir: () =>
+        Promise.resolve(
+          fallo({
+            tipo: 'RECHAZADO_POR_PROVEEDOR',
+            mensaje: 'generateQR rechazado por el banco',
+            reintentable: false,
+            codigoProveedor: '99',
+          }),
+        ),
+      anular: () => Promise.resolve(exito(undefined)),
+    };
+    const ctx = { ...base.ctx, deps: { ...base.ctx.deps, qr: rechaza } };
+
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/cobros', COBRO_VALIDO));
+    expect(r.status).toBe(502);
+    expect((r.cuerpo as { error: { detalle: unknown } }).error.detalle).toEqual({
+      tipo: 'RECHAZADO_POR_PROVEEDOR',
+      codigoProveedor: '99',
+      mensajeTecnico: 'generateQR rechazado por el banco',
+    });
+  });
+});
+
+describe('GET /api/logs', () => {
+  it('sin registro no hay logs', async () => {
+    expect((await enrutar(armar().ctx, aceptaTodo, pedir('GET', '/api/logs'))).status).toBe(404);
+  });
+
+  it('devuelve las líneas del registro, ya saneadas', async () => {
+    const registro = new RegistroEventos(() => AHORA);
+    registro.agregar('aviso', 'banco', 'POST /api/qrsimple/generateQR → HTTP 200 · responseCode 57 · 90 ms');
+    const r = await enrutar({ ...armar().ctx, registro }, aceptaTodo, pedir('GET', '/api/logs'));
+    expect(r.status).toBe(200);
+    expect((r.cuerpo as { lineas: { texto: string }[] }).lineas[0]?.texto).toContain('responseCode 57');
+  });
+
+  it('también exige token', async () => {
+    const r = await enrutar(armar().ctx, aceptaTodo, pedir('GET', '/api/logs', null, null));
+    expect(r.status).toBe(401);
   });
 });
 

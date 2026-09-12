@@ -25,6 +25,7 @@ import {
   registrarComprobante,
   renovarYReenviar,
   resolverRevision,
+  verificarAdmision,
   verificarPago,
   type CasoRevision,
   type Cobro,
@@ -40,9 +41,12 @@ import {
   cuerpoAnular,
   cuerpoComprobante,
   cuerpoCrearCobro,
+  cuerpoQrDePrueba,
   cuerpoRenovar,
   cuerpoResolver,
 } from './esquemas.js';
+import type { ModoPrueba } from '../modo-prueba.js';
+import type { RegistroEventos } from '../registro.js';
 import { creado, error, noEncontrado, ok, type Respuesta } from './tipos.js';
 
 const HORA_MS = 3_600_000;
@@ -55,6 +59,15 @@ export type ContextoApi = {
   readonly ahora: () => Date;
   /** Umbrales de alerta de la cola de revisión. Por defecto, los del dominio. */
   readonly politicaRevision?: PoliticaRevision;
+  /** Lee el PNG de un QR por su referencia. Sin él, la API no sirve imágenes. */
+  readonly leerImagenQr?: (imagenRef: string) => Promise<string | null>;
+  /**
+   * Presente **solo** en la prueba controlada en producción: activa los
+   * endpoints `/api/pruebas` y el tope de monto de todos los cobros.
+   */
+  readonly prueba?: ModoPrueba;
+  /** Logs de depuración para la pestaña Logs. */
+  readonly registro?: RegistroEventos;
 };
 
 /** Vista pública de un cobro. Lo que la consola puede ver, y nada más. */
@@ -158,17 +171,26 @@ function comoHttp(err: ErrorCasoUso): Respuesta {
         'ABONO_DESACTUALIZADO',
         'El banco reportó otro pago mientras revisabas: actualizá y volvé a mirar el caso antes de decidir.',
       );
-    case 'PUERTO':
+    case 'PUERTO': {
+      // Para diagnosticar: qué tipo de falla y qué código devolvió el banco
+      // (su `responseCode`, o el HTTP). Son códigos, no datos de nadie.
+      const detalle = {
+        tipo: err.error.tipo,
+        codigoProveedor: err.error.codigoProveedor,
+        mensajeTecnico: err.error.mensaje,
+      };
       if (err.error.tipo === 'CONFLICTO') {
         return error(
           409,
           'CONFLICTO',
           'El cobro cambió mientras operabas (el satélite pudo haberlo actualizado). Actualizá y volvé a intentar.',
+          detalle,
         );
       }
       return err.error.reintentable
-        ? error(503, 'SERVICIO_NO_DISPONIBLE', 'Un servicio externo no respondió. Reintentá.')
-        : error(502, 'PROVEEDOR_RECHAZO', 'Un servicio externo rechazó la operación.');
+        ? error(503, 'SERVICIO_NO_DISPONIBLE', 'Un servicio externo no respondió. Reintentá.', detalle)
+        : error(502, 'PROVEEDOR_RECHAZO', 'Un servicio externo rechazó la operación.', detalle);
+    }
   }
 }
 
@@ -193,9 +215,23 @@ export async function crearCobro(ctx: ContextoApi, cuerpo: unknown): Promise<Res
   if (!esExito(monto)) {
     return error(400, 'MONTO_INVALIDO', 'El monto no es representable en centavos enteros.');
   }
+  // En la prueba en producción el tope vale para todo cobro, no solo para los
+  // del botón de pruebas: el formulario común también emite QRs reales.
+  if (ctx.prueba !== undefined && monto.valor > ctx.prueba.montoCentavos) {
+    return error(
+      400,
+      'MONTO_SOBRE_LIMITE_DE_PRUEBA',
+      `En la prueba en producción el monto máximo es Bs ${aDecimalBob(ctx.prueba.montoCentavos)}.`,
+    );
+  }
+  // Y también el cupo: todo QR que se le pide al banco cuenta, venga de donde venga.
+  const sinCupo = consumirCupo(ctx);
+  if (sinCupo !== null) {
+    return sinCupo;
+  }
 
   const ahora = ctx.ahora();
-  const horas = datos.data.horasDeVigencia ?? ctx.horasDeVigenciaPorDefecto;
+  const horas = horasPermitidas(ctx, datos.data.horasDeVigencia);
 
   const cobro: Cobro = {
     // randomUUID usa el generador criptográfico, nunca Math.random (regla #10).
@@ -212,7 +248,11 @@ export async function crearCobro(ctx: ContextoApi, cuerpo: unknown): Promise<Res
   };
 
   const emitido = await emitirQr(ctx.deps, cobro, new Date(ahora.getTime() + horas * HORA_MS), ahora);
-  return esExito(emitido) ? creado(aVista(emitido.valor)) : comoHttp(emitido.error);
+  if (!esExito(emitido)) {
+    return comoHttp(emitido.error);
+  }
+  ctx.prueba?.corrida.cobros.push(emitido.valor.id);
+  return creado(aVista(emitido.valor));
 }
 
 /** Cuántos cobros muestra la consola de una vez. */
@@ -263,9 +303,17 @@ export async function renovar(ctx: ContextoApi, id: string, cuerpo: unknown): Pr
 
   const cobro = await buscar(ctx, id);
   if (esRespuesta(cobro)) return cobro;
+  // Renovar le pide al banco un QR nuevo: en la prueba, consume cupo.
+  const sinCupo = consumirCupo(ctx);
+  if (sinCupo !== null) {
+    return sinCupo;
+  }
+  if (ctx.prueba !== undefined && !ctx.prueba.corrida.cobros.includes(cobro.id)) {
+    ctx.prueba.corrida.cobros.push(cobro.id);
+  }
 
   const ahora = ctx.ahora();
-  const horas = datos.data.horasDeVigencia ?? ctx.horasDeVigenciaPorDefecto;
+  const horas = horasPermitidas(ctx, datos.data.horasDeVigencia);
   const renovado = await renovarYReenviar(
     ctx.deps,
     cobro,
@@ -357,6 +405,205 @@ export async function buscarAbono(ctx: ContextoApi, id: string): Promise<Respues
   return esExito(busqueda)
     ? ok({ encontrado: busqueda.valor.encontrado, cobro: aVista(busqueda.valor.cobro) })
     : comoHttp(busqueda.error);
+}
+
+/** `GET /api/cobros/:id/qr` — la imagen del QR, para escanearla y pagar. */
+export async function verQr(ctx: ContextoApi, id: string): Promise<Respuesta> {
+  const cobro = await buscar(ctx, id);
+  if (esRespuesta(cobro)) return cobro;
+
+  const png = await imagenDe(ctx, cobro);
+  return png === null
+    ? error(404, 'SIN_IMAGEN', 'Este cobro no tiene la imagen del QR guardada.')
+    : ok({ png });
+}
+
+async function imagenDe(ctx: ContextoApi, cobro: Cobro): Promise<string | null> {
+  const ref = cobro.qrVigente?.imagenRef ?? null;
+  return ref === null || ctx.leerImagenQr === undefined ? null : ctx.leerImagenQr(ref);
+}
+
+// --- Prueba controlada en producción (docs/Integraciones/baneco/03-prueba-en-produccion.md)
+
+/** Teléfono visiblemente falso: los cobros de prueba no tienen cliente. */
+const TELEFONO_DE_PRUEBA = '+59100000000';
+const VIGENCIA_DE_PRUEBA_MINUTOS = 30;
+/** En la prueba ningún QR vive más de un día: la prueba dura un día. */
+const HORAS_MAXIMAS_EN_PRUEBA = 24;
+
+/**
+ * En la prueba, cuenta un pedido de QR al banco y lo rechaza si se acabó el
+ * cupo. Fuera de la prueba no hace nada. Se cuenta el intento, salga o no.
+ */
+function consumirCupo(ctx: ContextoApi): Respuesta | null {
+  const prueba = ctx.prueba;
+  if (prueba === undefined) {
+    return null;
+  }
+  if (prueba.corrida.intentos >= prueba.maxQrs) {
+    return error(
+      409,
+      'LIMITE_DE_PRUEBA',
+      `Ya se pidieron los ${String(prueba.maxQrs)} QRs de la prueba. Cerrala; para más, subí PRUEBA_MAX_QRS y reiniciá la API.`,
+    );
+  }
+  prueba.corrida.intentos += 1;
+  return null;
+}
+
+/** La vigencia pedida, topeada en la prueba. */
+function horasPermitidas(ctx: ContextoApi, pedidas: number | undefined): number {
+  const horas = pedidas ?? ctx.horasDeVigenciaPorDefecto;
+  return ctx.prueba === undefined ? horas : Math.min(horas, HORAS_MAXIMAS_EN_PRUEBA);
+}
+
+/** `GET /api/logs` — los logs de depuración de la API (últimas 500 líneas). */
+export function verLogs(ctx: ContextoApi): Respuesta {
+  return ctx.registro === undefined ? noEncontrado() : ok({ lineas: ctx.registro.listar() });
+}
+
+/** `GET /api/pruebas` — si la prueba está activa, sus topes y sus cobros. */
+export function verPrueba(ctx: ContextoApi): Respuesta {
+  const prueba = ctx.prueba;
+  if (prueba === undefined) {
+    return noEncontrado();
+  }
+  return ok({
+    activo: true,
+    // La hora del servidor: la consola la usa para no depender del reloj del navegador.
+    ahora: ctx.ahora().toISOString(),
+    produccion: prueba.produccion,
+    monto: aDecimalBob(prueba.montoCentavos),
+    maxQrs: prueba.maxQrs,
+    intentos: prueba.corrida.intentos,
+    restantes: Math.max(0, prueba.maxQrs - prueba.corrida.intentos),
+    adaptadores: prueba.adaptadores,
+    cobros: [...prueba.corrida.cobros],
+  });
+}
+
+/**
+ * `POST /api/pruebas/qr` — emite un QR real por el monto de prueba.
+ *
+ * El monto lo fija el servidor. Se cuenta el **intento**, no el éxito: el tope
+ * limita cuántas veces se le pide un QR al banco, salga o no.
+ */
+export async function generarQrDePrueba(ctx: ContextoApi, cuerpo: unknown): Promise<Respuesta> {
+  const prueba = ctx.prueba;
+  if (prueba === undefined) {
+    return noEncontrado();
+  }
+  const datos = cuerpoQrDePrueba.safeParse(cuerpo ?? {});
+  if (!datos.success) {
+    return error(400, 'CUERPO_INVALIDO', datos.error.issues[0]?.message ?? 'cuerpo inválido');
+  }
+  const sinCupo = consumirCupo(ctx);
+  if (sinCupo !== null) {
+    return sinCupo;
+  }
+
+  const ahora = ctx.ahora();
+  const minutos = datos.data.vigenciaMinutos ?? VIGENCIA_DE_PRUEBA_MINUTOS;
+  const cobro: Cobro = {
+    id: randomUUID(),
+    proveedor: 'baneco',
+    estado: 'BORRADOR',
+    montoCentavos: prueba.montoCentavos,
+    moneda: 'BOB',
+    qrVersion: 0,
+    qrVigente: null,
+    creadoEn: ahora,
+    telefonoCliente: TELEFONO_DE_PRUEBA,
+    // Es la nota que ve quien paga en su app: que diga que es una prueba.
+    concepto: `PRUEBA ${String(prueba.corrida.intentos)} ManejoQRSimple`,
+  };
+
+  const emitido = await emitirQr(ctx.deps, cobro, new Date(ahora.getTime() + minutos * 60_000), ahora);
+  if (!esExito(emitido)) {
+    return comoHttp(emitido.error);
+  }
+  prueba.corrida.cobros.push(emitido.valor.id);
+  return creado({ cobro: aVista(emitido.valor), imagen: await imagenDe(ctx, emitido.valor) });
+}
+
+/** Un cobro de esta corrida de prueba, o la respuesta de error. */
+async function cobroDePrueba(ctx: ContextoApi, id: string): Promise<Cobro | Respuesta> {
+  if (ctx.prueba === undefined) {
+    return noEncontrado();
+  }
+  if (!ctx.prueba.corrida.cobros.includes(id)) {
+    return error(404, 'NO_ES_DE_PRUEBA', 'Ese cobro no es de esta corrida de prueba.');
+  }
+  return buscar(ctx, id);
+}
+
+/** Estados en los que sondear la anulación no puede dejar a un cliente sin poder pagar. */
+const SONDEABLES = new Set(['CONFIRMADO', 'ANULADO', 'VENCIDO', 'RECHAZADO']);
+
+/**
+ * `POST /api/cobros/:id/sondear-anulacion` — le pide al banco anular el QR **sin
+ * tocar el cobro**, para ver qué responde (pruebas 6 y 7: anular un QR ya pagado
+ * y anular dos veces). Es un sondeo, como los de B0: no aplica ninguna
+ * transición. Solo en la prueba, y solo sobre cobros cuyo QR ya no se espera
+ * que nadie pague.
+ */
+export async function sondearAnulacion(ctx: ContextoApi, id: string): Promise<Respuesta> {
+  const cobro = await cobroDePrueba(ctx, id);
+  if (esRespuesta(cobro)) return cobro;
+  if (!SONDEABLES.has(cobro.estado) || cobro.qrVigente === null) {
+    return error(
+      409,
+      'NO_SONDEABLE',
+      'Solo se sondea la anulación de un QR pagado, anulado o vencido: sobre uno vivo dejaría al cliente sin poder pagar.',
+    );
+  }
+
+  const r = await ctx.deps.qr.anular(cobro.qrVigente.referenciaProveedor);
+  return ok({
+    anulado: esExito(r),
+    detalle: esExito(r)
+      ? null
+      : { tipo: r.error.tipo, codigoProveedor: r.error.codigoProveedor, mensajeTecnico: r.error.mensaje },
+  });
+}
+
+/** Cuántos cobros revisa el cierre. En la prueba, el emulador solo tiene los de la prueba. */
+const LIMITE_CIERRE = 500;
+
+/**
+ * `POST /api/pruebas/cerrar` — anula en el banco todo QR que quedó sin pagar.
+ * Pasa por `anular()`, así que antes mira si alguien lo pagó.
+ *
+ * Recorre **todos** los cobros del emulador de la prueba, no solo los de esta
+ * corrida de la API: si la API se reinició a mitad de la prueba, los de antes
+ * también se cierran.
+ */
+export async function cerrarPrueba(ctx: ContextoApi): Promise<Respuesta> {
+  if (ctx.prueba === undefined) {
+    return noEncontrado();
+  }
+  const todos = await ctx.deps.cobros.listarRecientes(LIMITE_CIERRE);
+  if (!esExito(todos)) {
+    return comoHttp({ tipo: 'PUERTO', error: todos.error });
+  }
+
+  const resultados: { id: string; resultado: string }[] = [];
+  for (const cobro of todos.valor) {
+    const id = cobro.id;
+    if (cobro.estado === 'COMPROBANTE_RECIBIDO') {
+      // No admite ANULADO: su QR sigue vivo hasta que el satélite lo venza.
+      resultados.push({ id, resultado: 'QR VIVO (COMPROBANTE_RECIBIDO): lo anula el satélite al vencer' });
+      continue;
+    }
+    if (verificarAdmision(cobro, 'ANULADO') !== null) {
+      // Terminal, en revisión o con pago detectado: no hay nada que cerrar.
+      resultados.push({ id, resultado: cobro.estado });
+      continue;
+    }
+    const anulado = await anularCobro(ctx.deps, cobro, 'cierre de la prueba en producción', ctx.ahora());
+    resultados.push({ id, resultado: esExito(anulado) ? 'ANULADO' : `ERROR ${anulado.error.tipo}` });
+  }
+  return ok({ resultados });
 }
 
 /**

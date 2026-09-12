@@ -107,10 +107,43 @@ export type Resolucion =
   | { readonly decision: 'CONFIRMADO'; readonly idDeduplicacion: string; readonly motivo: string }
   | { readonly decision: 'RECHAZADO'; readonly motivo: string };
 
+/** Detalle técnico de una falla de un servicio externo: tipo y código del banco. */
+export type DetalleError = {
+  readonly tipo: string;
+  readonly codigoProveedor: string | null;
+  readonly mensajeTecnico: string;
+};
+
 export type ErrorApi = {
   readonly codigo: string;
   readonly mensaje: string;
   readonly status: number;
+  readonly detalle?: DetalleError;
+};
+
+/** Una línea de log: de la API (`api`, `banco`, `sistema`) o de la propia consola. */
+export type LineaLog = {
+  readonly n: number;
+  readonly en: string;
+  readonly nivel: 'info' | 'aviso' | 'error';
+  readonly origen: 'api' | 'banco' | 'sistema' | 'consola';
+  readonly texto: string;
+};
+
+/** La prueba controlada en producción, si la API corre en ese modo. */
+export type EstadoPrueba = {
+  readonly activo: true;
+  /** Hora del servidor, para no depender del reloj del navegador. */
+  readonly ahora: string;
+  /** `true` si los QRs son reales (API de producción del banco); `false` con el banco simulado. */
+  readonly produccion: boolean;
+  /** Monto de cada QR de prueba, fijado por el servidor. */
+  readonly monto: string;
+  readonly maxQrs: number;
+  readonly intentos: number;
+  readonly restantes: number;
+  readonly adaptadores: string;
+  readonly cobros: readonly string[];
 };
 
 export type Resultado<T> = { readonly ok: true; readonly valor: T } | { readonly ok: false; readonly error: ErrorApi };
@@ -186,6 +219,36 @@ export class ClienteApi {
     return this.pedir('POST', `/api/cobros/${encodeURIComponent(id)}/buscar-abono`, {});
   }
 
+  /** Las últimas líneas de log de la API. */
+  verLogs(): Promise<Resultado<{ lineas: LineaLog[] }>> {
+    return this.pedir('GET', '/api/logs');
+  }
+
+  /** Estado de la prueba en producción. 404 si la API no corre en ese modo. */
+  verPrueba(): Promise<Resultado<EstadoPrueba>> {
+    return this.pedir<EstadoPrueba>('GET', '/api/pruebas');
+  }
+
+  /** Emite un QR real por el monto de prueba. */
+  generarQrDePrueba(vigenciaMinutos: number): Promise<Resultado<{ cobro: Cobro; imagen: string | null }>> {
+    return this.pedir('POST', '/api/pruebas/qr', { vigenciaMinutos });
+  }
+
+  /** Anula en el banco los QRs de prueba que quedaron sin pagar. */
+  cerrarPrueba(): Promise<Resultado<{ resultados: { id: string; resultado: string }[] }>> {
+    return this.pedir('POST', '/api/pruebas/cerrar', {});
+  }
+
+  /** La imagen del QR en Base64. */
+  verQr(id: string): Promise<Resultado<{ png: string }>> {
+    return this.pedir('GET', `/api/cobros/${encodeURIComponent(id)}/qr`);
+  }
+
+  /** Pide al banco anular el QR sin tocar el cobro, para ver qué responde. */
+  sondearAnulacion(id: string): Promise<Resultado<{ anulado: boolean; detalle: DetalleError | null }>> {
+    return this.pedir('POST', `/api/cobros/${encodeURIComponent(id)}/sondear-anulacion`, {});
+  }
+
   private accion(id: string, accion: string, cuerpo: unknown = {}): Promise<Resultado<Cobro>> {
     return this.pedir<Cobro>('POST', `/api/cobros/${encodeURIComponent(id)}/${accion}`, cuerpo);
   }
@@ -241,9 +304,25 @@ function comoError(cuerpo: unknown, status: number): ErrorApi {
     if (typeof err === 'object' && err !== null && 'codigo' in err && 'mensaje' in err) {
       const { codigo, mensaje } = err;
       if (typeof codigo === 'string' && typeof mensaje === 'string') {
-        return { codigo, mensaje, status };
+        const detalle = 'detalle' in err ? comoDetalle(err.detalle) : undefined;
+        return detalle === undefined ? { codigo, mensaje, status } : { codigo, mensaje, status, detalle };
       }
     }
   }
   return { codigo: 'ERROR_DESCONOCIDO', mensaje: `La API respondió ${String(status)}.`, status };
+}
+
+/** El detalle técnico del error, si vino con la forma esperada. */
+function comoDetalle(valor: unknown): DetalleError | undefined {
+  if (typeof valor !== 'object' || valor === null) {
+    return undefined;
+  }
+  const tipo = 'tipo' in valor && typeof valor.tipo === 'string' ? valor.tipo : null;
+  const mensajeTecnico =
+    'mensajeTecnico' in valor && typeof valor.mensajeTecnico === 'string' ? valor.mensajeTecnico : '';
+  const codigo = 'codigoProveedor' in valor ? valor.codigoProveedor : null;
+  if (tipo === null) {
+    return undefined;
+  }
+  return { tipo, codigoProveedor: typeof codigo === 'string' ? codigo : null, mensajeTecnico };
 }

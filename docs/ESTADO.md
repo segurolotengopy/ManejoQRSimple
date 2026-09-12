@@ -6,8 +6,8 @@
 
 **Última actualización:** 2026-09-12 (sesión "respuestas de Baneco" — respuestas del
 banco registradas y mergeadas (#20); ventana de pago del QR cerrada y cierre diario en el
-satélite (PR #21); consola de revisión manual con alertas (PR apilado sobre #21). Los dos
-PRs esperan la autorización del dueño)
+satélite (PR #21); consola de revisión manual con alertas (PR #24, apilado sobre #21).
+Los dos PRs esperan la autorización del dueño)
 
 ---
 
@@ -105,7 +105,7 @@ PRs esperan la autorización del dueño)
 14. **`VENCIDO → EN_REVISION` y revisión manual periódica (2026-09-12):** un pago
     que llega sobre un QR vencido va a revisión manual (evento `ABONO_TARDIO`). Los
     casos en revisión se atienden desde una consola con alertas, con revisión
-    periódica. Implementado en PR #21 y en el PR de la consola.
+    periódica. Implementado en PR #21 y PR #24.
 15. **Pendiente de OK del dueño — `QR_ACTIVO → PAGO_DETECTADO`** (propuesto en PR
     #21 a raíz de la auditoría de seguridad): si WhatsApp entrega el QR pero reporta
     una falla, el cliente puede pagar un cobro que nunca pasó a `ENVIADO`. Manda el
@@ -211,7 +211,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
         registrado si figura en la evidencia.
       - Verificado: 516 tests, emulador 16/16, y en vivo (demo-004 venció con
         `qrAnulado` en la evidencia).
-- [x] **2026-09-12 — Consola de revisión manual (PR apilado sobre #21, abierto).**
+- [x] **2026-09-12 — Consola de revisión manual (PR #24, apilado sobre #21, abierto).**
       Rama `feat/consola-revision`:
       - Dominio: `qr-core/src/revision/revision.ts` arma cada caso desde la evidencia
         (motivo, desde cuándo, abono del banco, nivel de alerta). Umbrales: con pago
@@ -234,7 +234,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 | Qué | Desde | Bloquea | Mientras tanto |
 |---|---|---|---|
-| Autorización del dueño: PR #21 y luego el de la consola | 2026-09-12 | Que la ventana de pago y la consola lleguen a `main` | Los dos PRs tienen checks en verde. |
+| Autorización del dueño: PR #21 y luego PR #24 | 2026-09-12 | Que la ventana de pago y la consola lleguen a `main` | Los dos PRs tienen checks en verde. |
 | Cuenta de abono de pruebas de Baneco (A4) | 2026-09-11 | Que B0 genere QRs (sin ella solo prueba el login) | El login y el cifrado se pueden probar ya con las credenciales compartidas del PDF. |
 | Catálogo de bancos (D9) | 2026-09-12 | Nada (deseable) | El banco dijo adjuntarlo y no llegó: pedirlo de nuevo. |
 | Pago manual de un QR de prueba por el banco (A2) | — | Capturar un `statusQR` pagado y un `paidQR` reales → fixtures reales | Hace falta primero el modo "pago asistido" de B0. |
@@ -288,7 +288,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 1. Revisar y **autorizar PR #21** (ventana de pago). Autorizarlo incluye aceptar el
    cambio al diagrama `QR_ACTIVO → PAGO_DETECTADO` (decisión 15). Después, autorizar
-   el PR de la consola de revisión, que está apilado encima.
+   **PR #24** (consola de revisión), que está apilado encima.
 2. Pedirle al oficial de Baneco, en un mismo correo: el **usuario y la cuenta de
    abono de pruebas** (A4), el **catálogo de bancos** que no llegó (D9) y, si
    interesa, los manuales de **Bec QR Connect** (G2). Cargar `BANECO_CERT_*` en el
@@ -304,8 +304,9 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 **Claude Code:**
 
-1. Tras la autorización: mergear #21 y luego la consola (squash, con constancia de
-   la autorización en el mensaje), y rebasar la consola sobre `main` si hace falta.
+1. Tras la autorización: mergear #21 (squash, con constancia de la autorización en
+   el mensaje), **rebasar #24 sobre `main`** —el squash de #21 deja sus commits
+   originales en la rama de #24—, esperar los checks y mergear #24.
 2. **Hito B0**, apenas llegue la cuenta de pruebas: correr `npm run baneco:b0`
    (primero el login, que confirma end-to-end el cifrado y resuelve V1/V4) y agregar
    el modo **pago asistido** (A2): un QR que no se anula, su PNG en

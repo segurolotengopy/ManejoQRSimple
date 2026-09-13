@@ -11,8 +11,18 @@
  */
 
 import type { Cobro } from '../cobro/cobro.js';
+import { centavos } from '../comun/dinero.js';
 import { esExito, type Resultado } from '../comun/resultado.js';
-import type { CobroRepository, ErrorPuerto, EvidenceStore, PaymentWatcher, QrProvider, SolicitudQr } from './puertos.js';
+import type { AbonoSinConciliar } from '../revision/abono-sin-conciliar.js';
+import type {
+  AbonosSinConciliarStore,
+  CobroRepository,
+  ErrorPuerto,
+  EvidenceStore,
+  PaymentWatcher,
+  QrProvider,
+  SolicitudQr,
+} from './puertos.js';
 
 export type CasoDeContrato<T> = {
   readonly nombre: string;
@@ -193,6 +203,87 @@ function cobroDeContrato(): Cobro {
  * solicitud de ejemplo —que vence en una fecha fija— terminaría emitida
  * después de su vencimiento en cuanto pase esa fecha.
  */
+export const CASOS_ABONOS_SIN_CONCILIAR: ReadonlyArray<CasoDeContrato<AbonosSinConciliarStore>> = [
+  {
+    nombre: 'registrar dos veces el mismo abono deja un solo caso abierto',
+    ejecutar: async (store) => {
+      const abono = abonoSinConciliarDeEjemplo('baneco:qr-contrato-1:tx-1');
+      exigirExito(await store.registrar(abono), 'primer registro');
+      exigirExito(await store.registrar(abono), 'segundo registro');
+      const abiertos = exigirExito(await store.listarAbiertos(10), 'listar');
+      afirmar(abiertos.length === 1, 'el mismo abono no se duplica (regla #7)');
+    },
+  },
+  {
+    nombre: 'los datos vuelven tal cual se guardaron',
+    ejecutar: async (store) => {
+      const abono = abonoSinConciliarDeEjemplo('baneco:qr-contrato-2:tx-1');
+      exigirExito(await store.registrar(abono), 'registrar');
+      const [leido] = exigirExito(await store.listarAbiertos(10), 'listar');
+      afirmar(leido !== undefined, 'el abono registrado debe listarse');
+      afirmar(leido?.montoCentavos === abono.montoCentavos, 'el monto no cambia');
+      afirmar(leido?.ocurridoEn.getTime() === abono.ocurridoEn.getTime(), 'el instante del pago no cambia');
+      afirmar(leido?.registradoEn.getTime() === abono.registradoEn.getTime(), 'el instante del registro no cambia');
+      afirmar(leido?.motivo === 'HUERFANO' && leido.cobroId === null, 'motivo y cobro se conservan');
+      afirmar(leido?.resolucion === null, 'un abono recién registrado está abierto');
+    },
+  },
+  {
+    nombre: 'cerrar lo saca de los abiertos, y registrarlo de nuevo no lo reabre',
+    ejecutar: async (store) => {
+      const abono = abonoSinConciliarDeEjemplo('baneco:qr-contrato-3:tx-1');
+      exigirExito(await store.registrar(abono), 'registrar');
+      const cerrado = exigirExito(
+        await store.cerrar(abono.idDeduplicacion, { motivo: 'Devuelto al pagador', resueltoEn: INSTANTE_DE_CONTRATO }),
+        'cerrar',
+      );
+      afirmar(cerrado?.resolucion?.motivo === 'Devuelto al pagador', 'cerrar devuelve el abono con su resolución');
+      // El cierre del día se repite (el satélite reinició): no puede reabrirlo.
+      exigirExito(await store.registrar(abono), 'registrar de nuevo');
+      const abiertos = exigirExito(await store.listarAbiertos(10), 'listar');
+      afirmar(abiertos.length === 0, 'un abono cerrado no vuelve a la cola');
+    },
+  },
+  {
+    nombre: 'una resolución no se pisa con otra',
+    ejecutar: async (store) => {
+      const abono = abonoSinConciliarDeEjemplo('baneco:qr-contrato-4:tx-1');
+      exigirExito(await store.registrar(abono), 'registrar');
+      const resolucion = { motivo: 'Primera resolución', resueltoEn: INSTANTE_DE_CONTRATO };
+      exigirExito(await store.cerrar(abono.idDeduplicacion, resolucion), 'primer cierre');
+      const segundo = await store.cerrar(abono.idDeduplicacion, { ...resolucion, motivo: 'Segunda resolución' });
+      afirmar(!esExito(segundo) && segundo.error.tipo === 'CONFLICTO', 'el segundo cierre debe fallar con CONFLICTO');
+    },
+  },
+  {
+    nombre: 'cerrar un abono que no existe devuelve null, no un error',
+    ejecutar: async (store) => {
+      const r = exigirExito(
+        await store.cerrar('baneco:qr-inexistente:tx-0', { motivo: 'No existe', resueltoEn: INSTANTE_DE_CONTRATO }),
+        'cerrar inexistente',
+      );
+      afirmar(r === null, 'lo desconocido es null');
+    },
+  },
+];
+
+function abonoSinConciliarDeEjemplo(idDeduplicacion: string): AbonoSinConciliar {
+  const monto = centavos(1_500);
+  if (!esExito(monto)) {
+    throw new Error('monto de ejemplo inválido');
+  }
+  return {
+    idDeduplicacion,
+    motivo: 'HUERFANO',
+    cobroId: null,
+    montoCentavos: monto.valor,
+    ocurridoEn: new Date(INSTANTE_DE_CONTRATO.getTime() - 3_600_000),
+    origen: 'watcher-baneco',
+    registradoEn: INSTANTE_DE_CONTRATO,
+    resolucion: null,
+  };
+}
+
 export const INSTANTE_DE_CONTRATO = new Date('2026-08-27T12:00:00.000Z');
 
 function solicitudDeEjemplo(): SolicitudQr {

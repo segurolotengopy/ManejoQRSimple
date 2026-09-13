@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CASOS_ABONOS_SIN_CONCILIAR,
   CASOS_COBRO_REPOSITORY,
   CASOS_EVIDENCE_STORE,
   CASOS_PAYMENT_WATCHER,
@@ -16,6 +17,7 @@ import {
   INSTANTE_DE_CONTRATO,
 } from '../contrato.js';
 import {
+  AbonosSinConciliarEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   PaymentWatcherEnMemoria,
@@ -45,6 +47,12 @@ describe('contrato de EvidenceStore', () => {
 describe('contrato de CobroRepository', () => {
   it.each(CASOS_COBRO_REPOSITORY)('$nombre', async ({ ejecutar }) => {
     await expect(ejecutar(new CobroRepositoryEnMemoria())).resolves.toBeUndefined();
+  });
+});
+
+describe('contrato de AbonosSinConciliarStore', () => {
+  it.each(CASOS_ABONOS_SIN_CONCILIAR)('$nombre', async ({ ejecutar }) => {
+    await expect(ejecutar(new AbonosSinConciliarEnMemoria())).resolves.toBeUndefined();
   });
 });
 

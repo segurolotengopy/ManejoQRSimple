@@ -16,6 +16,11 @@ adivinar. Hay dos familias:
 - **No hay plata** pero hay una señal de pago: el cliente mandó un comprobante y el
   banco nunca registró nada hasta que venció el QR.
 
+La misma pestaña muestra además, en su propia sección, los **pagos sin cobro que los
+explique**: plata que el cierre diario encontró en la cuenta y que ningún cobro espera
+(ver "Pago sin cobro" en §4). No son cobros: no se aceptan ni se rechazan, se cierran
+dejando escrito qué se hizo con la plata.
+
 Lo que la consola **no** permite, a propósito:
 
 - **Aceptar un pago que el banco no reportó.** El botón "Aceptar el pago del banco"
@@ -31,6 +36,7 @@ Lo que la consola **no** permite, a propósito:
 |---|---|---|
 | Con pago recibido | 4 h | 24 h |
 | Sin pago (solo comprobante) | 24 h | 72 h |
+| Pago sin cobro (cuenta desde que lo encontró el cierre, no desde el pago) | 4 h | 24 h |
 
 La diferencia es deliberada: con plata recibida hay un cliente esperando su
 confirmación; sin plata, lo más probable es un pago que no se hizo.
@@ -58,7 +64,8 @@ eso: con la consola cerrada, nadie avisa (ver §5).
    pagos de más). El sistema nunca lee saldos ni el extracto (regla #4): eso lo mirás vos.
 4. **Después del cierre diario.** El satélite concilia el día anterior pasada la
    medianoche. Si encuentra un pago para un caso en revisión, lo adjunta: el caso queda
-   confirmable en la consola sin que tengas que buscarlo.
+   confirmable en la consola sin que tengas que buscarlo. Si encuentra un pago que ningún
+   cobro explica, aparece en "Pagos sin cobro que los explique".
 
 ## 4. Qué hacer con cada caso
 
@@ -101,6 +108,35 @@ El cliente mandó comprobante y el banco nunca registró el pago.
 Algo que el sistema no esperaba. Revisá el rastro de evidencia completo (pestaña Cobros →
 detalle). Si no entendés cómo llegó ahí, **no lo resuelvas**: consultalo.
 
+### Pago sin cobro (`HUERFANO` y `SIN_CORROBORAR`)
+El cierre diario compara el reporte de pagos del banco (`paidQR`) con los cobros y
+encontró plata que no puede explicar:
+
+- **Huérfano:** ningún cobro espera ese QR. Es un QR anulado que igual se pagó, un QR
+  ya renovado que el cliente pagó con la versión vieja, o un QR que el banco creó en un
+  pedido que nosotros dimos por fallido (respuesta C3: el banco no valida duplicados).
+- **Sin corroborar:** el cobro existe, pero la consulta del QR no confirma el pago, o el
+  cobro ya se había confirmado con otro pago.
+
+Qué hacer:
+
+- **Mirá el extracto** en la app del banco. La consola muestra el monto, la hora y la
+  clave del banco (`baneco:{qr}:{transacción}`), y el cobro del QR si lo hay.
+- **Huérfano de un cobro anulado o renovado:** hablá con el cliente. O le devolvés la
+  plata por transferencia, o dejás escrito a qué venta corresponde. **Nunca** lo cargues a
+  otro cobro para que cierre.
+- **Sin corroborar:** en el cobro, usá "Buscar el pago en el banco". Si sigue sin
+  aparecer, consultá al oficial del banco antes de dar nada por pagado.
+- **"Ya registra este pago":** el sistema detectó ese mismo pago en su cobro después del
+  cierre (la consulta del QR lo vio más tarde). Ya está explicado y deja de alertar.
+  **No devuelvas la plata:** cerralo indicando que figura en el cobro.
+- Al terminar, **"Cerrar con un motivo"**, que pide 10 caracteres como mínimo. Escribí
+  qué se hizo con la plata y la referencia de la devolución si la hubo. Un pago cerrado
+  no vuelve a la cola aunque el cierre del día se repita.
+
+Cerrar un pago sin cobro **no confirma ningún cobro**. Si descubrís que era de un cobro
+que sigue abierto, ese cobro se resuelve por su propio camino.
+
 ### Cuando rechazás un caso con plata recibida
 Rechazar **no devuelve el dinero**: el sistema no mueve fondos (regla #3). La devolución
 se hace por fuera, por transferencia, y conviene dejar la referencia en el motivo del
@@ -111,10 +147,11 @@ rechazo.
 - **Las alertas viven en la consola abierta.** Con la consola cerrada, nadie avisa. Cuando
   exista `wa-bridge`, el paso natural es avisarle al dueño por WhatsApp los casos
   críticos.
-- **Los abonos sin cobro no están en la consola.** Los pagos que el cierre diario no puede
-  asociar a ningún cobro (huérfanos o sin corroborar) van al log del satélite
-  (`! abono para revisar a mano: …`). Hay que leer ese log después de cada cierre hasta
-  que se persistan.
+- **Un pago sin cobro se cierra, no se asigna.** La consola no ofrece "este pago es del
+  cobro X": asignarlo a mano sería confirmar sin detección del banco sobre ese cobro. Si
+  hace falta, el cobro se resuelve por su camino y el pago se cierra con el motivo.
+- **Un día fuera de la ventana de cierre** (más de 3 días con el satélite apagado) no se
+  concilia solo: el satélite lo avisa en su terminal y hay que conciliarlo a mano.
 - **La marca de "revisión hecha" es local** del navegador (`localStorage`). No es
   evidencia ni se comparte entre dispositivos.
 - **Aceptar confirma el pago que ves en pantalla.** Si mientras decidías el banco reportó

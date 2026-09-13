@@ -15,6 +15,7 @@
 import {
   anular,
   buscarAbono,
+  cerrarAbono,
   cerrarPrueba,
   comprobante,
   crearCobro,
@@ -40,6 +41,14 @@ export type VerificadorDeToken = (token: string) => Promise<string | null>;
 const PREFIJO = '/api/cobros';
 const REVISION = '/api/revision';
 const PRUEBAS = '/api/pruebas';
+const ABONOS = '/api/abonos';
+
+/**
+ * La clave de un abono viene del banco (`baneco:{qrId}:{tx}`) y la consola la
+ * manda codificada. Se decodifica acá y se acota: nada de `/`, ni largos que no
+ * son de una clave.
+ */
+const CLAVE_ABONO = /^[A-Za-z0-9:_.-]{1,200}$/;
 
 export async function enrutar(
   ctx: ContextoApi,
@@ -66,6 +75,10 @@ async function despachar(ctx: ContextoApi, peticion: Peticion): Promise<Respuest
 
   if (ruta === '/api/logs') {
     return metodo === 'GET' ? verLogs(ctx) : metodoNoPermitido();
+  }
+
+  if (ruta.startsWith(`${ABONOS}/`)) {
+    return despacharAbono(ctx, metodo, ruta.slice(ABONOS.length + 1), cuerpo);
   }
 
   // Sin modo prueba, estas rutas responden 404 como cualquier ruta inexistente.
@@ -126,6 +139,29 @@ async function despachar(ctx: ContextoApi, peticion: Peticion): Promise<Respuest
     default:
       return noEncontrado();
   }
+}
+
+/** `/api/abonos/:id/cerrar`, la única acción sobre un abono sin conciliar. */
+function despacharAbono(
+  ctx: ContextoApi,
+  metodo: Peticion['metodo'],
+  resto: string,
+  cuerpo: unknown,
+): Promise<Respuesta> | Respuesta {
+  const [codificado, accion, sobrante] = resto.split('/');
+  if (codificado === undefined || accion !== 'cerrar' || sobrante !== undefined) {
+    return noEncontrado();
+  }
+  let id: string;
+  try {
+    id = decodeURIComponent(codificado);
+  } catch {
+    return noEncontrado();
+  }
+  if (!CLAVE_ABONO.test(id)) {
+    return noEncontrado();
+  }
+  return metodo === 'POST' ? cerrarAbono(ctx, id, cuerpo) : metodoNoPermitido();
 }
 
 const metodoNoPermitido = (): Respuesta =>

@@ -15,12 +15,14 @@
 
 import { useState } from 'react';
 
-import type { CasoRevision, ClienteApi, ColaRevision, ErrorApi } from './api.js';
+import type { AbonoSinConciliar, CasoRevision, ClienteApi, ColaRevision, ErrorApi } from './api.js';
 import {
   antiguedad,
   describirMotivo,
+  describirMotivoAbono,
   diferencia,
   recomendacion,
+  recomendacionAbono,
   revisionPendiente,
   textoNivel,
   textoUltimaRevision,
@@ -88,9 +90,9 @@ export function Revision(props: Props): React.JSX.Element {
         </p>
       )}
 
-      {casos.length === 0 ? (
-        <p className="vacio">No hay nada para revisar.</p>
-      ) : (
+      {casos.length === 0 && cola.abonos.length === 0 && <p className="vacio">No hay nada para revisar.</p>}
+
+      {casos.length > 0 && (
         <ol className="cola">
           {casos.map((caso) => (
             <Caso
@@ -103,7 +105,96 @@ export function Revision(props: Props): React.JSX.Element {
           ))}
         </ol>
       )}
+
+      {cola.abonos.length > 0 && (
+        <>
+          <h3>Pagos sin cobro que los explique</h3>
+          <p className="tenue">
+            Los encontró el cierre diario: plata en la cuenta que ningún cobro espera. No confirman nada; se
+            cierran dejando escrito qué se hizo con la plata.
+          </p>
+          <ol className="cola">
+            {cola.abonos.map((abono) => (
+              <AbonoCaso
+                key={abono.idDeduplicacion}
+                api={props.api}
+                abono={abono}
+                onCambio={props.onCambio}
+                onError={props.onError}
+              />
+            ))}
+          </ol>
+        </>
+      )}
     </section>
+  );
+}
+
+function AbonoCaso({
+  api,
+  abono,
+  onCambio,
+  onError,
+}: {
+  readonly api: ClienteApi;
+  readonly abono: AbonoSinConciliar;
+  readonly onCambio: () => void;
+  readonly onError: (e: ErrorApi) => void;
+}): React.JSX.Element {
+  const [ocupado, setOcupado] = useState(false);
+
+  const cerrar = async (): Promise<void> => {
+    const motivo = globalThis.prompt(
+      '¿Qué se hizo con esta plata? (mínimo 10 caracteres; queda registrado. Ej.: "devuelto al pagador")',
+    );
+    if (motivo === null || motivo.trim() === '') {
+      return;
+    }
+    setOcupado(true);
+    const r = await api.cerrarAbono(abono.idDeduplicacion, motivo);
+    setOcupado(false);
+    if (r.ok) {
+      onCambio();
+    } else {
+      onError(r.error);
+    }
+  };
+
+  return (
+    <li className={`caso ${tonoDeNivel(abono.nivel)}`}>
+      <header>
+        <span className={`chip ${tonoDeNivel(abono.nivel)}`}>{textoNivel(abono.nivel)}</span>
+        <strong>{describirMotivoAbono(abono.motivo)}</strong>
+        <time>{antiguedad(abono.horasAbierto)}</time>
+      </header>
+
+      <dl>
+        <dt>Pago del banco</dt>
+        <dd>
+          Bs {abono.monto} · {fechaCorta(abono.ocurridoEn)}
+        </dd>
+        <dt>Clave del banco</dt>
+        <dd>
+          <code>{abono.idDeduplicacion}</code>
+        </dd>
+        <dt>Cobro del QR</dt>
+        <dd>
+          {abono.cobroId ?? 'Ninguno'}
+          {abono.cobroEstado !== null && ` · ${abono.cobroEstado}`}
+          {abono.yaRegistradoEnElCobro && <em> · ya registra este pago</em>}
+        </dd>
+        <dt>Encontrado por el cierre</dt>
+        <dd>{fechaCorta(abono.registradoEn)}</dd>
+      </dl>
+
+      <p className="recomendacion">{recomendacionAbono(abono.motivo, abono.yaRegistradoEnElCobro)}</p>
+
+      <div className="acciones">
+        <button type="button" disabled={ocupado} onClick={() => void cerrar()}>
+          Cerrar con un motivo
+        </button>
+      </div>
+    </li>
   );
 }
 

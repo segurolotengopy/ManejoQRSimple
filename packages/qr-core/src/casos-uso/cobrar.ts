@@ -44,6 +44,7 @@ import {
 } from '../conciliacion/conciliar.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
 import type {
+  AbonosSinConciliarStore,
   CobroRepository,
   ErrorPuerto,
   EvidenceStore,
@@ -84,6 +85,15 @@ export type DepsVerificacion = Pick<
  */
 export type DepsVigilancia = DepsVerificacion & Pick<Dependencias, 'qr'>;
 
+/**
+ * El cierre diario: verificar, más dónde dejar los abonos que no concilian.
+ * Es obligatorio y no opcional: un cierre sin dónde guardarlos volvería a
+ * dejar esa plata solo en un log.
+ */
+export type DepsCierre = DepsVerificacion & {
+  readonly abonosSinConciliar: AbonosSinConciliarStore;
+};
+
 /** Lo que necesita emitir un QR y mandarlo al cliente. */
 export type DepsEmision = Pick<Dependencias, 'cobros' | 'evidencia' | 'qr' | 'mensajeria'>;
 
@@ -113,7 +123,11 @@ export type ErrorCasoUso =
    * Se quiso aceptar un abono que ya no es el último que reportó el banco: la
    * persona decidió mirando algo que cambió. Hay que volver a mirar.
    */
-  | { readonly tipo: 'ABONO_DESACTUALIZADO'; readonly cobroId: string };
+  | { readonly tipo: 'ABONO_DESACTUALIZADO'; readonly cobroId: string }
+  /** Se quiso cerrar un abono sin conciliar que no existe. */
+  | { readonly tipo: 'ABONO_INEXISTENTE'; readonly idDeduplicacion: string }
+  /** Una decisión sobre plata sin un motivo que la explique. */
+  | { readonly tipo: 'MOTIVO_INSUFICIENTE'; readonly minimo: number };
 
 const dePuerto = (error: ErrorPuerto): ErrorCasoUso => ({ tipo: 'PUERTO', error });
 const deTransicion = (error: ErrorTransicion): ErrorCasoUso => ({ tipo: 'TRANSICION', error });
@@ -526,11 +540,16 @@ type DestinoAbono =
  * normal, no un huérfano — siempre que figure en su evidencia. Lo que nunca
  * pasa es descartar un abono en silencio.
  *
+ * Los abonos huérfanos y sin corroborar se **guardan** para la cola de
+ * revisión; si guardarlos falla, el abono cuenta como `conError` y el día no
+ * se da por cerrado.
+ *
  * Es idempotente: correrlo dos veces sobre el mismo día no duplica nada, porque
- * lo que ya se registró la primera vez figura en la evidencia la segunda.
+ * lo que ya se registró la primera vez figura en la evidencia la segunda (y
+ * los abonos sin conciliar se guardan por su clave de deduplicación).
  */
 export async function conciliarDia(
-  deps: DepsVerificacion,
+  deps: DepsCierre,
   fecha: Date,
   ahora: Date,
 ): Promise<Resultado<ResumenConciliacionDiaria, ErrorCasoUso>> {
@@ -563,11 +582,27 @@ export async function conciliarDia(
         yaRegistrados += 1;
         break;
       case 'sinCorroborar':
-        sinCorroborar.push(abono.idDeduplicacion);
+      case 'huerfano': {
+        const huerfano = destino.valor.destino === 'huerfano';
+        // Plata que ninguna regla explica: se guarda para una persona. Solo
+        // cuenta como reportada si quedó guardada.
+        const guardado = await deps.abonosSinConciliar.registrar({
+          idDeduplicacion: abono.idDeduplicacion,
+          motivo: huerfano ? 'HUERFANO' : 'SIN_CORROBORAR',
+          cobroId: destino.valor.cobroId === '' ? null : destino.valor.cobroId,
+          montoCentavos: abono.montoCentavos,
+          ocurridoEn: abono.ocurridoEn,
+          origen: abono.origen,
+          registradoEn: ahora,
+          resolucion: null,
+        });
+        if (!esExito(guardado)) {
+          conError.push({ idDeduplicacion: abono.idDeduplicacion, error: dePuerto(guardado.error) });
+          break;
+        }
+        (huerfano ? huerfanos : sinCorroborar).push(abono.idDeduplicacion);
         break;
-      case 'huerfano':
-        huerfanos.push(abono.idDeduplicacion);
-        break;
+      }
     }
   }
 

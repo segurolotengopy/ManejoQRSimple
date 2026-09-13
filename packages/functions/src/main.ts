@@ -113,6 +113,7 @@ async function main(): Promise<number> {
     ctx: {
       deps: puertos.valor.deps,
       evidencia: puertos.valor.deps.evidencia,
+      abonosSinConciliar: puertos.valor.abonosSinConciliar,
       horasDeVigenciaPorDefecto: HORAS_VIGENCIA_POR_DEFECTO,
       ahora: () => new Date(),
       leerImagenQr: imagenes.leer,

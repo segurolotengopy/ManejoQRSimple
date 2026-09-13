@@ -193,7 +193,8 @@ BORRADOR → QR_ACTIVO → ENVIADO
 
 Las integraciones externas viven detrás de interfaces en `packages/qr-core/src/ports/`:
 
-`QrProvider` · `PaymentWatcher` · `MessagingProvider` · `CobroRepository` · `EvidenceStore`
+`QrProvider` · `PaymentWatcher` · `MessagingProvider` · `CobroRepository` · `EvidenceStore` ·
+`AbonosSinConciliarStore` (pagos del cierre diario que no atan a ningún cobro)
 
 - `QrProvider`: obtención/renovación del QR de cobro. Demo: carga asistida del QR
   generado por el dueño en Yape (ver docs/03 §5). Futuro: API oficial del banco.

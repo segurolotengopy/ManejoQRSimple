@@ -19,6 +19,15 @@ import { aceptarAbono } from '../cobro/aceptacion.js';
 import type { Cobro } from '../cobro/cobro.js';
 import { verificarAdmision } from '../cobro/maquina-estados.js';
 import { esExito, exito, fallo, type Resultado } from '../comun/resultado.js';
+import type { AbonosSinConciliarStore } from '../ports/puertos.js';
+import {
+  construirCasoAbono,
+  MOTIVO_MINIMO,
+  ordenarCasosAbono,
+  type AbonoSinConciliar,
+  type CasoAbono,
+  type CobroDelAbono,
+} from '../revision/abono-sin-conciliar.js';
 import {
   construirCaso,
   ordenarCasos,
@@ -38,23 +47,33 @@ import {
 /** Buscar un pago en el banco: persistir, más consultar al watcher. */
 export type DepsBusqueda = DepsPersistencia & Pick<Dependencias, 'watcher'>;
 
+/**
+ * La cola de revisión mira dos cosas: los cobros en `EN_REVISION` y los abonos
+ * que el cierre diario no pudo atar a ningún cobro.
+ */
+export type DepsRevision = DepsPersistencia & {
+  readonly abonosSinConciliar: AbonosSinConciliarStore;
+};
+
 /** Tope de casos que se arman de una vez. Más que esto es un problema operativo. */
 export const LIMITE_REVISION = 200;
 
 export type ColaRevision = {
   readonly casos: readonly CasoRevision[];
+  /** Abonos sin cobro que los explique, abiertos, lo más urgente primero. */
+  readonly abonos: readonly CasoAbono[];
   readonly resumen: ResumenRevision;
   /**
-   * Hay más casos que el tope: la cola está incompleta y el resumen se queda
-   * corto. Se informa en vez de callarlo — un caso crítico que no entra nunca
-   * alertaría.
+   * Hay más casos (o abonos) que el tope: la cola está incompleta y el resumen
+   * se queda corto. Se informa en vez de callarlo — un caso crítico que no
+   * entra nunca alertaría.
    */
   readonly truncado: boolean;
 };
 
 /** La cola de revisión, lo más urgente primero. */
 export async function listarRevision(
-  deps: DepsPersistencia,
+  deps: DepsRevision,
   ahora: Date,
   politica: PoliticaRevision = POLITICA_REVISION_POR_DEFECTO,
   limite: number = LIMITE_REVISION,
@@ -75,8 +94,84 @@ export async function listarRevision(
     casos.push(construirCaso(cobro, registros.valor, ahora, politica));
   }
 
+  const abiertos = await deps.abonosSinConciliar.listarAbiertos(limite + 1);
+  if (!esExito(abiertos)) {
+    return fallo({ tipo: 'PUERTO', error: abiertos.error });
+  }
+  const casosAbono: CasoAbono[] = [];
+  for (const abono of abiertos.valor.slice(0, limite)) {
+    const cobro = await cobroDelAbono(deps, abono);
+    if (!esExito(cobro)) {
+      return cobro;
+    }
+    casosAbono.push(construirCasoAbono(abono, ahora, politica, cobro.valor));
+  }
+  const abonos = ordenarCasosAbono(casosAbono);
+
   const ordenados = ordenarCasos(casos);
-  return exito({ casos: ordenados, resumen: resumirRevision(ordenados), truncado });
+  return exito({
+    casos: ordenados,
+    abonos,
+    resumen: resumirRevision(ordenados, abonos),
+    truncado: truncado || abiertos.valor.length > limite,
+  });
+}
+
+/**
+ * El cobro del QR de un abono, como está ahora, y si su evidencia ya registra
+ * ese pago. Mismo criterio que el cierre diario para "ya registrado": la clave
+ * del banco figura en algún registro del cobro.
+ */
+async function cobroDelAbono(
+  deps: DepsPersistencia,
+  abono: AbonoSinConciliar,
+): Promise<Resultado<CobroDelAbono | null, ErrorCasoUso>> {
+  if (abono.cobroId === null) {
+    return exito(null);
+  }
+  const cobro = await deps.cobros.obtener(abono.cobroId);
+  if (!esExito(cobro)) {
+    return fallo({ tipo: 'PUERTO', error: cobro.error });
+  }
+  if (cobro.valor === null) {
+    return exito(null);
+  }
+  const registros = await deps.evidencia.listarDeCobro(abono.cobroId);
+  if (!esExito(registros)) {
+    return fallo({ tipo: 'PUERTO', error: registros.error });
+  }
+  return exito({
+    id: abono.cobroId,
+    estado: cobro.valor.estado,
+    registraElPago: registros.valor.some((r) => r.datos['idDeduplicacion'] === abono.idDeduplicacion),
+  });
+}
+
+/**
+ * Cierra un abono sin conciliar con lo que se hizo con la plata.
+ *
+ * No toca ningún cobro: un abono huérfano no confirma nada, ni a mano. Si la
+ * persona descubre de qué cobro era, ese cobro se resuelve por su propio camino
+ * (buscar el pago en el banco, docs/09 §4), y este registro deja escrito por
+ * qué se cerró.
+ */
+export async function cerrarAbonoSinConciliar(
+  deps: Pick<DepsRevision, 'abonosSinConciliar'>,
+  idDeduplicacion: string,
+  motivo: string,
+  ahora: Date,
+): Promise<Resultado<AbonoSinConciliar, ErrorCasoUso>> {
+  const texto = motivo.trim();
+  if (texto.length < MOTIVO_MINIMO) {
+    return fallo({ tipo: 'MOTIVO_INSUFICIENTE', minimo: MOTIVO_MINIMO });
+  }
+  const cerrado = await deps.abonosSinConciliar.cerrar(idDeduplicacion, { motivo: texto, resueltoEn: ahora });
+  if (!esExito(cerrado)) {
+    return fallo({ tipo: 'PUERTO', error: cerrado.error });
+  }
+  return cerrado.valor === null
+    ? fallo({ tipo: 'ABONO_INEXISTENTE', idDeduplicacion })
+    : exito(cerrado.valor);
 }
 
 /**

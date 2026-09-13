@@ -125,12 +125,14 @@ async function main(): Promise<number> {
         console.error(`  ! cobro ${cobroId}: ${error.tipo}`);
       }
       const ahora = new Date();
-      for (const cierre of await cerrarDiasPendientes(puertos.valor.deps, ahora, cerrados)) {
+      const depsCierre = { ...puertos.valor.deps, abonosSinConciliar: puertos.valor.abonosSinConciliar };
+      for (const cierre of await cerrarDiasPendientes(depsCierre, ahora, cerrados)) {
         if (cierre.tipo === 'CERRADO') {
           console.log(`${ahora.toISOString()} ${describirCierre(cierre.clave, cierre.resumen)}`);
           for (const id of [...cierre.resumen.huerfanos, ...cierre.resumen.sinCorroborar]) {
             // Plata en la cuenta que ningún cobro explica: nunca se descarta.
-            console.warn(`  ! abono para revisar a mano: ${id}`);
+            // Ya quedó guardada; el aviso es para quien mira la terminal.
+            console.warn(`  ! abono para revisar (pestaña Revisión): ${id}`);
           }
           for (const { idDeduplicacion, error } of cierre.resumen.conError) {
             console.error(`  ! abono ${idDeduplicacion} sin procesar (${error.tipo}); se reintenta.`);

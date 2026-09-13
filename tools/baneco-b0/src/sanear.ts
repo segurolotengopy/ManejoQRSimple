@@ -153,18 +153,27 @@ export function soloPagosDe(cuerpo: unknown, qrId: string): unknown {
   if (typeof cuerpo !== 'object' || cuerpo === null || Array.isArray(cuerpo)) {
     return NO_FILTRABLE;
   }
+  // Lista blanca del sobre: arriba solo pueden venir el código, el mensaje y
+  // una lista de pagos. Cualquier otra cosa —un pago suelto como objeto, una
+  // clave nueva, una lista que no es lista— no se puede filtrar con certeza,
+  // así que la fixture no se escribe (falla cerrado, no abierto).
   const salida: Record<string, unknown> = {};
   let listas = 0;
   for (const [clave, valor] of Object.entries(cuerpo)) {
-    if (esListaDePagos(clave) && (Array.isArray(valor) || valor === null || valor === undefined)) {
+    if (esListaDePagos(clave)) {
+      if (!Array.isArray(valor) && valor !== null && valor !== undefined) {
+        return NO_FILTRABLE;
+      }
       listas += 1;
       salida[clave] = Array.isArray(valor) ? valor.filter(esPagoDe(qrId)) : valor;
-    } else if (contieneArray(valor)) {
-      // Pagos bajo una clave que no conocemos: no se pueden filtrar, así que
-      // la fixture no se escribe (falla cerrado, no abierto).
-      return NO_FILTRABLE;
-    } else {
+    } else if (clave === 'responseCode' && (typeof valor === 'number' || typeof valor === 'string')) {
       salida[clave] = valor;
+    } else if (clave === 'message' && (typeof valor === 'string' || valor === null || valor === undefined)) {
+      // El mensaje de un reporte que trae pagos de terceros podría nombrar a
+      // alguno: vacío se conserva, con texto se reemplaza.
+      salida[clave] = typeof valor === 'string' && valor.trim() !== '' ? '<<message omitido: regla #4>>' : valor;
+    } else {
+      return NO_FILTRABLE;
     }
   }
   return listas <= 1 ? salida : NO_FILTRABLE;
@@ -180,13 +189,6 @@ const esPagoDe =
   (qrId: string) =>
   (p: unknown): boolean =>
     typeof p === 'object' && p !== null && (p as Record<string, unknown>)['qrId'] === qrId;
-
-function contieneArray(valor: unknown): boolean {
-  if (Array.isArray(valor)) {
-    return true;
-  }
-  return typeof valor === 'object' && valor !== null && Object.values(valor).some(contieneArray);
-}
 
 export type ErrorSaneamiento = {
   readonly motivo: 'CONTIENE_SECRETO';

@@ -201,3 +201,26 @@ describe('soloPagosDe() falla cerrado ante una forma inesperada', () => {
     expect(texto).not.toContain('MARIA LOPEZ');
   });
 });
+
+describe('soloPagosDe() con lista blanca del sobre', () => {
+  it.each([
+    ['un pago suelto como objeto', { responseCode: 0, pago: { qrId: 'a', transactionId: 'Pago Juan Perez' } }],
+    ['la lista de pagos como objeto', { PaymentList: { qrId: 'a', description: 'Pago de MARIA LOPEZ' } }],
+    ['un campo suelto de un pago en el sobre', { responseCode: 0, transactionId: 'Pago Juan Perez' }],
+  ])('no se puede filtrar con %s: no se escribe', (_caso, cuerpo) => {
+    expect(soloPagosDe(cuerpo, 'b')).toBe(NO_FILTRABLE);
+  });
+
+  it('un message con texto se reemplaza; vacío se conserva', () => {
+    expect(soloPagosDe({ paymentList: [], responseCode: 0, message: 'Pagos de JUAN PEREZ' }, 'b')).toEqual({
+      paymentList: [],
+      responseCode: 0,
+      message: '<<message omitido: regla #4>>',
+    });
+    expect(soloPagosDe({ paymentList: [], responseCode: 0, message: '' }, 'b')).toEqual({
+      paymentList: [],
+      responseCode: 0,
+      message: '',
+    });
+  });
+});

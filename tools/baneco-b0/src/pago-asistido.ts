@@ -63,6 +63,31 @@ export type EstadoPagoAsistido = {
 /** El `qrId` sale del banco y termina en un nombre de archivo: se acota. */
 const ID_SEGURO = /^[A-Za-z0-9_-]{1,64}$/;
 
+/**
+ * ¿Se puede usar este `qrId` como nombre de archivo y guardarlo en el estado?
+ * Se valida **al emitir**, no solo al leer: un id raro guardado dejaría un QR
+ * vivo que ninguna corrida siguiente podría anular.
+ */
+export function esIdSeguro(qrId: string): boolean {
+  return ID_SEGURO.test(qrId);
+}
+
+/** El host del ambiente de certificación (respuesta A2 del banco). */
+export const HOST_CERTIFICACION = 'apimktdesa.baneco.com.bo';
+
+/**
+ * Barrera por lista **blanca**: B0 solo habla con el host exacto de
+ * certificación. La de `leerConfig` rechaza la URL de producción conocida,
+ * pero no una IP ni otro alias; y el pago asistido deja un QR cobrable días.
+ */
+export function esHostDeCertificacion(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname === HOST_CERTIFICACION;
+  } catch {
+    return false;
+  }
+}
+
 export function serializarEstado(estado: EstadoPagoAsistido): string {
   return `${JSON.stringify(estado, null, 2)}\n`;
 }

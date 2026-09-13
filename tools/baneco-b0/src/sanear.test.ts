@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { sanear, verificarSinSecretos } from './sanear.js';
+import { datosDelPagador, sanear, soloPagosDe, verificarSinSecretos } from './sanear.js';
 
 const RESPUESTA_CRUDA = {
   statusQrCode: 1,
@@ -102,5 +102,69 @@ describe('verificarSinSecretos()', () => {
 
   it('ignora secretos demasiado cortos para ser buscados sin falsos positivos', () => {
     expect(verificarSinSecretos({ a: 'texto con 0 adentro' }, { corto: '0' })).toBeNull();
+  });
+});
+
+describe('dentro de un pago, solo pasa lo permitido', () => {
+  const PAGO_RARO = {
+    statusQrCode: 1,
+    payment: [
+      {
+        qrId: '21061401016000000007',
+        transactionId: 'tx-9',
+        amount: 1,
+        senderBankCode: '1016',
+        // Otras mayúsculas, un campo nuevo y la glosa (F1: trae el nombre).
+        SenderName: 'MARIA LOPEZ',
+        senderDocumentID: '7654321 CB',
+        payerPhone: '+59171234567',
+        description: 'Pago de MARIA LOPEZ',
+      },
+    ],
+  };
+  const texto = JSON.stringify(sanear(PAGO_RARO));
+
+  it.each([['MARIA LOPEZ'], ['7654321 CB'], ['+59171234567']])('no deja pasar %s', (valor) => {
+    expect(texto).not.toContain(valor);
+  });
+
+  it('conserva los campos permitidos, incluido el banco de origen', () => {
+    expect(texto).toContain('21061401016000000007');
+    expect(texto).toContain('tx-9');
+    expect(texto).toContain('1016');
+  });
+
+  it('fuera de los pagos, una clave personal con otras mayúsculas también se reemplaza', () => {
+    expect(JSON.stringify(sanear({ UserName: 'OPERADOR' }))).not.toContain('OPERADOR');
+  });
+});
+
+describe('datosDelPagador()', () => {
+  it('recolecta los valores del pagador de la respuesta cruda, no los permitidos', () => {
+    const datos = Object.values(datosDelPagador(RESPUESTA_CRUDA));
+    expect(datos).toEqual(expect.arrayContaining(['JUAN PEREZ QUISPE', '1234567 LP', '******1913', 'B0-20260827-1']));
+    expect(datos).not.toContain('21061401016000000006');
+    expect(datos).not.toContain('1016');
+  });
+
+  it('con ellos, la verificación final atrapa un nombre que las listas dejaron pasar', () => {
+    // El caso que las listas no ven: el nombre metido en el `message` del banco.
+    const conFuga = { message: 'QR pagado por JUAN PEREZ QUISPE' };
+    expect(verificarSinSecretos(conFuga, datosDelPagador(RESPUESTA_CRUDA))?.motivo).toBe('CONTIENE_SECRETO');
+  });
+
+  it('la respuesta saneada pasa la verificación contra sus propios datos del pagador', () => {
+    expect(verificarSinSecretos(sanear(RESPUESTA_CRUDA), datosDelPagador(RESPUESTA_CRUDA))).toBeNull();
+  });
+});
+
+describe('soloPagosDe()', () => {
+  it('deja en paidQR solo los pagos del QR de la prueba', () => {
+    const r = soloPagosDe({ paymentList: [{ qrId: 'a' }, { qrId: 'b' }], responseCode: 0 }, 'b');
+    expect(r).toEqual({ paymentList: [{ qrId: 'b' }], responseCode: 0 });
+  });
+
+  it('una respuesta sin paymentList queda como está', () => {
+    expect(soloPagosDe({ responseCode: 0 }, 'b')).toEqual({ responseCode: 0 });
   });
 });

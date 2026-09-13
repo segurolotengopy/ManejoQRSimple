@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   accionSegunEstado,
+  esHostDeCertificacion,
+  esIdSeguro,
   hallazgosDelPago,
   leerEstado,
   leerModo,
@@ -99,5 +101,30 @@ describe('hallazgosDelPago()', () => {
     expect(veredicto({ ...BASE, anulacion: { ok: true }, estadoTrasAnular: 9 }, 'C5')).toBe('REFUTADO');
     expect(veredicto({ ...BASE, anulacion: { ok: true }, estadoTrasAnular: 1 }, 'C5')).toBe('CONFIRMADO');
     expect(veredicto({ ...BASE, estadoTrasAnular: null }, 'C5')).toBe('NO_CONCLUYENTE');
+  });
+});
+
+describe('esIdSeguro()', () => {
+  it('acepta un qrId del banco y rechaza lo que escaparía del directorio o no se podría releer', () => {
+    expect(esIdSeguro('21061401016000000007')).toBe(true);
+    expect(esIdSeguro('../x')).toBe(false);
+    expect(esIdSeguro('qr.1')).toBe(false);
+    expect(esIdSeguro('x'.repeat(65))).toBe(false);
+  });
+});
+
+describe('esHostDeCertificacion()', () => {
+  it('solo el host exacto de certificación, con cualquier ruta y mayúsculas del dominio', () => {
+    expect(esHostDeCertificacion('https://apimktdesa.baneco.com.bo/ApiGateway')).toBe(true);
+    expect(esHostDeCertificacion('https://APIMKTDESA.baneco.com.bo/ApiGateway')).toBe(true);
+  });
+
+  it.each([
+    ['producción', 'https://apimkt.baneco.com.bo/apiGateway'],
+    ['una IP', 'https://10.0.0.5/ApiGateway'],
+    ['un host que solo lo contiene', 'https://apimktdesa.baneco.com.bo.otro.com/ApiGateway'],
+    ['algo que no es URL', 'no-es-url'],
+  ])('rechaza %s', (_caso, url) => {
+    expect(esHostDeCertificacion(url)).toBe(false);
   });
 });

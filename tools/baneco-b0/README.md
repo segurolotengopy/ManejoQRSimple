@@ -80,11 +80,27 @@ rechaza.
 - **Todo QR que crea, lo anula.** Los sondeos dejan objetos reales en el ambiente del
   banco. La única excepción es el QR del pago asistido, que existe para que el banco lo
   pague: es uno solo por vez, y `--anular-pendiente` lo limpia si nunca se paga.
+- **Solo el host de certificación.** Una tercera barrera exige que la URL base sea
+  exactamente `apimktdesa.baneco.com.bo`. Por lista blanca, así una IP o un alias de
+  producción no pasan.
 - **Nada se escribe sin sanear.** Las respuestas crudas traen nombre, documento y
-  cuenta del pagador. `sanear.ts` los reemplaza por marcadores y una segunda capa
-  verifica que el resultado no contenga ningún secreto de configuración; si lo
-  contiene, **no escribe el archivo**. Es la única parte de esta herramienta con
-  tests, porque es la única que puede filtrar datos al repositorio.
+  cuenta del pagador. `sanear.ts` las procesa en tres capas:
+  1. **Dentro de cada pago** deja solo los campos permitidos (`qrId`, `transactionId`,
+     fecha, hora, moneda, monto, banco de origen y sucursal). Todo lo demás se
+     reemplaza, incluida la glosa.
+  2. **Fuera de los pagos** reemplaza toda clave que suene a persona o cuenta, sin
+     importar las mayúsculas.
+  3. **Una verificación final** rechaza escribir si el resultado contiene un secreto
+     de configuración **o cualquier valor del pagador** que haya pasado por las
+     respuestas de la corrida.
+
+  Si algo se omite, la herramienta termina con código 4 y no informa éxito. El
+  informe del pago asistido no incluye el `message` del banco, que puede nombrar al
+  pagador, y `paidQR-con-pago.json` guarda solo el pago de nuestro QR, porque el
+  usuario de certificación es compartido (A3).
+- **El QR del pago asistido nunca queda sin control.** Si el banco devuelve un `qrId`
+  que no se puede guardar con seguridad, o el estado no se puede escribir, el QR se
+  anula en la misma corrida. Un estado ilegible bloquea emitir otro.
 
 ## Dos desviaciones respecto de `PROMPTS_CLAUDE_CODE.md`
 

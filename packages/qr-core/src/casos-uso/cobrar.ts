@@ -519,6 +519,12 @@ export type ResumenConciliacionDiaria = {
   /** Abonos que no corresponden a ningún cobro que los espere: plata sin dueño. */
   readonly huerfanos: readonly string[];
   /**
+   * De los huérfanos y sin corroborar, los que se guardaron **en este cierre**.
+   * Un cierre repetido vuelve a verlos todos, pero solo estos son novedad para
+   * la pestaña Revisión.
+   */
+  readonly nuevosParaRevisar: readonly string[];
+  /**
    * Abonos que no se pudieron procesar (un puerto falló). No cortan el resto
    * del día; el cierre se reintenta y, como es idempotente, no duplica nada.
    */
@@ -562,6 +568,7 @@ export async function conciliarDia(
   const enRevision: string[] = [];
   const sinCorroborar: string[] = [];
   const huerfanos: string[] = [];
+  const nuevosParaRevisar: string[] = [];
   const conError: { idDeduplicacion: string; error: ErrorCasoUso }[] = [];
   let yaRegistrados = 0;
 
@@ -601,6 +608,9 @@ export async function conciliarDia(
           break;
         }
         (huerfano ? huerfanos : sinCorroborar).push(abono.idDeduplicacion);
+        if (guardado.valor) {
+          nuevosParaRevisar.push(abono.idDeduplicacion);
+        }
         break;
       }
     }
@@ -613,6 +623,7 @@ export async function conciliarDia(
     yaRegistrados,
     sinCorroborar,
     huerfanos,
+    nuevosParaRevisar,
     conError,
   });
 }

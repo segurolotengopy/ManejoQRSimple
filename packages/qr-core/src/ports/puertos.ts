@@ -173,8 +173,11 @@ export interface AbonosSinConciliarStore {
    * Guarda un abono abierto. **Idempotente** por `idDeduplicacion`: si ya
    * existe, abierto o cerrado, no hace nada. Repetir el cierre de un día no
    * duplica el caso ni reabre uno que la persona ya cerró.
+   *
+   * Devuelve `true` si lo guardó ahora y `false` si ya estaba: así el cierre
+   * avisa solo por lo nuevo, y no repite el aviso de un abono ya cerrado.
    */
-  registrar(abono: AbonoSinConciliar): Promise<Resultado<void, ErrorPuerto>>;
+  registrar(abono: AbonoSinConciliar): Promise<Resultado<boolean, ErrorPuerto>>;
   /** Los que siguen abiertos, hasta `limite`. */
   listarAbiertos(limite: number): Promise<Resultado<readonly AbonoSinConciliar[], ErrorPuerto>>;
   /**

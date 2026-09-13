@@ -129,10 +129,11 @@ async function main(): Promise<number> {
       for (const cierre of await cerrarDiasPendientes(depsCierre, ahora, cerrados)) {
         if (cierre.tipo === 'CERRADO') {
           console.log(`${ahora.toISOString()} ${describirCierre(cierre.clave, cierre.resumen)}`);
-          for (const id of [...cierre.resumen.huerfanos, ...cierre.resumen.sinCorroborar]) {
+          for (const id of cierre.resumen.nuevosParaRevisar) {
             // Plata en la cuenta que ningún cobro explica: nunca se descarta.
-            // Ya quedó guardada; el aviso es para quien mira la terminal.
-            console.warn(`  ! abono para revisar (pestaña Revisión): ${id}`);
+            // Ya quedó guardada; el aviso es para quien mira la terminal, y
+            // solo por lo nuevo: un abono ya visto (o ya cerrado) no se repite.
+            console.warn(`  ! abono nuevo para revisar (pestaña Revisión): ${id}`);
           }
           for (const { idDeduplicacion, error } of cierre.resumen.conError) {
             console.error(`  ! abono ${idDeduplicacion} sin procesar (${error.tipo}); se reintenta.`);

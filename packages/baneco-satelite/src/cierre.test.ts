@@ -126,10 +126,12 @@ describe('describirCierre()', () => {
       yaRegistrados: 1,
       sinCorroborar: [],
       huerfanos: ['baneco:qr-x:tx-1'],
+      nuevosParaRevisar: [],
       conError: [],
     });
     expect(linea).toBe(
-      'cierre 2026-08-27: abonos=3 confirmados=1 enRevision=0 yaRegistrados=1 sinCorroborar=0 huerfanos=1',
+      'cierre 2026-08-27: abonos=3 confirmados=1 enRevision=0 yaRegistrados=1 sinCorroborar=0 huerfanos=1 ' +
+        'nuevosParaRevisar=0',
     );
   });
 });

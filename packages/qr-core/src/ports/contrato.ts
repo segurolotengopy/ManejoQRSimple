@@ -208,8 +208,9 @@ export const CASOS_ABONOS_SIN_CONCILIAR: ReadonlyArray<CasoDeContrato<AbonosSinC
     nombre: 'registrar dos veces el mismo abono deja un solo caso abierto',
     ejecutar: async (store) => {
       const abono = abonoSinConciliarDeEjemplo('baneco:qr-contrato-1:tx-1');
-      exigirExito(await store.registrar(abono), 'primer registro');
-      exigirExito(await store.registrar(abono), 'segundo registro');
+      const primero = exigirExito(await store.registrar(abono), 'primer registro');
+      const segundo = exigirExito(await store.registrar(abono), 'segundo registro');
+      afirmar(primero && !segundo, 'registrar informa si el abono es nuevo: true la primera vez, false después');
       const abiertos = exigirExito(await store.listarAbiertos(10), 'listar');
       afirmar(abiertos.length === 1, 'el mismo abono no se duplica (regla #7)');
     },
@@ -239,7 +240,8 @@ export const CASOS_ABONOS_SIN_CONCILIAR: ReadonlyArray<CasoDeContrato<AbonosSinC
       );
       afirmar(cerrado?.resolucion?.motivo === 'Devuelto al pagador', 'cerrar devuelve el abono con su resolución');
       // El cierre del día se repite (el satélite reinició): no puede reabrirlo.
-      exigirExito(await store.registrar(abono), 'registrar de nuevo');
+      const denuevo = exigirExito(await store.registrar(abono), 'registrar de nuevo');
+      afirmar(!denuevo, 'un abono ya cerrado no cuenta como nuevo');
       const abiertos = exigirExito(await store.listarAbiertos(10), 'listar');
       afirmar(abiertos.length === 0, 'un abono cerrado no vuelve a la cola');
     },

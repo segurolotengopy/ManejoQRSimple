@@ -92,6 +92,53 @@ export function esHostDeCertificacion(baseUrl: string): boolean {
 }
 
 /**
+ * ¿Se puede liberar la reserva después de un error de `generateQR`? Solo con
+ * certeza de que el banco no creó el QR: una respuesta del banco con
+ * `responseCode` distinto de 0 (trae `codigoProveedor`) o un 401/403 del
+ * gateway. Cualquier otro 4xx —un 408 o 499 del gateway cortando por tiempo—,
+ * un timeout o una respuesta ilegible conservan la reserva: el banco pudo
+ * haberlo procesado.
+ */
+export function reservaLiberable(
+  error: { readonly tipo: string; readonly codigoProveedor: string | null } | null,
+): boolean {
+  if (error === null) {
+    return false;
+  }
+  if (error.tipo === 'RECHAZADO_POR_PROVEEDOR') {
+    return error.codigoProveedor !== null;
+  }
+  return error.tipo === 'NO_AUTORIZADO';
+}
+
+export type Reserva = { readonly transactionId: string; readonly emitidoEn: string };
+
+/** Reconoce el archivo de reserva, para decirle al dueño qué consultar. */
+export function leerReserva(texto: string): Reserva | null {
+  let crudo: unknown;
+  try {
+    crudo = JSON.parse(texto);
+  } catch {
+    return null;
+  }
+  if (typeof crudo !== 'object' || crudo === null) {
+    return null;
+  }
+  const { reserva, transactionId, emitidoEn } = crudo as Record<string, unknown>;
+  if (
+    reserva !== true ||
+    typeof transactionId !== 'string' ||
+    transactionId.length === 0 ||
+    transactionId.length > 30 ||
+    typeof emitidoEn !== 'string' ||
+    Number.isNaN(Date.parse(emitidoEn))
+  ) {
+    return null;
+  }
+  return { transactionId, emitidoEn };
+}
+
+/**
  * La reserva que se escribe **antes** de emitir, en forma atómica: dos corridas
  * simultáneas no pueden emitir dos QRs, y si el banco crea el QR pero la
  * respuesta se pierde, la reserva queda como pista. No es un estado completo

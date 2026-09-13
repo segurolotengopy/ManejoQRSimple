@@ -102,7 +102,11 @@ rechaza.
   - Antes de emitir se toma una reserva atómica del archivo de estado, así que dos
     corridas simultáneas no pueden emitir dos QRs.
   - Si el banco no responde, la reserva queda con el `transactionId`, porque pudo
-    haber creado el QR igual, y bloquea todo hasta verificarlo con el oficial.
+    haber creado el QR igual, y bloquea todo hasta verificarlo con el oficial. Solo
+    un rechazo explícito del banco la libera; un 4xx del gateway no. La corrida
+    siguiente muestra el `transactionId` y qué consultar.
+  - Si `paidQR` trae los pagos con una forma inesperada (otra clave, anidados), el
+    filtro falla cerrado: la fixture no se escribe.
   - Si el banco devuelve un `qrId` que no se puede guardar con seguridad, o el
     estado no se puede escribir, el QR se anula en la misma corrida.
 - **Solo https.** La barrera de host exige además `https:`: por http el JWT viajaría

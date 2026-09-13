@@ -47,10 +47,13 @@ import {
   HOST_CERTIFICACION,
   leerEstado,
   leerModo,
+  leerReserva,
+  reservaLiberable,
   serializarEstado,
   serializarReserva,
   type AnulacionDePagado,
   type EstadoPagoAsistido,
+  type Reserva,
 } from './pago-asistido.js';
 import {
   anotarCodigo,
@@ -64,7 +67,7 @@ import {
   transactionId,
   type Contexto,
 } from './pasos.js';
-import { datosDelPagador, sanear, soloPagosDe, verificarSinSecretos } from './sanear.js';
+import { datosDelPagador, NO_FILTRABLE, sanear, soloPagosDe, verificarSinSecretos } from './sanear.js';
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SALIDA_INFORME = join(RAIZ, 'docs', 'Integraciones', 'baneco', '02-hallazgos-certificacion.md');
@@ -122,6 +125,18 @@ async function main(): Promise<number> {
   // Los modos del pago asistido se validan antes de tocar el banco: un archivo
   // de estado que falta o sobra se detecta sin gastar un login.
   const previo = await leerEstadoPago();
+  if (modo.valor !== 'SONDEO' && typeof previo === 'object' && 'reserva' in previo) {
+    // Una corrida anterior se cortó pidiendo el QR. Borrar el archivo a ciegas
+    // podría dejar un QR vivo que nadie conoce: primero hay que preguntar.
+    console.error(
+      `✖ Hay una reserva de pago asistido sin terminar (transactionId ${previo.reserva.transactionId}, ` +
+        `${previo.reserva.emitidoEn}).`,
+    );
+    console.error('  Una corrida anterior se cortó mientras pedía el QR: el banco pudo haberlo creado.');
+    console.error('  Consultá al oficial por ese transactionId y, si hay un QR vivo, pedí que lo anule.');
+    console.error(`  Recién después borrá ${ESTADO_PAGO}.`);
+    return 1;
+  }
   if (modo.valor === 'EMITIR_PARA_PAGO' && previo !== 'NO_HAY') {
     console.error(`✖ Ya hay (o no se puede leer) un estado de pago asistido en ${ESTADO_PAGO}.`);
     console.error('  Capturalo con --capturar-pago o desistí con --anular-pendiente antes de emitir otro.');
@@ -156,9 +171,9 @@ async function main(): Promise<number> {
     case 'EMITIR_PARA_PAGO':
       return emitirParaPago(ctx);
     case 'CAPTURAR_PAGO':
-      return typeof previo === 'string' ? 1 : capturarPago(ctx, previo);
+      return typeof previo === 'string' || 'reserva' in previo ? 1 : capturarPago(ctx, previo);
     case 'ANULAR_PENDIENTE':
-      return typeof previo === 'string' ? 1 : anularPendiente(ctx, previo);
+      return typeof previo === 'string' || 'reserva' in previo ? 1 : anularPendiente(ctx, previo);
   }
 }
 
@@ -252,7 +267,7 @@ async function emitirParaPago(ctx: Contexto): Promise<number> {
     return 1;
   }
 
-  const { qr, hallazgo, tipoError } = await generarQrDePrueba(
+  const { qr, hallazgo, error: errorGeneracion } = await generarQrDePrueba(
     ctx,
     N_PAGO_ASISTIDO,
     DIAS_PAGO_ASISTIDO,
@@ -261,9 +276,9 @@ async function emitirParaPago(ctx: Contexto): Promise<number> {
   if (qr === null) {
     console.error(`✖ No se pudo generar el QR: ${hallazgo?.detalle ?? 'sin detalle'}`);
     // Solo un rechazo explícito del banco asegura que no se creó nada. Ante un
-    // timeout o una respuesta ilegible, el QR pudo quedar creado: la reserva
-    // se conserva y bloquea emitir otro hasta verificarlo.
-    if (tipoError === 'RECHAZADO_POR_PROVEEDOR' || tipoError === 'NO_AUTORIZADO') {
+    // timeout, un 4xx del gateway o una respuesta ilegible, el QR pudo quedar
+    // creado: la reserva se conserva y bloquea emitir otro hasta verificarlo.
+    if (reservaLiberable(errorGeneracion)) {
       await rm(ESTADO_PAGO, { force: true });
     } else {
       console.error(`  ⚠ El banco pudo haber creado el QR igual (transactionId ${tx}).`);
@@ -441,7 +456,9 @@ async function anularPendiente(ctx: Contexto, estado: EstadoPagoAsistido): Promi
  * lectura (permisos, un directorio en su lugar) es `INVALIDO`, para que un
  * estado ilegible no habilite emitir un segundo QR vivo.
  */
-async function leerEstadoPago(): Promise<EstadoPagoAsistido | 'NO_HAY' | 'INVALIDO'> {
+async function leerEstadoPago(): Promise<
+  EstadoPagoAsistido | { readonly reserva: Reserva } | 'NO_HAY' | 'INVALIDO'
+> {
   let texto: string;
   try {
     texto = await readFile(ESTADO_PAGO, 'utf8');
@@ -449,7 +466,12 @@ async function leerEstadoPago(): Promise<EstadoPagoAsistido | 'NO_HAY' | 'INVALI
     const codigo = typeof causa === 'object' && causa !== null && 'code' in causa ? causa.code : null;
     return codigo === 'ENOENT' ? 'NO_HAY' : 'INVALIDO';
   }
-  return leerEstado(texto) ?? 'INVALIDO';
+  const estado = leerEstado(texto);
+  if (estado !== null) {
+    return estado;
+  }
+  const reserva = leerReserva(texto);
+  return reserva === null ? 'INVALIDO' : { reserva };
 }
 
 /** Escribe el informe. `false` si se omitió por contener un secreto o un dato del pagador. */
@@ -510,6 +532,10 @@ async function guardarFixture(
   // filtrado): los de pagos ajenos que el filtro sacó no pueden aparecer, y
   // contarlos solo daría falsos positivos.
   const cuerpo = transformar(cruda.cuerpo);
+  if (cuerpo === NO_FILTRABLE) {
+    console.error(`✖ La fixture ${nombre} trae los pagos con una forma que no se puede filtrar. No se escribe.`);
+    return false;
+  }
   const saneada = sanear(cuerpo);
   const fuga = verificarSinSecretos(saneada, { ...secretosDe(ctx), ...datosDelPagador(cuerpo) });
   if (fuga !== null) {

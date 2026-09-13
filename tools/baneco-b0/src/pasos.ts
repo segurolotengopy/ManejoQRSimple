@@ -166,8 +166,8 @@ export async function generarQrDePrueba(
 ): Promise<{
   readonly qr: QrDePrueba | null;
   readonly hallazgo: Hallazgo | null;
-  /** Tipo de la falla, si la hubo: distingue "el banco rechazó" de "no se sabe si lo creó". */
-  readonly tipoError: string | null;
+  /** La falla, si la hubo: distingue "el banco rechazó" de "no se sabe si lo creó". */
+  readonly error: { readonly tipo: string; readonly codigoProveedor: string | null } | null;
 }> {
   const venceEn = new Date(ctx.ahora.getTime() + diasDeVigencia * DIA_MS);
   const resultado = await ctx.cliente.generarQr({
@@ -185,7 +185,7 @@ export async function generarQrDePrueba(
   if (!esExito(resultado)) {
     return {
       qr: null,
-      tipoError: resultado.error.tipo,
+      error: { tipo: resultado.error.tipo, codigoProveedor: resultado.error.codigoProveedor },
       hallazgo: {
         pregunta: 'C1',
         titulo: `Vigencia de \`dueDate\` de ${String(diasDeVigencia)} días`,
@@ -200,7 +200,7 @@ export async function generarQrDePrueba(
   return {
     qr: { qrId: resultado.valor.qrId, imagenBase64: resultado.valor.qrImageBase64 },
     hallazgo: null,
-    tipoError: null,
+    error: null,
   };
 }
 

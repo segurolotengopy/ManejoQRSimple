@@ -8,6 +8,8 @@ import {
   hallazgosDelPago,
   leerEstado,
   leerModo,
+  leerReserva,
+  reservaLiberable,
   serializarEstado,
   serializarReserva,
   type Captura,
@@ -141,5 +143,36 @@ describe('reserva antes de emitir', () => {
 describe('esHostDeCertificacion() exige https', () => {
   it('rechaza el host correcto por http: el JWT viajaría en claro', () => {
     expect(esHostDeCertificacion('http://apimktdesa.baneco.com.bo/ApiGateway')).toBe(false);
+  });
+});
+
+describe('reservaLiberable()', () => {
+  it('solo con certeza de que el banco no creó el QR', () => {
+    // HTTP 200 con responseCode != 0: el banco respondió y rechazó.
+    expect(reservaLiberable({ tipo: 'RECHAZADO_POR_PROVEEDOR', codigoProveedor: '12' })).toBe(true);
+    // 401/403: el gateway no dejó pasar el pedido.
+    expect(reservaLiberable({ tipo: 'NO_AUTORIZADO', codigoProveedor: null })).toBe(true);
+  });
+
+  it.each([
+    ['un 4xx del gateway (408, 499): el banco pudo haberlo procesado', { tipo: 'RECHAZADO_POR_PROVEEDOR', codigoProveedor: null }],
+    ['un timeout', { tipo: 'INDISPONIBLE', codigoProveedor: null }],
+    ['una respuesta ilegible', { tipo: 'RESPUESTA_INVALIDA', codigoProveedor: null }],
+  ])('conserva la reserva ante %s', (_caso, error) => {
+    expect(reservaLiberable(error)).toBe(false);
+  });
+});
+
+describe('leerReserva()', () => {
+  it('reconoce la reserva y devuelve lo que hace falta para consultarla con el banco', () => {
+    expect(leerReserva(serializarReserva('B0-20260913-900', '2026-09-13T12:00:00.000Z'))).toEqual({
+      transactionId: 'B0-20260913-900',
+      emitidoEn: '2026-09-13T12:00:00.000Z',
+    });
+  });
+
+  it('un estado completo no es una reserva', () => {
+    const estado = { qrId: '21061401016000000007', transactionId: 'B0-20260913-900', emitidoEn: '2026-09-13T12:00:00.000Z' };
+    expect(leerReserva(serializarEstado(estado))).toBeNull();
   });
 });

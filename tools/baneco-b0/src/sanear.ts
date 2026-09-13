@@ -32,8 +32,12 @@ const CAMPOS_A_REDACTAR: Readonly<Record<string, string>> = {
 /** Claves que, con cualquier mayúscula, huelen a dato de una persona o de su cuenta. */
 const CLAVE_PERSONAL = /sender|name|nombre|document|account|cuenta|glosa/i;
 
-/** Las listas de pagos del banco (`statusQR` y `paidQR`). */
-const LISTAS_DE_PAGOS: readonly string[] = ['payment', 'paymentList'];
+/**
+ * Las listas de pagos del banco (`statusQR` y `paidQR`), sin distinguir
+ * mayúsculas: el banco ya mostró variaciones de ese tipo (V4).
+ */
+const LISTAS_DE_PAGOS: readonly string[] = ['payment', 'paymentlist', 'payments'];
+const esListaDePagos = (clave: string): boolean => LISTAS_DE_PAGOS.includes(clave.toLowerCase());
 
 /** Dentro de un pago, lo único que se conserva. Nada identifica a una persona. */
 const CAMPOS_DE_PAGO_PERMITIDOS: readonly string[] = [
@@ -67,7 +71,7 @@ export function sanear(valor: unknown): unknown {
       salida[clave] = contenido === null ? null : marcador;
       continue;
     }
-    if (LISTAS_DE_PAGOS.includes(clave) && Array.isArray(contenido)) {
+    if (esListaDePagos(clave) && Array.isArray(contenido)) {
       salida[clave] = contenido.map(sanearPago);
       continue;
     }
@@ -136,7 +140,7 @@ function recolectar(valor: unknown, ruta: string, enPago: boolean, destino: Reco
       }
       continue;
     }
-    recolectar(contenido, aqui, enPago || LISTAS_DE_PAGOS.includes(clave), destino);
+    recolectar(contenido, aqui, enPago || esListaDePagos(clave), destino);
   }
 }
 
@@ -147,19 +151,41 @@ function recolectar(valor: unknown, ruta: string, enPago: boolean, destino: Reco
  */
 export function soloPagosDe(cuerpo: unknown, qrId: string): unknown {
   if (typeof cuerpo !== 'object' || cuerpo === null || Array.isArray(cuerpo)) {
-    return cuerpo;
+    return NO_FILTRABLE;
   }
-  const registro = cuerpo as Record<string, unknown>;
-  const lista = registro['paymentList'];
-  if (!Array.isArray(lista)) {
-    return cuerpo;
+  const salida: Record<string, unknown> = {};
+  let listas = 0;
+  for (const [clave, valor] of Object.entries(cuerpo)) {
+    if (esListaDePagos(clave) && (Array.isArray(valor) || valor === null || valor === undefined)) {
+      listas += 1;
+      salida[clave] = Array.isArray(valor) ? valor.filter(esPagoDe(qrId)) : valor;
+    } else if (contieneArray(valor)) {
+      // Pagos bajo una clave que no conocemos: no se pueden filtrar, así que
+      // la fixture no se escribe (falla cerrado, no abierto).
+      return NO_FILTRABLE;
+    } else {
+      salida[clave] = valor;
+    }
   }
-  return {
-    ...registro,
-    paymentList: lista.filter(
-      (p: unknown) => typeof p === 'object' && p !== null && (p as Record<string, unknown>)['qrId'] === qrId,
-    ),
-  };
+  return listas <= 1 ? salida : NO_FILTRABLE;
+}
+
+/**
+ * Marca de que un cuerpo de `paidQR` no tiene una forma que se pueda filtrar
+ * con certeza. Quien la recibe **no escribe** la fixture.
+ */
+export const NO_FILTRABLE: unique symbol = Symbol('no-filtrable');
+
+const esPagoDe =
+  (qrId: string) =>
+  (p: unknown): boolean =>
+    typeof p === 'object' && p !== null && (p as Record<string, unknown>)['qrId'] === qrId;
+
+function contieneArray(valor: unknown): boolean {
+  if (Array.isArray(valor)) {
+    return true;
+  }
+  return typeof valor === 'object' && valor !== null && Object.values(valor).some(contieneArray);
 }
 
 export type ErrorSaneamiento = {

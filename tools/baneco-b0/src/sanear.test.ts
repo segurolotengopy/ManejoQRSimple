@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { datosDelPagador, sanear, soloPagosDe, verificarSinSecretos } from './sanear.js';
+import { datosDelPagador, NO_FILTRABLE, sanear, soloPagosDe, verificarSinSecretos } from './sanear.js';
 
 const RESPUESTA_CRUDA = {
   statusQrCode: 1,
@@ -174,5 +174,30 @@ describe('datosDelPagador() sin falsos positivos que traben la escritura', () =>
     // Si "Pago" contara, bloquearía cualquier informe que diga "Pago manual…".
     const datos = datosDelPagador({ payment: [{ qrId: 'x', description: 'Pago' }] });
     expect(Object.values(datos)).toEqual([]);
+  });
+});
+
+describe('soloPagosDe() falla cerrado ante una forma inesperada', () => {
+  it('reconoce la lista de pagos con otras mayúsculas y la filtra', () => {
+    const r = soloPagosDe({ PaymentList: [{ qrId: 'a' }, { qrId: 'b' }] }, 'b');
+    expect(r).toEqual({ PaymentList: [{ qrId: 'b' }] });
+  });
+
+  it('una lista vacía o nula no es problema: no hay nada que filtrar', () => {
+    expect(soloPagosDe({ paymentList: null, responseCode: 0 }, 'b')).toEqual({ paymentList: null, responseCode: 0 });
+  });
+
+  it.each([
+    ['pagos bajo una clave desconocida', { pagos: [{ qrId: 'a', description: 'Pago de MARIA LOPEZ' }] }],
+    ['pagos anidados', { data: { lista: [{ qrId: 'a' }] } }],
+    ['dos listas de pagos', { paymentList: [], payments: [] }],
+    ['algo que no es un objeto', [{ qrId: 'a' }]],
+  ])('no se puede filtrar con %s: no se escribe', (_caso, cuerpo) => {
+    expect(soloPagosDe(cuerpo, 'b')).toBe(NO_FILTRABLE);
+  });
+
+  it('sanear aplica la lista permitida también a una lista de pagos con otras mayúsculas', () => {
+    const texto = JSON.stringify(sanear({ Payment: [{ qrId: 'a', description: 'Pago de MARIA LOPEZ' }] }));
+    expect(texto).not.toContain('MARIA LOPEZ');
   });
 });

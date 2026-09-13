@@ -37,8 +37,11 @@ export function informe(args: {
   readonly baseUrl: string;
   readonly hallazgos: readonly Hallazgo[];
   readonly codigos: readonly CodigoObservado[];
+  /** Título del informe. El sondeo y el pago asistido escriben informes distintos. */
+  readonly titulo?: string;
 }): string {
   const { fecha, baseUrl, hallazgos, codigos } = args;
+  const titulo = args.titulo ?? '02 — Hallazgos de certificación (Hito B0)';
   const cuando = fecha.toISOString();
 
   const filas = hallazgos
@@ -60,7 +63,7 @@ export function informe(args: {
           ),
         ].join('\n');
 
-  return `# 02 — Hallazgos de certificación (Hito B0)
+  return `# ${titulo}
 
 > **Generado automáticamente** por \`npm run baneco:b0\` el ${cuando}.
 > Ambiente: certificación (\`${baseUrl}\`). **Nunca se corre contra producción.**

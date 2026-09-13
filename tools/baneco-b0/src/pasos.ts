@@ -49,13 +49,13 @@ function monto(valorEnCentavos: number): Centavos {
 }
 
 /** Identificador de las transacciones de prueba: reconocible en el extracto. */
-function transactionId(ctx: Contexto, n: number): string {
+export function transactionId(ctx: Contexto, n: number): string {
   const fecha = ctx.ahora.toISOString().slice(0, 10).replace(/-/g, '');
   return `B0-${fecha}-${String(n)}`;
 }
 
 /** Registra un `responseCode` observado para el catálogo empírico (E1). */
-function anotarCodigo(ctx: Contexto, operacion: string, contexto: string): void {
+export function anotarCodigo(ctx: Contexto, operacion: string, contexto: string): void {
   const cruda = ctx.grabador.ultima(operacion === 'authenticate' ? '/authenticate' : operacion);
   const sobre = cruda === null ? null : sobreDe(cruda.cuerpo);
   if (sobre !== null && sobre.codigo !== '0') {
@@ -154,11 +154,15 @@ export type QrDePrueba = {
   readonly imagenBase64: string | null;
 };
 
-/** P2 — Genera un QR de prueba de 1 BOB con vigencia de 72 h. */
+/** Monto de todo QR de sondeo, en centavos. */
+export const MONTO_SONDEO_CENTAVOS = UN_BOLIVIANO;
+
+/** P2 — Genera un QR de prueba de 1 BOB con la vigencia pedida. */
 export async function generarQrDePrueba(
   ctx: Contexto,
   n: number,
   diasDeVigencia: number,
+  descripcion = `Sondeo B0 ${String(diasDeVigencia)}d`,
 ): Promise<{ readonly qr: QrDePrueba | null; readonly hallazgo: Hallazgo | null }> {
   const venceEn = new Date(ctx.ahora.getTime() + diasDeVigencia * DIA_MS);
   const resultado = await ctx.cliente.generarQr({
@@ -166,7 +170,7 @@ export async function generarQrDePrueba(
     accountCredit: cifrarCuenta(ctx),
     currency: 'BOB',
     amount: aDecimalBob(monto(UN_BOLIVIANO)),
-    description: `Sondeo B0 ${String(diasDeVigencia)}d`,
+    description: descripcion,
     dueDate: fechaBoliviana(venceEn),
     singleUse: true,
     modifyAmount: false,

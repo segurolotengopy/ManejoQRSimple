@@ -30,6 +30,46 @@ Requiere `.env` con el bloque `BANECO_CERT_*` cargado (`BANECO_ENV=cert`).
 | `paidQR` | D7 | La forma del reporte diario. |
 | Todos | E1 | Catálogo empírico de `responseCode`, que la espec. v1.3.0 no documenta. |
 
+## Pago asistido (respuesta A2)
+
+Certificación no simula pagos: el banco paga un QR de prueba si se le manda la imagen
+por correo al oficial de cuenta, con una demora de hasta 48 h (E2). Por eso el camino
+de pago se captura en dos corridas:
+
+```bash
+npm run baneco:b0 -- --pago-asistido
+```
+
+Emite **un** QR de 1 BOB, válido 4 días, que **no se anula**. Guarda la imagen y un
+archivo de estado (`pago-asistido.json`, solo ids) en `tools/baneco-b0/out/`, con
+permisos 600. Mandá la imagen al oficial y pedile que la pague.
+
+```bash
+npm run baneco:b0 -- --capturar-pago
+```
+
+Cuando el banco confirme el pago:
+
+- Guarda como fixtures saneadas `statusQR-pagado.json` y `paidQR-con-pago.json`.
+- Sondea qué responde `cancelQR` sobre un QR **ya pagado** y si el estado cambia.
+- Escribe `docs/Integraciones/baneco/02-hallazgos-pago-asistido.md`:
+  - **A2:** el pago se capturó.
+  - **V4:** el monto es el del QR.
+  - **D7:** el pago figura en el `paidQR` de su día.
+  - **C5:** el banco no anula un QR pagado.
+
+Si el QR todavía no se pagó, no toca nada y termina con código 3.
+
+```bash
+npm run baneco:b0 -- --anular-pendiente
+```
+
+Desiste: anula el QR si nunca se pagó. Si ya está pagado se niega, y hay que
+capturarlo.
+
+Solo puede haber **un** QR de pago asistido por vez: emitir otro con uno pendiente se
+rechaza.
+
 ## Reglas duras
 
 - **Solo certificación.** Dos barreras independientes: `leerConfig` rechaza una URL de
@@ -38,7 +78,8 @@ Requiere `.env` con el bloque `BANECO_CERT_*` cargado (`BANECO_ENV=cert`).
 - **No reintenta.** El usuario API del banco puede bloquearse por intentos fallidos
   (pregunta B4). Si la autenticación falla, escribe el informe y termina.
 - **Todo QR que crea, lo anula.** Los sondeos dejan objetos reales en el ambiente del
-  banco.
+  banco. La única excepción es el QR del pago asistido, que existe para que el banco lo
+  pague: es uno solo por vez, y `--anular-pendiente` lo limpia si nunca se paga.
 - **Nada se escribe sin sanear.** Las respuestas crudas traen nombre, documento y
   cuenta del pagador. `sanear.ts` los reemplaza por marcadores y una segunda capa
   verifica que el resultado no contenga ningún secreto de configuración; si lo

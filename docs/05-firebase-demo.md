@@ -12,6 +12,12 @@
   si es el caso, decidir con el dueño ANTES de habilitar billing y registrar la
   decisión en ESTADO.md — mismo criterio de WhatsApp-Modular con GCP
   (su proyecto se mantuvo sin billing hasta necesitarlo).
+  **Resuelto para Baneco (D2 y D3, 2026-08-27):** la llamada al banco no corre en
+  Functions sino en el **satélite** (`@mqs/baneco-satelite`, fuera de Firebase), así
+  que Spark alcanza: Functions no necesita salida a internet. Sin webhook en la
+  primera etapa (D3, confirmado por el banco en D4): no hay endpoint público que
+  exponer. Si algún día se habilita (Hito B3), el endpoint y su decisión de plan se
+  registran acá.
 - **Servicios:** Firestore, Cloud Functions (`packages/functions`), Hosting
   (`packages/demo-web`), Storage (imágenes de QR y comprobantes).
 - Todo el desarrollo local corre contra los **emuladores**
@@ -62,7 +68,8 @@ leer los cobros pendientes y escribir estado y evidencia. Se pasa por
 
 | Entorno | Dónde | Datos |
 |---|---|---|
-| local | emuladores Firebase | sintéticos, semilla en `scripts/seed.ts` |
+| local | emuladores Firebase | sintéticos, semilla con `npm run demo:sembrar` (`tools/demo-local`) |
+| prueba en producción | emulador local persistente (`~/.manejoqr/emulador-prueba`) | cobros reales de Bs 1 del dueño contra la API de producción del banco, con topes (docs/Integraciones/baneco/03) |
 | demo | proyecto ManejoQRSimple | cobros reales de demostración del dueño |
 
 Sin entorno de producción hasta tener API oficial (alcance declarado del proyecto).

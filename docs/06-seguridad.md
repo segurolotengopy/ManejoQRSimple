@@ -11,7 +11,10 @@
 | T5 | **Suplantación del webhook** | Tercero llama a nuestro endpoint de comprobantes | HMAC sobre raw body + `timingSafeEqual`; rechazo sin firma válida. |
 | T6 | **Fuga de datos bancarios/personales** | Logs, Firestore, analítica | Minimización (regla #4), enmascarado de teléfonos, sin capturas persistidas, sin analítica de terceros. |
 | T7 | **Secretos en el repo** | Commit accidental | Hook pre-tool de Claude Code, `.gitignore`, gitleaks en CI sobre historial completo. |
-| T8 | **Bloqueo de cuenta por el banco** | Patrón de acceso no humano | Ritmo humano con jitter, sesión única, detener ante anomalías (docs/03 §3). |
+| T8 | **Bloqueo de cuenta por el banco** | Patrón de acceso no humano | Ritmo humano con jitter, sesión única, detener ante anomalías (docs/03 §3). En Baneco: el usuario API se bloquea por logins fallidos y se desbloquea solo en agencia (B4) — reintento único ante 401, nunca en bucle; polling con piso de 10 s (D6). |
+| T9 | **Webhook bancario falsificado** | Tercero que conoce la URL llama a `notifyPaymentQR` con un pago inexistente | Regla **BANECO-1**: el webhook solo dispara la consulta autenticada `statusQR`, nunca confirma. Hoy no hay webhook (D3); si se habilita (Hito B3): token de ruta comparado con `timingSafeEqual`, allowlist de IPs del banco (pregunta D1, sin respuesta) y test adversarial. |
+| T10 | **QR pagable después de que el cobro lo soltó** | El banco vence los QR por día (C4): un cobro vencido, renovado o anulado seguiría cobrable hasta la medianoche | La máquina de estados exige la constancia de anulación en el banco (`QrAnulado`) antes de soltar un QR; lo que se escape lo encuentra el cierre diario y queda en la pestaña Revisión (PR #21, PR #27). |
+| T11 | **Producción tocada por error** | Correr la API o el satélite con credenciales reales fuera de la prueba controlada | Barrera de código (`composicion/src/produccion.ts`): producción solo con `MODO_PRUEBA_PRODUCCION=1` y el emulador; topes de monto y cantidad (docs/Integraciones/baneco/03). B0 solo corre contra certificación. |
 
 ## 2. Gestión de secretos
 
@@ -22,6 +25,10 @@
 | Llave service account scraper | `~/.manejoqr/` | Repo, demo-web, CI |
 | `WM_API_TOKEN` (WhatsAppModular) | `.env` local / Secret Manager | Repo, código, fixtures |
 | Secreto HMAC webhook | `.env` local / Secret Manager | Repo, código, fixtures |
+| Baneco certificación (`BANECO_CERT_*`: usuario, contraseña, llave AES, cuenta de pruebas) | `.env` local | Repo, fixtures, informes de B0 (B0 aborta si un secreto aparece en lo que escribe) |
+| Baneco producción (`BANECO_PROD_*`: usuario, contraseña, llave AES, cuenta de cobro) | `~/.manejoqr/baneco-prod.env`, 600 — Claude Code no lo lee | Repo, `.env`, chat, logs, Firestore. La llave se pide por un canal que no sea un adjunto de correo (B3) |
+| Adjuntos originales del banco | `docs/Integraciones/baneco/privado-no-gh/` (git-ignored, D4) | GitHub, cualquier nube |
+| Token de la API local (`API_TOKEN_LOCAL` / `VITE_API_TOKEN`) | `~/.manejoqr/baneco-prod.env` y `demo-web/.env.local` | Repo; queda embebido en el bundle, así que publicar la consola exige Firebase Auth |
 
 `.env` nunca se versiona (`.gitignore`); `.env.example` lista todas las
 variables sin valores. Variable nueva ⇒ actualizar `.env.example` en el mismo PR.

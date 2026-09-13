@@ -4,9 +4,10 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-12 (sesión "respuestas de Baneco" — #20, #21, #24 y
-#25 mergeados; la prueba controlada en producción está lista y espera la **contraseña
-del usuario API**, que ningún documento del banco explica cómo obtener: pedido H1)
+**Última actualización:** 2026-09-12 (sesión "respuestas de Baneco" — #20, #21, #24,
+#25, #26 y #27 mergeados; la prueba controlada en producción está lista y espera la
+**contraseña del usuario API**, que ningún documento del banco explica cómo obtener:
+pedido H1)
 
 ---
 
@@ -250,7 +251,11 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       vivo con el banco simulado (QR, "Ya pagué", `CONFIRMADO`, revisión por pago
       tardío, logs); la consola usa la hora del servidor (el navegador integrado
       mostró un reloj desfasado).
-- [x] **2026-09-12 — Abonos sin conciliar persistidos (rama `feat/abonos-sin-conciliar`).**
+- [x] **2026-09-12 — Pedido de la contraseña del usuario API (PR #26, mergeado).**
+      Ningún documento del banco explica cómo se obtiene: pedido H1 en
+      `01-preguntas-al-banco.md` §H, con el procedimiento y el borrador del correo (que
+      pide también el catálogo de bancos y el usuario de pruebas).
+- [x] **2026-09-12 — Abonos sin conciliar persistidos (PR #27, mergeado).**
       Los pagos que el cierre diario no ata a ningún cobro (huérfanos y sin corroborar)
       ya no quedan solo en el log del satélite:
       - Puerto nuevo `AbonosSinConciliarStore` (`registrar` idempotente por clave del
@@ -283,7 +288,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
   carrera de segundos entre la última consulta y la anulación, que cubre el cierre
   diario.
 - ~~Los abonos huérfanos y sin corroborar solo van al log del satélite~~ — resuelto en
-  `feat/abonos-sin-conciliar`: se guardan y aparecen en la pestaña Revisión. Queda un
+  el PR #27: se guardan y aparecen en la pestaña Revisión. Queda un
   límite deliberado: un pago sin cobro se **cierra** con motivo, no se asigna a un cobro
   (`docs/09-revision-manual.md` §5).
 - **Doble anulación (B2 de la auditoría):** reintentar `cancelQR` sobre un QR ya
@@ -357,10 +362,9 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    `tools/baneco-b0/out/` (git-ignored) para mandarlo por correo, y una segunda
    corrida que capture el `statusQR` pagado y el `paidQR` como fixtures reales.
    Incluir el sondeo de doble anulación (riesgo B2).
-3. ~~Persistir los abonos huérfanos y sin corroborar~~ — hecho en
-   `feat/abonos-sin-conciliar` (a la espera de autorización).
-4. Barrido documental pendiente de §8.2: docs/02 §5, docs/06 amenaza T9, docs/07
-   (partición de fases), docs/05.
+3. ~~Persistir los abonos huérfanos y sin corroborar~~ — hecho en el PR #27.
+4. ~~Barrido documental pendiente de §8.2~~ — hecho (docs/02 §5, docs/05 §1 y §5,
+   docs/06 T9–T11 y secretos, docs/07 Fase 3). Solo queda `.env.example`, del dueño.
 5. `wa-bridge`, cuando el dueño decida docs/04 §2.3; con él, aviso de casos
    críticos por WhatsApp.
 

@@ -37,8 +37,19 @@ verificable. El avance real se registra en `ESTADO.md`.
 
 ## Fase 3 — API oficial (salida del scraping)
 
-- Acceso formal a la API del BCP / OpenBCB (docs/02 §5). Documentación oficial
-  a `docs/Integraciones/`.
-- Adaptadores `live` de `PaymentWatcher` y `QrProvider`; mismos tests de
-  contrato; retiro del scraper y revocación de sus credenciales.
+Se bifurca por proveedor (análisis Baneco §8.2):
+
+- **Baneco — ya en curso.** La API oficial llegó antes que el scraping: el riel
+  Baneco no pasa por el scraper. Hitos (análisis Baneco §8.3): B0 validación de
+  contrato en certificación (escrito, espera la cuenta de pruebas A4); B1
+  adaptador contra fixtures (hecho); B2 flujo E2E (cubierto por la prueba
+  controlada en producción, docs/Integraciones/baneco/03, porque el banco no
+  simula pagos); B3 webhook (diferido, D3); B4 pase a producción.
+  **Criterio de salida:** informe de la prueba en producción sin hallazgos
+  abiertos, fixtures reales en `baneco-gateway`, `wa-bridge` operativo y la
+  llave de producción definitiva (B3 del banco).
+- **Yape/BCP — espera API.** Acceso formal a la API del BCP / OpenBCB (docs/02
+  §5); documentación oficial a `docs/Integraciones/`. Adaptadores `live` de
+  `PaymentWatcher` y `QrProvider`; mismos tests de contrato; retiro del scraper y
+  revocación de sus credenciales.
 - Recién aquí se evalúa hablar de producción.

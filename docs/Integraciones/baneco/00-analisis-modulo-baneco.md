@@ -403,15 +403,18 @@ aun así, tratarlas como sensibles y no citarlas fuera de `Integraciones/`).
 
 ### 8.2 Cambios documentales derivados
 
-| Documento | Cambio |
-|---|---|
-| `docs/01-arquitectura.md` | Nuevo **ADR-006**: adaptador API oficial Baneco detrás de los puertos; convivencia con yape-scraper; decisión D1/D2 cuando el dueño la tome. |
-| `docs/02-qr-simple-bolivia.md` | §5 "Camino a la API oficial": Baneco es la primera API oficial disponible; actualizar. |
-| `docs/07-plan-fases.md` | La Fase 3 se bifurca por proveedor: para Baneco la "salida del scraping" ya es posible; para Yape sigue esperando API del BCP. |
-| `docs/05-firebase-demo.md` | Resultado de D2/D3 (Blaze o satélite; endpoint del webhook si se adopta). |
-| `docs/06-seguridad.md` | Amenaza nueva **T9: webhook bancario falsificado** (control: regla BANECO-1 + allowlist + token de ruta); tabla de secretos ampliada (§6.1). |
-| `CLAUDE.md` | Tabla fuente-de-verdad: fila para `docs/Integraciones/baneco/`; regla de negocio: el webhook de Baneco no confirma — solo `statusQR`/`paidQR` confirman. |
-| `.env.example` | Variables `BANECO_*` sin valores. |
+**Estado (2026-09-12):** todos aplicados salvo `.env.example`, que revisa el dueño
+(Claude Code no tiene permiso de lectura sobre `.env.*`).
+
+| Documento | Cambio | Estado |
+|---|---|---|
+| `docs/01-arquitectura.md` | Nuevo **ADR-006**: adaptador API oficial Baneco detrás de los puertos; convivencia con yape-scraper; decisión D1/D2 cuando el dueño la tome. | ✅ ADR-006 y ADR-007. |
+| `docs/02-qr-simple-bolivia.md` | §5 "Camino a la API oficial": Baneco es la primera API oficial disponible; actualizar. | ✅ |
+| `docs/07-plan-fases.md` | La Fase 3 se bifurca por proveedor: para Baneco la "salida del scraping" ya es posible; para Yape sigue esperando API del BCP. | ✅ Con los hitos B0–B4 y su criterio de salida. |
+| `docs/05-firebase-demo.md` | Resultado de D2/D3 (Blaze o satélite; endpoint del webhook si se adopta). | ✅ Satélite, sin Blaze, sin webhook. |
+| `docs/06-seguridad.md` | Amenaza nueva **T9: webhook bancario falsificado** (control: regla BANECO-1 + allowlist + token de ruta); tabla de secretos ampliada (§6.1). | ✅ T9, más T10 (QR pagable tras soltarlo) y T11 (producción por error); secretos de Baneco en §2. |
+| `CLAUDE.md` | Tabla fuente-de-verdad: fila para `docs/Integraciones/baneco/`; regla de negocio: el webhook de Baneco no confirma — solo `statusQR`/`paidQR` confirman. | ✅ Fila y regla BANECO-1. |
+| `.env.example` | Variables `BANECO_*` sin valores. | ⏳ Lo revisa el dueño (ESTADO, "Dueño — lo demás"). |
 
 ### 8.3 Plan de implementación propuesto (hito por hito, sin fechas)
 

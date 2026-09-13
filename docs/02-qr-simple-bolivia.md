@@ -85,12 +85,19 @@ Fuente: `docs/Integraciones/baneco/01-preguntas-al-banco.md` (nivel 1).
 
 ## 5. Camino a la API oficial
 
-El BCB anunció **OpenBCB** (oct-2025), una iniciativa de APIs estandarizadas
-para pagos QR e inmediatos. Cuando exista acceso formal (vía BCP o vía la
-plataforma que el BCB disponga), la migración está prevista por ADR-002:
-adaptadores nuevos de `PaymentWatcher` y `QrProvider`, mismos tests de
-contrato, dominio intacto. Los avances se registran en `docs/ESTADO.md` y la
-documentación oficial que se obtenga va en `docs/Integraciones/`.
+**Banco Económico es la primera API oficial disponible** (espec. "Api Market"
+v1.3.0) y desde el 2026-08-27 es la línea principal del proyecto (ESTADO,
+decisión 2). Entró exactamente como preveía ADR-002: un adaptador nuevo
+(`@mqs/baneco-gateway`) detrás de `QrProvider` y `PaymentWatcher`, con los mismos
+tests de contrato y el dominio intacto (ADR-006). Análisis, preguntas al banco y
+sus respuestas: `docs/Integraciones/baneco/`.
+
+Para Yape/BCP el camino sigue siendo el de antes. El BCB anunció **OpenBCB**
+(oct-2025), una iniciativa de APIs estandarizadas para pagos QR e inmediatos.
+Cuando exista acceso formal (vía BCP o vía la plataforma que el BCB disponga),
+se repite el mismo patrón: adaptadores nuevos, mismos tests de contrato. Los
+avances se registran en `docs/ESTADO.md` y la documentación oficial que se
+obtenga va en `docs/Integraciones/`.
 
 ## Fuentes
 

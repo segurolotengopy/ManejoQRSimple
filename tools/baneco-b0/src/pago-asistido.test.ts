@@ -9,6 +9,7 @@ import {
   leerEstado,
   leerModo,
   serializarEstado,
+  serializarReserva,
   type Captura,
 } from './pago-asistido.js';
 
@@ -126,5 +127,19 @@ describe('esHostDeCertificacion()', () => {
     ['algo que no es URL', 'no-es-url'],
   ])('rechaza %s', (_caso, url) => {
     expect(esHostDeCertificacion(url)).toBe(false);
+  });
+});
+
+describe('reserva antes de emitir', () => {
+  it('no se confunde con un estado completo: bloquea todos los modos hasta revisarla', () => {
+    // Si el banco creó el QR pero la respuesta se perdió, la reserva es la
+    // única pista: ningún modo la trata como "no hay nada pendiente".
+    expect(leerEstado(serializarReserva('B0-20260913-900', '2026-09-13T12:00:00.000Z'))).toBeNull();
+  });
+});
+
+describe('esHostDeCertificacion() exige https', () => {
+  it('rechaza el host correcto por http: el JWT viajaría en claro', () => {
+    expect(esHostDeCertificacion('http://apimktdesa.baneco.com.bo/ApiGateway')).toBe(false);
   });
 });

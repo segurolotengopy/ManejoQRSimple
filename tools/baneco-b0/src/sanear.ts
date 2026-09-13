@@ -112,6 +112,8 @@ export function datosDelPagador(valor: unknown, prefijo = 'pagador'): Readonly<R
   return encontrados;
 }
 
+const LARGO_MINIMO_DATO = 6;
+
 function recolectar(valor: unknown, ruta: string, enPago: boolean, destino: Record<string, string>): void {
   if (Array.isArray(valor)) {
     valor.forEach((v, i) => {
@@ -126,7 +128,10 @@ function recolectar(valor: unknown, ruta: string, enPago: boolean, destino: Reco
     const aqui = `${ruta}.${clave}`;
     if (typeof contenido === 'string') {
       const sensible = enPago ? !CAMPOS_DE_PAGO_PERMITIDOS.includes(clave) : CLAVE_PERSONAL.test(clave);
-      if (sensible && contenido.trim().length >= 4) {
+      // Seis caracteres como mínimo: una glosa de una palabra común ("Pago")
+      // chocaría con cualquier texto y trabaría la escritura para siempre. Un
+      // nombre, un documento o una cuenta ofuscada nunca son tan cortos.
+      if (sensible && contenido.trim().length >= LARGO_MINIMO_DATO) {
         destino[aqui] = contenido.trim();
       }
       continue;

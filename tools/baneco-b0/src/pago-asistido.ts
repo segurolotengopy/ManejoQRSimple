@@ -82,10 +82,35 @@ export const HOST_CERTIFICACION = 'apimktdesa.baneco.com.bo';
  */
 export function esHostDeCertificacion(baseUrl: string): boolean {
   try {
-    return new URL(baseUrl).hostname === HOST_CERTIFICACION;
+    const url = new URL(baseUrl);
+    // https además del host: por http el JWT viajaría en claro, y con él se
+    // puede consultar o anular el QR del pago asistido.
+    return url.protocol === 'https:' && url.hostname === HOST_CERTIFICACION;
   } catch {
     return false;
   }
+}
+
+/**
+ * La reserva que se escribe **antes** de emitir, en forma atómica: dos corridas
+ * simultáneas no pueden emitir dos QRs, y si el banco crea el QR pero la
+ * respuesta se pierde, la reserva queda como pista. No es un estado completo
+ * (no tiene `qrId`), así que ningún modo la toma como "no hay nada pendiente".
+ */
+export function serializarReserva(transactionId: string, emitidoEn: string): string {
+  return `${JSON.stringify(
+    {
+      reserva: true,
+      transactionId,
+      emitidoEn,
+      nota:
+        'Se estaba emitiendo un QR de pago asistido. Si este archivo quedó así, el banco pudo haber ' +
+        'creado el QR sin que la respuesta llegara: consultalo con el oficial por este transactionId ' +
+        'antes de borrar el archivo.',
+    },
+    null,
+    2,
+  )}\n`;
 }
 
 export function serializarEstado(estado: EstadoPagoAsistido): string {

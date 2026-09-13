@@ -168,3 +168,11 @@ describe('soloPagosDe()', () => {
     expect(soloPagosDe({ responseCode: 0 }, 'b')).toEqual({ responseCode: 0 });
   });
 });
+
+describe('datosDelPagador() sin falsos positivos que traben la escritura', () => {
+  it('una glosa de una palabra común no se toma como dato del pagador', () => {
+    // Si "Pago" contara, bloquearía cualquier informe que diga "Pago manual…".
+    const datos = datosDelPagador({ payment: [{ qrId: 'x', description: 'Pago' }] });
+    expect(Object.values(datos)).toEqual([]);
+  });
+});

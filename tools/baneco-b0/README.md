@@ -98,9 +98,15 @@ rechaza.
   informe del pago asistido no incluye el `message` del banco, que puede nombrar al
   pagador, y `paidQR-con-pago.json` guarda solo el pago de nuestro QR, porque el
   usuario de certificación es compartido (A3).
-- **El QR del pago asistido nunca queda sin control.** Si el banco devuelve un `qrId`
-  que no se puede guardar con seguridad, o el estado no se puede escribir, el QR se
-  anula en la misma corrida. Un estado ilegible bloquea emitir otro.
+- **El QR del pago asistido nunca queda sin control.**
+  - Antes de emitir se toma una reserva atómica del archivo de estado, así que dos
+    corridas simultáneas no pueden emitir dos QRs.
+  - Si el banco no responde, la reserva queda con el `transactionId`, porque pudo
+    haber creado el QR igual, y bloquea todo hasta verificarlo con el oficial.
+  - Si el banco devuelve un `qrId` que no se puede guardar con seguridad, o el
+    estado no se puede escribir, el QR se anula en la misma corrida.
+- **Solo https.** La barrera de host exige además `https:`: por http el JWT viajaría
+  en claro.
 
 ## Dos desviaciones respecto de `PROMPTS_CLAUDE_CODE.md`
 

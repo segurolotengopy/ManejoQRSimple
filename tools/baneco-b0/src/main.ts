@@ -48,6 +48,7 @@ import {
   leerEstado,
   leerModo,
   serializarEstado,
+  serializarReserva,
   type AnulacionDePagado,
   type EstadoPagoAsistido,
 } from './pago-asistido.js';
@@ -193,7 +194,12 @@ async function sondeo(ctx: Contexto, hallazgos: Hallazgo[]): Promise<number> {
   // El reporte diario del banco: sirve de fixture y confirma la forma de paidQR.
   const pagos = await ctx.cliente.pagosDelDia(ctx.ahora);
   if (esExito(pagos)) {
-    completo = (await guardarFixture(ctx, 'paidQR-del-dia.json', '/paidQR/')) && completo;
+    // Solo los pagos de QRs de esta corrida (en el sondeo, ninguno: todos se
+    // anulan). El usuario de certificación es compartido (A3) y el resto son
+    // pagos de otros integradores, con `transactionId` en texto libre.
+    completo =
+      (await guardarFixture(ctx, 'paidQR-del-dia.json', '/paidQR/', (c) => soloPagosDe(c, qr?.qrId ?? ''))) &&
+      completo;
     hallazgos.push({
       pregunta: 'D7',
       titulo: 'Forma de la respuesta de `paidQR`',
@@ -230,42 +236,75 @@ async function sondeo(ctx: Contexto, hallazgos: Hallazgo[]): Promise<number> {
  * anula en la misma corrida.
  */
 async function emitirParaPago(ctx: Contexto): Promise<number> {
-  const { qr, hallazgo } = await generarQrDePrueba(ctx, N_PAGO_ASISTIDO, DIAS_PAGO_ASISTIDO, 'B0 pago asistido');
+  const tx = transactionId(ctx, N_PAGO_ASISTIDO);
+
+  // Reserva atómica antes de hablar con el banco: dos corridas simultáneas no
+  // pueden emitir dos QRs (`wx` falla si el archivo ya existe).
+  try {
+    await mkdir(SALIDA_LOCAL, { recursive: true, mode: 0o700 });
+    await writeFile(ESTADO_PAGO, serializarReserva(tx, ctx.ahora.toISOString()), {
+      encoding: 'utf8',
+      mode: 0o600,
+      flag: 'wx',
+    });
+  } catch {
+    console.error(`✖ No se pudo reservar ${ESTADO_PAGO}: ¿otra corrida en curso o un estado previo?`);
+    return 1;
+  }
+
+  const { qr, hallazgo, tipoError } = await generarQrDePrueba(
+    ctx,
+    N_PAGO_ASISTIDO,
+    DIAS_PAGO_ASISTIDO,
+    'B0 pago asistido',
+  );
   if (qr === null) {
     console.error(`✖ No se pudo generar el QR: ${hallazgo?.detalle ?? 'sin detalle'}`);
+    // Solo un rechazo explícito del banco asegura que no se creó nada. Ante un
+    // timeout o una respuesta ilegible, el QR pudo quedar creado: la reserva
+    // se conserva y bloquea emitir otro hasta verificarlo.
+    if (tipoError === 'RECHAZADO_POR_PROVEEDOR' || tipoError === 'NO_AUTORIZADO') {
+      await rm(ESTADO_PAGO, { force: true });
+    } else {
+      console.error(`  ⚠ El banco pudo haber creado el QR igual (transactionId ${tx}).`);
+      console.error(`  Consultalo con el oficial y recién después borrá ${ESTADO_PAGO}.`);
+    }
     return 1;
   }
 
   if (!esIdSeguro(qr.qrId)) {
     // Guardarlo dejaría un QR vivo que ninguna corrida siguiente podría releer
-    // ni anular. Se anula ya, sin tocar el disco.
+    // ni anular. Se anula ya, sin guardarlo.
     const anulado = await ctx.cliente.anularQr(qr.qrId);
     console.error('✖ El banco devolvió un qrId con un formato que no se puede guardar con seguridad.');
-    console.error(
-      esExito(anulado)
-        ? '  El QR se anuló en esta misma corrida. Reportalo: el formato de qrId no es el esperado.'
-        : `  ⚠ Y no se pudo anular (${anulado.error.tipo}): pedile al oficial que lo anule a mano.`,
-    );
+    if (esExito(anulado)) {
+      await rm(ESTADO_PAGO, { force: true });
+      console.error('  El QR se anuló en esta misma corrida. Reportalo: el formato de qrId no es el esperado.');
+    } else {
+      console.error(`  ⚠ Y no se pudo anular (${anulado.error.tipo}): pedile al oficial que lo anule a mano.`);
+      console.error(`  La reserva queda en ${ESTADO_PAGO} (transactionId ${tx}) hasta resolverlo.`);
+    }
     return 1;
   }
 
   const estado: EstadoPagoAsistido = {
     qrId: qr.qrId,
-    transactionId: transactionId(ctx, N_PAGO_ASISTIDO),
+    transactionId: tx,
     emitidoEn: ctx.ahora.toISOString(),
   };
   try {
-    await mkdir(SALIDA_LOCAL, { recursive: true, mode: 0o700 });
     await writeFile(ESTADO_PAGO, serializarEstado(estado), { encoding: 'utf8', mode: 0o600 });
   } catch {
     // Sin estado, el "uno por vez" no se sostiene: el QR no queda vivo.
     const anulado = await ctx.cliente.anularQr(qr.qrId);
     console.error(`✖ No se pudo guardar el estado en ${ESTADO_PAGO}.`);
-    console.error(
-      esExito(anulado)
-        ? '  El QR se anuló para no dejarlo vivo sin control.'
-        : `  ⚠ Y no se pudo anular (${anulado.error.tipo}). QR ${qr.qrId}: pedile al oficial que lo anule.`,
-    );
+    if (esExito(anulado)) {
+      // Anulado: la reserva ya no protege nada y solo bloquearía en falso.
+      await rm(ESTADO_PAGO, { force: true }).catch(() => undefined);
+      console.error('  El QR se anuló para no dejarlo vivo sin control.');
+    } else {
+      console.error(`  ⚠ Y no se pudo anular (${anulado.error.tipo}). QR ${qr.qrId}: pedile al oficial que lo anule.`);
+    }
     return 1;
   }
   await guardarImagen(qr.qrId, qr.imagenBase64);
@@ -428,7 +467,17 @@ async function escribirInforme(
     ...(opciones.titulo === undefined ? {} : { titulo: opciones.titulo }),
   });
 
-  const fuga = verificarSinSecretos(texto, secretosDe(ctx));
+  // Con los `message` del banco en el catálogo, se verifica además contra los
+  // datos del pagador de las respuestas de nuestros propios QRs (no las de
+  // `paidQR`, que traen pagos de terceros y darían falsos positivos). Sin esos
+  // mensajes, el informe no lleva texto del banco: bastan los secretos.
+  const conMensajes = opciones.codigos === undefined;
+  const pagador = conMensajes
+    ? ctx.grabador.grabaciones
+        .filter((g) => !g.url.includes('/paidQR/'))
+        .map((g, i) => datosDelPagador(g.cuerpo, `respuesta${String(i)}`))
+    : [];
+  const fuga = verificarSinSecretos(texto, Object.assign({}, secretosDe(ctx), ...pagador) as Record<string, string>);
   if (fuga !== null) {
     console.error(`✖ El informe contiene "${fuga.pista}". No se escribe.`);
     return false;
@@ -457,8 +506,12 @@ async function guardarFixture(
     return true;
   }
 
-  const saneada = sanear(transformar(cruda.cuerpo));
-  const fuga = verificarSinSecretos(saneada, secretosDe(ctx));
+  // Los datos del pagador se toman del cuerpo que se va a escribir (ya
+  // filtrado): los de pagos ajenos que el filtro sacó no pueden aparecer, y
+  // contarlos solo daría falsos positivos.
+  const cuerpo = transformar(cruda.cuerpo);
+  const saneada = sanear(cuerpo);
+  const fuga = verificarSinSecretos(saneada, { ...secretosDe(ctx), ...datosDelPagador(cuerpo) });
   if (fuga !== null) {
     console.error(`✖ La fixture ${nombre} todavía contiene "${fuga.pista}". No se escribe.`);
     return false;
@@ -486,21 +539,17 @@ async function guardarImagen(qrId: string, base64: string | null): Promise<void>
 }
 
 /**
- * Los valores que jamás pueden aparecer en un archivo escrito por esta
- * herramienta: los secretos de configuración y todo dato del pagador que haya
- * pasado por cualquier respuesta de esta corrida.
+ * Los secretos de configuración, que jamás pueden aparecer en un archivo
+ * escrito por esta herramienta. Los datos del pagador se suman en cada
+ * escritura, según lo que se escribe.
  */
 function secretosDe(ctx: Contexto): Readonly<Record<string, string>> {
-  const delPagador = ctx.grabador.grabaciones.map((g, i) => datosDelPagador(g.cuerpo, `respuesta${String(i)}`));
-  return Object.assign(
-    {
-      password: ctx.config.password.revelar(),
-      llaveAes: ctx.config.llave.toString('utf8'),
-      cuentaAbono: ctx.config.cuentaAbono.revelar(),
-      usuario: ctx.config.usuario,
-    },
-    ...delPagador,
-  ) as Record<string, string>;
+  return {
+    password: ctx.config.password.revelar(),
+    llaveAes: ctx.config.llave.toString('utf8'),
+    cuentaAbono: ctx.config.cuentaAbono.revelar(),
+    usuario: ctx.config.usuario,
+  };
 }
 
 const codigo = await main();

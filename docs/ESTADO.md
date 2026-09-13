@@ -4,9 +4,9 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-12 (sesión "respuestas de Baneco" — #20, #21 y #24
-mergeados; herramientas para la prueba controlada en producción listas en
-`feat/prueba-produccion`, a la espera de autorización y de la contraseña del usuario API)
+**Última actualización:** 2026-09-12 (sesión "respuestas de Baneco" — #20, #21, #24 y
+#25 mergeados; la prueba controlada en producción está lista y espera la **contraseña
+del usuario API**, que ningún documento del banco explica cómo obtener: pedido H1)
 
 ---
 
@@ -234,8 +234,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       - Guía operativa: `docs/09-revision-manual.md`.
       - Verificado: 584 tests, y en vivo en el navegador (cola, insignia, título,
         diferencia de monto, resolución por la API con evidencia `accion-manual`).
-- [x] **2026-09-12 — Herramientas de la prueba en producción (rama
-      `feat/prueba-produccion`).** Barrera de producción compartida
+- [x] **2026-09-12 — Herramientas de la prueba en producción (PR #25, mergeado).** Barrera de producción compartida
       (`composicion/src/produccion.ts`); modo prueba de la API con topes de monto y
       cantidad (`functions/src/modo-prueba.ts`); imagen del QR guardada fuera del repo
       (`functions/src/imagenes.ts`, adaptador con `AlmacenImagenQr`); endpoints
@@ -256,7 +255,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 | Qué | Desde | Bloquea | Mientras tanto |
 |---|---|---|---|
-| Contraseña del usuario API de producción (no viene en el documento del banco) y número de la cuenta de cobro | 2026-09-12 | La prueba en producción (P1) | Si falta la contraseña, se gestiona en agencia (B4). |
+| Contraseña del usuario API de producción (pedido H1) y número de la cuenta de cobro | 2026-09-12 | La prueba en producción (P1) | Ningún documento del banco explica cómo se obtiene (revisados espec. v1.3.0, documento de producción y presentación). Se pide al oficial de cuenta; si no, en agencia (B4). **No probar contraseñas:** el usuario se bloquea. Procedimiento y borrador del correo: `01-preguntas-al-banco.md` §H. |
 | Cuenta de abono de pruebas de Baneco (A4) | 2026-09-11 | Que B0 genere QRs (sin ella solo prueba el login) | El login y el cifrado se pueden probar ya con las credenciales compartidas del PDF. |
 | Catálogo de bancos (D9) | 2026-09-12 | Nada (deseable) | El banco dijo adjuntarlo y no llegó: pedirlo de nuevo. |
 | Pago manual de un QR de prueba por el banco (A2) | — | Capturar un `statusQR` pagado y un `paidQR` reales → fixtures reales | Hace falta primero el modo "pago asistido" de B0. |
@@ -308,18 +307,20 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 **Dueño — prueba en producción** (guía: `docs/Integraciones/baneco/03-prueba-en-produccion.md`):
 
-0. Autorizar el PR de la prueba en producción (rama `feat/prueba-produccion`). Con la
-   contraseña del usuario API y la cuenta de cobro, crear `~/.manejoqr/baneco-prod.env`
-   (§2), levantar las cuatro terminales (§3) y hacer P1–P8 desde la pestaña Pruebas; P9
-   al día siguiente. Pasarle el informe a Claude Code.
+0. **Conseguir la contraseña del usuario API** (pedido H1): mirar si llegó por otro
+   canal (correo aparte, SMS, sobre); si no, mandar el correo de
+   `01-preguntas-al-banco.md` §H al oficial de cuenta, que ya pide también A4 y D9. Si el
+   banco dice que es en agencia, ir a una (B4).
+1. Con la contraseña y la cuenta de cobro: crear `~/.manejoqr/baneco-prod.env` (§2),
+   levantar las cuatro terminales (§3) y hacer P1–P8 desde la pestaña Pruebas; P9 al
+   día siguiente. Pasarle el informe a Claude Code.
 
 **Dueño — lo demás:**
 
-1. ~~Autorizar #21 y #24~~ — mergeados el 2026-09-12.
-2. Pedirle al oficial de Baneco, en un mismo correo: el **usuario y la cuenta de
-   abono de pruebas** (A4), el **catálogo de bancos** que no llegó (D9) y, si
-   interesa, los manuales de **Bec QR Connect** (G2). Cargar `BANECO_CERT_*` en el
-   `.env` local, nunca en el repo.
+1. ~~Autorizar #21, #24 y #25~~ — mergeados el 2026-09-12.
+2. Cuando el banco responda el correo H: cargar el usuario y la cuenta de pruebas (A4)
+   como `BANECO_CERT_*` en el `.env` local, nunca en el repo, y el catálogo de bancos
+   (D9) en `privado-no-gh/`. Si interesa, pedir los manuales de **Bec QR Connect** (G2).
 3. Revisar `.env.example`: si documenta `BANECO_POLL_INTERVAL_SECONDS` con 180,
    actualizarlo a 30 (Claude Code no tiene permiso de lectura sobre `.env.*`).
 4. Decidir la opción de WhatsAppModular en docs/04 §2.3.

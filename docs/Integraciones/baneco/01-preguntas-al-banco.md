@@ -9,7 +9,8 @@ certificación.
 
 **Estado:** ✅ **respondida por el banco el 2026-09-11** (correo del oficial de cuenta al
 dueño). Enviada el 2026-08-27. Queda una sola pregunta sin respuesta: **D1** (rangos de
-IP del webhook). Este documento es ahora **fuente de verdad de nivel 1** (ver
+IP del webhook). Surgieron **tres pedidos de seguimiento** (sección H), el más urgente la
+contraseña del usuario API de producción. Este documento es ahora **fuente de verdad de nivel 1** (ver
 `README.md`): ante discrepancia con el PDF oficial, gana lo que dice acá.
 
 **Numeración:** C7 (interoperabilidad) se resolvió internamente y no se envió, así que en
@@ -108,6 +109,58 @@ nuestro). El vector no se versiona: lleva la llave de certificación.
 |---|---|---|---|
 | G1 | ¿Es posible que nos den el manual y el formato de archivo para cargar **pago a proveedores**? | **No se tiene ese servicio, no está desarrollado.** | Discrepa con el PDF, que documenta `POST /api/batchPayment/upload` (§9.1, tipo `PROVIDERS`). Gana la respuesta: no se diseña nada sobre ese endpoint. |
 | G2 | ¿Es posible tener las especificaciones del estándar QR para **leer cualquier QR** desde nuestra plataforma? | Pueden enviar los manuales y especificaciones del servicio **Bec QR Connect**. | Coherente con C6 (solo entidades habilitadas interpretan el QR). Si el dueño lo pide, entra por `privado-no-gh/`. Fuera del alcance actual. |
+
+## H. Pedidos de seguimiento (2026-09-12, sin enviar todavía)
+
+Surgieron al preparar la prueba en producción (`03-prueba-en-produccion.md`). Van en un
+solo correo al oficial de cuenta, que es el canal de soporte (E2).
+
+| # | P | Pedido | Por qué | Estado |
+|---|---|---|---|---|
+| H1 | B | **Contraseña del usuario API de producción**, o el procedimiento para obtenerla o activarla. | El documento de producción trae usuario, llave AES y URL, pero no la contraseña, y sin ella el login falla. Ver nota H1. | Abierto. Bloquea la prueba en producción desde P1. |
+| H2 | D | **Catálogo de bancos** que dijeron adjuntar en D9. | No llegó. | Abierto. No bloquea. |
+| H3 | I | **Usuario de pruebas con su cuenta** para certificación (A4). | Sin la cuenta, B0 autentica pero no genera QRs. | Abierto. Bloquea B0 más allá del login. |
+
+**Nota H1: ningún documento del banco explica cómo se obtiene la contraseña.** Se
+revisaron el 2026-09-12 la espec. v1.3.0 completa, el documento del ambiente de producción,
+la presentación y los dos manuales derivados de este repo:
+
+- La espec. (§1) solo dice que el token se genera con credenciales "que serán
+  proporcionados por el Banco"; en el login (§6.1), `password` figura como "Contraseña
+  (cifrado)", sin procedimiento.
+- El documento de producción trae usuario, razón social, llave AES, URL y la tabla de
+  longitudes de campos. No trae contraseña.
+- La presentación no trata credenciales.
+- La única pista es B4: el **bloqueo o cambio** de contraseña se hace en agencia. O sea, la
+  contraseña existe y se gestiona en agencia; lo que nadie dijo es cómo llega la primera.
+
+Qué hacer, en orden:
+
+1. Ver si la contraseña llegó por otro canal: otro correo, un SMS o un sobre. Los bancos
+   suelen separar usuario y contraseña a propósito.
+2. Si no, pedirla por correo (borrador abajo). Que la entreguen **por un canal distinto de
+   un adjunto de correo**, igual que la llave de producción (B3).
+3. Si el banco dice que se gestiona en agencia, ir a una (B4) con el correo de los datos
+   de producción impreso.
+4. **No probar contraseñas.** Ni la de la banca por internet ni otras: el usuario API se
+   bloquea con intentos fallidos y solo se desbloquea en agencia (B4).
+
+Al recibirla, va solo a `~/.manejoqr/baneco-prod.env` (permisos 600,
+`03-prueba-en-produccion.md` §2). Nunca al repo, a un chat ni a `.env`.
+
+**Borrador del correo** (sin datos sensibles: el usuario se nombra por su función, no por
+su valor):
+
+> Estimado/a: gracias por los datos del ambiente de producción de API Market (usuario,
+> llave AES y URL). Para completar la integración nos falta la **contraseña del usuario
+> API** asignado, que no venía en el documento. ¿Nos pueden indicar cómo se entrega o se
+> activa? Si hay que gestionarla en agencia, ¿qué documentación debemos llevar?
+>
+> Aprovechamos para pedirles dos datos pendientes: el **catálogo de bancos** que
+> mencionaron en su respuesta anterior, que no llegó adjunto, y el **usuario de pruebas
+> con su cuenta** para el ambiente de certificación.
+>
+> Saludos cordiales.
 
 ---
 

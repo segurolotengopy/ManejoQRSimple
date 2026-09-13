@@ -1,0 +1,178 @@
+import { esExito } from '@mqs/qr-core';
+import { describe, expect, it } from 'vitest';
+
+import {
+  accionSegunEstado,
+  esHostDeCertificacion,
+  esIdSeguro,
+  hallazgosDelPago,
+  leerEstado,
+  leerModo,
+  leerReserva,
+  reservaLiberable,
+  serializarEstado,
+  serializarReserva,
+  type Captura,
+} from './pago-asistido.js';
+
+describe('leerModo()', () => {
+  it('sin banderas es el sondeo de siempre', () => {
+    const r = leerModo([]);
+    expect(esExito(r) && r.valor).toBe('SONDEO');
+  });
+
+  it.each([
+    ['--pago-asistido', 'EMITIR_PARA_PAGO'],
+    ['--capturar-pago', 'CAPTURAR_PAGO'],
+    ['--anular-pendiente', 'ANULAR_PENDIENTE'],
+  ])('%s → %s', (bandera, modo) => {
+    const r = leerModo([bandera]);
+    expect(esExito(r) && r.valor).toBe(modo);
+  });
+
+  it('una bandera desconocida es un error, no el sondeo por defecto', () => {
+    // Crea objetos reales en el banco: no se adivina qué quiso decir alguien.
+    expect(esExito(leerModo(['--pago-asistdo']))).toBe(false);
+  });
+
+  it('dos modos a la vez es un error', () => {
+    expect(esExito(leerModo(['--pago-asistido', '--capturar-pago']))).toBe(false);
+  });
+});
+
+describe('archivo de estado', () => {
+  const ESTADO = { qrId: '21061401016000000007', transactionId: 'B0-20260913-900', emitidoEn: '2026-09-13T12:00:00.000Z' };
+
+  it('va y vuelve', () => {
+    expect(leerEstado(serializarEstado(ESTADO))).toEqual(ESTADO);
+  });
+
+  it.each([
+    ['no es JSON', 'no-json'],
+    ['un qrId que escaparía del directorio', JSON.stringify({ ...ESTADO, qrId: '../../etc/x' })],
+    ['un transactionId más largo que lo que admite el banco', JSON.stringify({ ...ESTADO, transactionId: 'x'.repeat(31) })],
+    ['una fecha inválida', JSON.stringify({ ...ESTADO, emitidoEn: 'ayer' })],
+    ['campos faltantes', JSON.stringify({ qrId: ESTADO.qrId })],
+  ])('rechaza %s', (_caso, texto) => {
+    expect(leerEstado(texto)).toBeNull();
+  });
+});
+
+describe('accionSegunEstado()', () => {
+  it('pagado se captura, activo se espera, anulado se da por terminado', () => {
+    expect([1, 0, 9, 7].map(accionSegunEstado)).toEqual(['CAPTURAR', 'ESPERAR', 'YA_ANULADO', 'DESCONOCIDO']);
+  });
+});
+
+describe('hallazgosDelPago()', () => {
+  const BASE: Captura = {
+    montosCentavos: [100],
+    montoEsperadoCentavos: 100,
+    enPaidQr: true,
+    anulacion: { ok: false, tipo: 'RECHAZADO_POR_PROVEEDOR', codigo: '14' },
+    estadoTrasAnular: 1,
+  };
+  const veredicto = (c: Captura, pregunta: string) =>
+    hallazgosDelPago(c).find((h) => h.pregunta === pregunta)?.veredicto;
+
+  it('el caso esperado confirma todo y anota el responseCode del rechazo', () => {
+    const hallazgos = hallazgosDelPago(BASE);
+    expect(hallazgos.map((h) => [h.pregunta, h.veredicto])).toEqual([
+      ['A2', 'CONFIRMADO'],
+      ['V4', 'CONFIRMADO'],
+      ['D7', 'CONFIRMADO'],
+      ['C5', 'CONFIRMADO'],
+    ]);
+    expect(hallazgos.find((h) => h.pregunta === 'C5')?.detalle).toContain('responseCode 14');
+  });
+
+  it('un monto distinto al del QR refuta el monto fijo', () => {
+    expect(veredicto({ ...BASE, montosCentavos: [99] }, 'V4')).toBe('REFUTADO');
+  });
+
+  it('más de un pago o ninguno legible no concluye', () => {
+    expect(veredicto({ ...BASE, montosCentavos: [100, 100] }, 'V4')).toBe('NO_CONCLUYENTE');
+    expect(veredicto({ ...BASE, montosCentavos: [] }, 'V4')).toBe('NO_CONCLUYENTE');
+  });
+
+  it('un pago que no figura en paidQR de su día refuta el cierre diario', () => {
+    expect(veredicto({ ...BASE, enPaidQr: false }, 'D7')).toBe('REFUTADO');
+    expect(veredicto({ ...BASE, enPaidQr: null }, 'D7')).toBe('NO_CONCLUYENTE');
+  });
+
+  it('si el banco anula un QR pagado, se refuta: el pago dejaría de verse', () => {
+    expect(veredicto({ ...BASE, anulacion: { ok: true }, estadoTrasAnular: 9 }, 'C5')).toBe('REFUTADO');
+    expect(veredicto({ ...BASE, anulacion: { ok: true }, estadoTrasAnular: 1 }, 'C5')).toBe('CONFIRMADO');
+    expect(veredicto({ ...BASE, estadoTrasAnular: null }, 'C5')).toBe('NO_CONCLUYENTE');
+  });
+});
+
+describe('esIdSeguro()', () => {
+  it('acepta un qrId del banco y rechaza lo que escaparía del directorio o no se podría releer', () => {
+    expect(esIdSeguro('21061401016000000007')).toBe(true);
+    expect(esIdSeguro('../x')).toBe(false);
+    expect(esIdSeguro('qr.1')).toBe(false);
+    expect(esIdSeguro('x'.repeat(65))).toBe(false);
+  });
+});
+
+describe('esHostDeCertificacion()', () => {
+  it('solo el host exacto de certificación, con cualquier ruta y mayúsculas del dominio', () => {
+    expect(esHostDeCertificacion('https://apimktdesa.baneco.com.bo/ApiGateway')).toBe(true);
+    expect(esHostDeCertificacion('https://APIMKTDESA.baneco.com.bo/ApiGateway')).toBe(true);
+  });
+
+  it.each([
+    ['producción', 'https://apimkt.baneco.com.bo/apiGateway'],
+    ['una IP', 'https://10.0.0.5/ApiGateway'],
+    ['un host que solo lo contiene', 'https://apimktdesa.baneco.com.bo.otro.com/ApiGateway'],
+    ['algo que no es URL', 'no-es-url'],
+  ])('rechaza %s', (_caso, url) => {
+    expect(esHostDeCertificacion(url)).toBe(false);
+  });
+});
+
+describe('reserva antes de emitir', () => {
+  it('no se confunde con un estado completo: bloquea todos los modos hasta revisarla', () => {
+    // Si el banco creó el QR pero la respuesta se perdió, la reserva es la
+    // única pista: ningún modo la trata como "no hay nada pendiente".
+    expect(leerEstado(serializarReserva('B0-20260913-900', '2026-09-13T12:00:00.000Z'))).toBeNull();
+  });
+});
+
+describe('esHostDeCertificacion() exige https', () => {
+  it('rechaza el host correcto por http: el JWT viajaría en claro', () => {
+    expect(esHostDeCertificacion('http://apimktdesa.baneco.com.bo/ApiGateway')).toBe(false);
+  });
+});
+
+describe('reservaLiberable()', () => {
+  it('solo con certeza de que el banco no creó el QR', () => {
+    // HTTP 200 con responseCode != 0: el banco respondió y rechazó.
+    expect(reservaLiberable({ tipo: 'RECHAZADO_POR_PROVEEDOR', codigoProveedor: '12' })).toBe(true);
+    // 401/403: el gateway no dejó pasar el pedido.
+    expect(reservaLiberable({ tipo: 'NO_AUTORIZADO', codigoProveedor: null })).toBe(true);
+  });
+
+  it.each([
+    ['un 4xx del gateway (408, 499): el banco pudo haberlo procesado', { tipo: 'RECHAZADO_POR_PROVEEDOR', codigoProveedor: null }],
+    ['un timeout', { tipo: 'INDISPONIBLE', codigoProveedor: null }],
+    ['una respuesta ilegible', { tipo: 'RESPUESTA_INVALIDA', codigoProveedor: null }],
+  ])('conserva la reserva ante %s', (_caso, error) => {
+    expect(reservaLiberable(error)).toBe(false);
+  });
+});
+
+describe('leerReserva()', () => {
+  it('reconoce la reserva y devuelve lo que hace falta para consultarla con el banco', () => {
+    expect(leerReserva(serializarReserva('B0-20260913-900', '2026-09-13T12:00:00.000Z'))).toEqual({
+      transactionId: 'B0-20260913-900',
+      emitidoEn: '2026-09-13T12:00:00.000Z',
+    });
+  });
+
+  it('un estado completo no es una reserva', () => {
+    const estado = { qrId: '21061401016000000007', transactionId: 'B0-20260913-900', emitidoEn: '2026-09-13T12:00:00.000Z' };
+    expect(leerReserva(serializarEstado(estado))).toBeNull();
+  });
+});

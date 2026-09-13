@@ -110,12 +110,25 @@ export {
   type UmbralesHoras,
 } from './revision/revision.js';
 export {
+  construirCasoAbono,
+  MOTIVO_MINIMO,
+  MOTIVOS_ABONO_SIN_CONCILIAR,
+  ordenarCasosAbono,
+  type AbonoSinConciliar,
+  type CasoAbono,
+  type CobroDelAbono,
+  type MotivoAbonoSinConciliar,
+  type ResolucionAbono,
+} from './revision/abono-sin-conciliar.js';
+export {
   buscarAbonoEnRevision,
+  cerrarAbonoSinConciliar,
   LIMITE_REVISION,
   listarRevision,
   resolverRevision,
   type ColaRevision,
   type DepsBusqueda,
+  type DepsRevision,
   type Resolucion,
   type ResultadoBusqueda,
 } from './casos-uso/revisar.js';
@@ -133,6 +146,7 @@ export {
   vigilar,
   type Dependencias,
   type DepsAnulacion,
+  type DepsCierre,
   type DepsEmision,
   type DepsPersistencia,
   type DepsRenovacion,
@@ -146,6 +160,7 @@ export {
 
 // Puertos y sus tests de contrato compartidos
 export type {
+  AbonosSinConciliarStore,
   CobroRepository,
   ErrorPuerto,
   EvidenceStore,
@@ -156,6 +171,7 @@ export type {
   SolicitudQr,
 } from './ports/puertos.js';
 export {
+  CASOS_ABONOS_SIN_CONCILIAR,
   CASOS_COBRO_REPOSITORY,
   CASOS_EVIDENCE_STORE,
   CASOS_PAYMENT_WATCHER,
@@ -164,6 +180,7 @@ export {
   type CasoDeContrato,
 } from './ports/contrato.js';
 export {
+  AbonosSinConciliarEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,

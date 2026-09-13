@@ -42,6 +42,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Abonos que el cierre diario no pudo atar a un cobro. Los escribe y los
+    // cierra solo el Admin SDK (satélite y API), bajo las reglas del dominio.
+    match /abonosSinConciliar/{idDeduplicacion} {
+      allow read: if esDuenoAutenticado();
+      allow write: if false;
+    }
+
     // Comprobantes que llegan por WhatsApp. Evidencia auxiliar: no confirman
     // nada por sí solos (ADR-005).
     match /comprobantes/{messageId} {

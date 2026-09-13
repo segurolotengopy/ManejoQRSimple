@@ -89,6 +89,28 @@ export type CasoRevision = {
   readonly abono: AbonoEnRevision | null;
 };
 
+export type MotivoAbono = 'HUERFANO' | 'SIN_CORROBORAR';
+
+/**
+ * Un pago que el cierre diario no pudo atar a ningún cobro. No se confirma
+ * nada con él: se cierra con lo que se hizo con la plata.
+ */
+export type AbonoSinConciliar = {
+  readonly idDeduplicacion: string;
+  readonly motivo: MotivoAbono;
+  readonly cobroId: string | null;
+  /** Estado actual del cobro del QR, si existe. */
+  readonly cobroEstado: EstadoCobro | null;
+  /** El cobro ya registra este mismo pago: está explicado, no es plata para devolver. */
+  readonly yaRegistradoEnElCobro: boolean;
+  /** Decimal como texto (regla #5). */
+  readonly monto: string;
+  readonly ocurridoEn: string;
+  readonly registradoEn: string;
+  readonly horasAbierto: number;
+  readonly nivel: NivelAlerta;
+};
+
 export type ResumenRevision = {
   readonly total: number;
   readonly criticos: number;
@@ -97,6 +119,7 @@ export type ResumenRevision = {
 
 export type ColaRevision = {
   readonly casos: readonly CasoRevision[];
+  readonly abonos: readonly AbonoSinConciliar[];
   readonly resumen: ResumenRevision;
   /** Hay más casos de los que entran en la cola: el resumen se queda corto. */
   readonly truncado: boolean;
@@ -217,6 +240,11 @@ export class ClienteApi {
   /** Le pregunta al banco si hay un pago para un cobro en revisión. */
   buscarAbono(id: string): Promise<Resultado<{ encontrado: boolean; cobro: Cobro }>> {
     return this.pedir('POST', `/api/cobros/${encodeURIComponent(id)}/buscar-abono`, {});
+  }
+
+  /** Cierra un pago sin cobro con lo que se hizo con la plata. No toca ningún cobro. */
+  cerrarAbono(idDeduplicacion: string, motivo: string): Promise<Resultado<{ idDeduplicacion: string; cerrado: boolean }>> {
+    return this.pedir('POST', `/api/abonos/${encodeURIComponent(idDeduplicacion)}/cerrar`, { motivo });
   }
 
   /** Las últimas líneas de log de la API. */

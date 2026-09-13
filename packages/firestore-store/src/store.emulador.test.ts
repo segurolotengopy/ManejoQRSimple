@@ -8,6 +8,7 @@
  */
 
 import {
+  CASOS_ABONOS_SIN_CONCILIAR,
   CASOS_COBRO_REPOSITORY,
   CASOS_EVIDENCE_STORE,
   centavos,
@@ -20,6 +21,7 @@ import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { AbonosSinConciliarFirestore, COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
 import { CobroRepositoryFirestore, EvidenceStoreFirestore } from './repositorio.js';
 
 let app: App;
@@ -95,6 +97,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.recursiveDelete(db.collection('cobros'));
+  await db.recursiveDelete(db.collection(COLECCION_ABONOS_SIN_CONCILIAR));
 });
 
 describe('contrato de los puertos contra Firestore real', () => {
@@ -104,6 +107,30 @@ describe('contrato de los puertos contra Firestore real', () => {
 
   it.each(CASOS_EVIDENCE_STORE)('EvidenceStore — $nombre', async ({ ejecutar }) => {
     await expect(ejecutar(new EvidenceStoreFirestore(db))).resolves.toBeUndefined();
+  });
+
+  it.each(CASOS_ABONOS_SIN_CONCILIAR)('AbonosSinConciliarStore — $nombre', async ({ ejecutar }) => {
+    await expect(ejecutar(new AbonosSinConciliarFirestore(db))).resolves.toBeUndefined();
+  });
+});
+
+describe('AbonosSinConciliarFirestore', () => {
+  it('un id del banco con "/" no abre una subcolección', async () => {
+    const store = new AbonosSinConciliarFirestore(db);
+    const monto = bs(100);
+    const r = await store.registrar({
+      idDeduplicacion: 'baneco:qr/raro:tx-1',
+      motivo: 'HUERFANO',
+      cobroId: null,
+      montoCentavos: monto,
+      ocurridoEn: T0,
+      origen: 'watcher-baneco',
+      registradoEn: T0,
+      resolucion: null,
+    });
+    expect(esExito(r)).toBe(true);
+    const abiertos = await store.listarAbiertos(10);
+    expect(esExito(abiertos) && abiertos.valor.map((a) => a.idDeduplicacion)).toEqual(['baneco:qr/raro:tx-1']);
   });
 });
 

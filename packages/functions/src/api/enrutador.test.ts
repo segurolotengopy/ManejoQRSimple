@@ -1,4 +1,5 @@
 import {
+  AbonosSinConciliarEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
@@ -39,8 +40,10 @@ function armar() {
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
   const mensajeria = new MessagingProviderEnMemoria();
+  const abonosSinConciliar = new AbonosSinConciliarEnMemoria();
 
   const ctx: ContextoApi = {
+    abonosSinConciliar,
     deps: {
       cobros,
       evidencia,
@@ -55,7 +58,7 @@ function armar() {
     horasDeVigenciaPorDefecto: 72,
     ahora: () => AHORA,
   };
-  return { ctx, watcher, mensajeria, evidencia };
+  return { ctx, watcher, mensajeria, evidencia, abonosSinConciliar };
 }
 
 function pedir(
@@ -97,6 +100,7 @@ describe('autenticación', () => {
     ['POST', '/api/pruebas/cerrar'],
     ['GET', '/api/cobros/x/qr'],
     ['POST', '/api/cobros/x/sondear-anulacion'],
+    ['POST', '/api/abonos/x/cerrar'],
   ];
 
   it.each(rutas)('%s %s exige token', async (metodo, ruta) => {
@@ -622,5 +626,87 @@ describe('GET /api/cobros', () => {
     const r = await enrutar(ctx, aceptaTodo, pedir('GET', '/api/cobros'));
     const cuerpo = r.cuerpo as { cobros: { id: string; estado: string }[] };
     expect(cuerpo.cobros.find((c) => c.id === id)?.estado).toBe('ANULADO');
+  });
+});
+
+describe('abonos sin conciliar por la API', () => {
+  const ID = 'baneco:qr-de-nadie:tx-9';
+
+  async function conAbonoHuerfano() {
+    const base = armar();
+    await base.abonosSinConciliar.registrar({
+      idDeduplicacion: ID,
+      motivo: 'HUERFANO',
+      cobroId: null,
+      montoCentavos: monto(500),
+      ocurridoEn: new Date(AHORA.getTime() - 20 * 3_600_000),
+      origen: 'watcher-baneco',
+      registradoEn: new Date(AHORA.getTime() - 5 * 3_600_000),
+      resolucion: null,
+    });
+    return base;
+  }
+
+  it('la cola de revisión los muestra y las alertas los cuentan', async () => {
+    const { ctx } = await conAbonoHuerfano();
+    const r = await enrutar(ctx, aceptaTodo, pedir('GET', '/api/revision'));
+    expect(r.status).toBe(200);
+    const cuerpo = r.cuerpo as { abonos: Record<string, unknown>[]; resumen: Record<string, number> };
+    expect(cuerpo.abonos).toEqual([
+      {
+        idDeduplicacion: ID,
+        motivo: 'HUERFANO',
+        cobroId: null,
+        cobroEstado: null,
+        yaRegistradoEnElCobro: false,
+        monto: '5.00',
+        ocurridoEn: '2026-08-27T16:00:00.000Z',
+        registradoEn: '2026-08-28T07:00:00.000Z',
+        horasAbierto: 5,
+        nivel: 'ATRASADO',
+      },
+    ]);
+    expect(cuerpo.resumen).toEqual({ total: 1, criticos: 0, atrasados: 1 });
+  });
+
+  it('cerrar con motivo lo saca de la cola', async () => {
+    const { ctx } = await conAbonoHuerfano();
+    const r = await enrutar(
+      ctx,
+      aceptaTodo,
+      pedir('POST', `/api/abonos/${encodeURIComponent(ID)}/cerrar`, { motivo: 'Devuelto al pagador por transferencia' }),
+    );
+    expect(r.status).toBe(200);
+    const cola = await enrutar(ctx, aceptaTodo, pedir('GET', '/api/revision'));
+    expect((cola.cuerpo as { abonos: unknown[] }).abonos).toEqual([]);
+
+    // Una segunda resolución no pisa la primera.
+    const otraVez = await enrutar(
+      ctx,
+      aceptaTodo,
+      pedir('POST', `/api/abonos/${encodeURIComponent(ID)}/cerrar`, { motivo: 'Otra decisión distinta' }),
+    );
+    expect(otraVez.status).toBe(409);
+  });
+
+  it('sin motivo suficiente no se cierra', async () => {
+    const { ctx } = await conAbonoHuerfano();
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', `/api/abonos/${encodeURIComponent(ID)}/cerrar`, { motivo: 'ok' }));
+    expect(r.status).toBe(400);
+  });
+
+  it('rutas que no son de un abono responden 404, y otro método 405', async () => {
+    const { ctx } = await conAbonoHuerfano();
+    const casos: [Metodo, string, number][] = [
+      ['POST', '/api/abonos/baneco%3Aqr-z%3Atx-1/cerrar', 404],
+      ['POST', `/api/abonos/${encodeURIComponent('a/../b')}/cerrar`, 404],
+      ['POST', '/api/abonos/%E0%A4%A/cerrar', 404],
+      ['POST', `/api/abonos/${encodeURIComponent(ID)}/reabrir`, 404],
+      ['GET', `/api/abonos/${encodeURIComponent(ID)}/cerrar`, 405],
+    ];
+    for (const [metodo, ruta, status] of casos) {
+      const r = await enrutar(ctx, aceptaTodo, pedir(metodo, ruta, { motivo: 'Devuelto al pagador' }));
+      expect([ruta, r.status]).toEqual([ruta, status]);
+    }
   });
 });

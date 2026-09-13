@@ -7,7 +7,7 @@
  * cuándo avisarle.
  */
 
-import type { MotivoRevision, NivelAlerta, ResumenRevision } from './api.js';
+import type { MotivoAbono, MotivoRevision, NivelAlerta, ResumenRevision } from './api.js';
 
 const MOTIVO: Readonly<Record<MotivoRevision, string>> = {
   MONTO_NO_COINCIDE: 'El monto pagado no coincide con el del cobro',
@@ -59,6 +59,35 @@ const TEXTO_NIVEL: Readonly<Record<NivelAlerta, string>> = {
 
 export const describirMotivo = (motivo: MotivoRevision): string => MOTIVO[motivo];
 export const recomendacion = (motivo: MotivoRevision): string => RECOMENDACION[motivo];
+
+const MOTIVO_ABONO: Readonly<Record<MotivoAbono, string>> = {
+  HUERFANO: 'Pago que ningún cobro espera',
+  SIN_CORROBORAR: 'Pago que la consulta del QR no respalda',
+};
+
+/** Qué hacer con un pago sin cobro. Es `docs/09-revision-manual.md` §4 en una línea. */
+const RECOMENDACION_ABONO: Readonly<Record<MotivoAbono, string>> = {
+  HUERFANO:
+    'Buscá en el extracto de quién es. Si era de un cobro anulado o de un QR ya renovado, hablá con el ' +
+    'cliente: devolvé la plata o dejá escrito a qué venta corresponde. Nunca lo cargues a otro cobro para ' +
+    'que cierre.',
+  SIN_CORROBORAR:
+    'El reporte del día lo trae, pero la consulta del QR no. Usá "Buscar el pago en el banco" en el cobro; ' +
+    'si sigue sin aparecer, consultá al banco antes de dar nada por pagado.',
+};
+
+export const describirMotivoAbono = (motivo: MotivoAbono): string => MOTIVO_ABONO[motivo];
+
+/**
+ * Si el cobro ya registra el pago, la recomendación cambia por completo: no hay
+ * plata sin dueño, y devolverla sería reembolsar un cobro confirmado.
+ */
+export function recomendacionAbono(motivo: MotivoAbono, yaRegistradoEnElCobro: boolean): string {
+  return yaRegistradoEnElCobro
+    ? 'El sistema detectó este pago en su cobro después del cierre: ya está explicado. No devuelvas la ' +
+        'plata; cerralo indicando que figura en el cobro.'
+    : RECOMENDACION_ABONO[motivo];
+}
 export const tonoDeNivel = (nivel: NivelAlerta): string => TONO_NIVEL[nivel];
 export const textoNivel = (nivel: NivelAlerta): string => TEXTO_NIVEL[nivel];
 

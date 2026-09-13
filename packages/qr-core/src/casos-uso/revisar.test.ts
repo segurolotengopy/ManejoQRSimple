@@ -4,12 +4,14 @@ import { esExito } from '../comun/resultado.js';
 import { POLITICA_POR_DEFECTO } from '../conciliacion/conciliar.js';
 import { registrarDeteccion } from '../conciliacion/deteccion.js';
 import {
+  AbonosSinConciliarEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
   PaymentWatcherEnMemoria,
   QrProviderEnMemoria,
 } from '../ports/mocks.js';
+import type { AbonoSinConciliar } from '../revision/abono-sin-conciliar.js';
 import { POLITICA_REVISION_POR_DEFECTO } from '../revision/revision.js';
 import { bs, enMinutos, T0, unCobro } from '../pruebas/fixtures.js';
 import {
@@ -20,7 +22,13 @@ import {
   vigilar,
   type Dependencias,
 } from './cobrar.js';
-import { buscarAbonoEnRevision, listarRevision, resolverRevision } from './revisar.js';
+import {
+  buscarAbonoEnRevision,
+  cerrarAbonoSinConciliar,
+  listarRevision,
+  resolverRevision,
+  type DepsRevision,
+} from './revisar.js';
 
 const MONTO = 12_345;
 const REFERENCIA = 'mock-qr-000001';
@@ -30,15 +38,17 @@ function armar() {
   const evidencia = new EvidenceStoreEnMemoria();
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
-  const deps: Dependencias = {
+  const abonosSinConciliar = new AbonosSinConciliarEnMemoria();
+  const deps: Dependencias & DepsRevision = {
     cobros,
     evidencia,
     qr: new QrProviderEnMemoria(() => T0),
     watcher,
     mensajeria: new MessagingProviderEnMemoria(),
     politica: POLITICA_POR_DEFECTO,
+    abonosSinConciliar,
   };
-  return { deps, cobros, evidencia, watcher };
+  return { deps, cobros, evidencia, watcher, abonosSinConciliar };
 }
 
 function abono(monto = MONTO, ocurridoEn = enMinutos(30), idDeduplicacion = ABONO_1) {
@@ -206,5 +216,120 @@ describe('buscarAbonoEnRevision()', () => {
       enMinutos(72 * 60 + 7),
     );
     expect(esExito(r) && r.valor.estado).toBe('CONFIRMADO');
+  });
+});
+
+describe('abonos sin conciliar en la cola de revisión', () => {
+  function unAbonoHuerfano(idDeduplicacion: string, registradoEn: Date): AbonoSinConciliar {
+    return {
+      idDeduplicacion,
+      motivo: 'HUERFANO',
+      cobroId: null,
+      montoCentavos: bs(500),
+      ocurridoEn: T0,
+      origen: 'watcher-baneco',
+      registradoEn,
+      resolucion: null,
+    };
+  }
+
+  it('entran a la cola y a las alertas, con los umbrales de "con plata"', async () => {
+    const { deps, abonosSinConciliar } = armar();
+    await abonosSinConciliar.registrar(unAbonoHuerfano('baneco:qr-x:tx-1', T0));
+
+    const r = await listarRevision(deps, enMinutos(25 * 60));
+    expect(esExito(r)).toBe(true);
+    if (!esExito(r)) return;
+    expect(r.valor.casos).toEqual([]);
+    expect(r.valor.abonos.map((a) => [a.abono.idDeduplicacion, a.nivel])).toEqual([['baneco:qr-x:tx-1', 'CRITICO']]);
+    expect(r.valor.resumen).toEqual({ total: 1, criticos: 1, atrasados: 0 });
+  });
+
+  it('el tope de la cola también cuenta los abonos', async () => {
+    const { deps, abonosSinConciliar } = armar();
+    await abonosSinConciliar.registrar(unAbonoHuerfano('baneco:qr-x:tx-1', T0));
+    await abonosSinConciliar.registrar(unAbonoHuerfano('baneco:qr-y:tx-1', T0));
+
+    const r = await listarRevision(deps, enMinutos(60), POLITICA_REVISION_POR_DEFECTO, 1);
+    expect(esExito(r) && r.valor.truncado).toBe(true);
+    expect(esExito(r) && r.valor.abonos).toHaveLength(1);
+  });
+
+  it('cerrarlo exige un motivo, y ya cerrado sale de la cola', async () => {
+    const { deps, abonosSinConciliar } = armar();
+    await abonosSinConciliar.registrar(unAbonoHuerfano('baneco:qr-x:tx-1', T0));
+
+    const sinMotivo = await cerrarAbonoSinConciliar(deps, 'baneco:qr-x:tx-1', '  ok  ', enMinutos(60));
+    expect(!esExito(sinMotivo) && sinMotivo.error.tipo).toBe('MOTIVO_INSUFICIENTE');
+
+    const cerrado = await cerrarAbonoSinConciliar(deps, 'baneco:qr-x:tx-1', '  Devuelto al pagador  ', enMinutos(60));
+    expect(esExito(cerrado) && cerrado.valor.resolucion).toEqual({
+      motivo: 'Devuelto al pagador',
+      resueltoEn: enMinutos(60),
+    });
+    const r = await listarRevision(deps, enMinutos(61));
+    expect(esExito(r) && r.valor.abonos).toEqual([]);
+  });
+
+  it('no se cierra lo que no existe, ni dos veces lo mismo', async () => {
+    const { deps, abonosSinConciliar } = armar();
+    const inexistente = await cerrarAbonoSinConciliar(deps, 'baneco:qr-z:tx-1', 'Devuelto al pagador', enMinutos(60));
+    expect(!esExito(inexistente) && inexistente.error.tipo).toBe('ABONO_INEXISTENTE');
+
+    await abonosSinConciliar.registrar(unAbonoHuerfano('baneco:qr-x:tx-1', T0));
+    await cerrarAbonoSinConciliar(deps, 'baneco:qr-x:tx-1', 'Devuelto al pagador', enMinutos(60));
+    const otraVez = await cerrarAbonoSinConciliar(deps, 'baneco:qr-x:tx-1', 'Otra decisión distinta', enMinutos(61));
+    expect(!esExito(otraVez) && otraVez.error.tipo === 'PUERTO' && otraVez.error.error.tipo).toBe('CONFLICTO');
+  });
+});
+
+describe('un abono sin corroborar que después se explica', () => {
+  it('muestra el cobro como está ahora y deja de alertar si ya registra el pago', async () => {
+    // El cierre vio el pago en paidQR antes que statusQR; horas después la
+    // vigilancia normal lo detectó y confirmó el cobro. No es plata sin dueño.
+    const { deps, watcher, abonosSinConciliar } = armar();
+    const cobro = await enviado(deps);
+    await abonosSinConciliar.registrar({
+      idDeduplicacion: ABONO_1,
+      motivo: 'SIN_CORROBORAR',
+      cobroId: cobro.id,
+      montoCentavos: bs(MONTO),
+      ocurridoEn: enMinutos(30),
+      origen: 'watcher-baneco',
+      registradoEn: enMinutos(35),
+      resolucion: null,
+    });
+    watcher.cargarAbono(REFERENCIA, abono());
+    const confirmado = await verificarPago(deps, cobro, enMinutos(40));
+    expect(esExito(confirmado) && confirmado.valor.tipo).toBe('CONFIRMADO');
+
+    const r = await listarRevision(deps, enMinutos(35 + 25 * 60));
+    expect(esExito(r) && r.valor.abonos[0]).toMatchObject({
+      nivel: 'AL_DIA',
+      cobro: { id: cobro.id, estado: 'CONFIRMADO', registraElPago: true },
+    });
+    // Sigue en la cola: cerrarlo lleva motivo. Pero no suma a las alertas.
+    expect(esExito(r) && r.valor.resumen).toEqual({ total: 1, criticos: 0, atrasados: 0 });
+  });
+
+  it('si el cobro no registra ese pago, alerta como cualquier otro', async () => {
+    const { deps, abonosSinConciliar } = armar();
+    const cobro = await enviado(deps);
+    await abonosSinConciliar.registrar({
+      idDeduplicacion: ABONO_1,
+      motivo: 'SIN_CORROBORAR',
+      cobroId: cobro.id,
+      montoCentavos: bs(MONTO),
+      ocurridoEn: enMinutos(30),
+      origen: 'watcher-baneco',
+      registradoEn: enMinutos(35),
+      resolucion: null,
+    });
+
+    const r = await listarRevision(deps, enMinutos(35 + 25 * 60));
+    expect(esExito(r) && r.valor.abonos[0]).toMatchObject({
+      nivel: 'CRITICO',
+      cobro: { id: cobro.id, estado: 'ENVIADO', registraElPago: false },
+    });
   });
 });

@@ -17,6 +17,7 @@ import type { Cobro, OrigenQr, QrEmitido } from '../cobro/cobro.js';
 import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
+import type { AbonoSinConciliar, ResolucionAbono } from '../revision/abono-sin-conciliar.js';
 
 /**
  * Falla de un adaptador. Deliberadamente opaca: el dominio no interpreta
@@ -158,4 +159,31 @@ export interface CobroRepository {
 export interface EvidenceStore {
   agregar(registro: RegistroEvidencia): Promise<Resultado<void, ErrorPuerto>>;
   listarDeCobro(cobroId: string): Promise<Resultado<readonly RegistroEvidencia[], ErrorPuerto>>;
+}
+
+/**
+ * Abonos que el cierre diario no pudo atar a un cobro, hasta que una persona
+ * los cierre.
+ *
+ * Sin `borrar`, por la misma razón que `EvidenceStore`: un abono cerrado sigue
+ * guardado con su resolución, y un abono sin cerrar no desaparece por error.
+ */
+export interface AbonosSinConciliarStore {
+  /**
+   * Guarda un abono abierto. **Idempotente** por `idDeduplicacion`: si ya
+   * existe, abierto o cerrado, no hace nada. Repetir el cierre de un día no
+   * duplica el caso ni reabre uno que la persona ya cerró.
+   */
+  registrar(abono: AbonoSinConciliar): Promise<Resultado<void, ErrorPuerto>>;
+  /** Los que siguen abiertos, hasta `limite`. */
+  listarAbiertos(limite: number): Promise<Resultado<readonly AbonoSinConciliar[], ErrorPuerto>>;
+  /**
+   * Cierra un abono abierto con la resolución de la persona y lo devuelve.
+   * `null` si no existe; `CONFLICTO` si ya estaba cerrado: una resolución no
+   * se pisa con otra.
+   */
+  cerrar(
+    idDeduplicacion: string,
+    resolucion: ResolucionAbono,
+  ): Promise<Resultado<AbonoSinConciliar | null, ErrorPuerto>>;
 }

@@ -23,6 +23,10 @@ export {
   COLECCION_ABONOS,
 } from './watcher-abonos.js';
 export {
+  AbonosSinConciliarFirestore,
+  COLECCION_ABONOS_SIN_CONCILIAR,
+} from './abonos-sin-conciliar.js';
+export {
   cobroADocumento,
   documentoACobro,
   documentoAEvidencia,

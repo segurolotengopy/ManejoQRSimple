@@ -58,6 +58,9 @@ export const cuerpoResolver = z.discriminatedUnion('decision', [
   z.object({ decision: z.literal('RECHAZADO'), motivo: motivoResolucion }),
 ]);
 
+/** Cerrar un abono sin conciliar: qué se hizo con la plata. */
+export const cuerpoCerrarAbono = z.object({ motivo: motivoResolucion });
+
 /** QR de prueba: el monto lo fija el servidor; acá solo se elige la vigencia. */
 export const cuerpoQrDePrueba = z.object({
   vigenciaMinutos: z.number().int().min(2).max(24 * 60).optional(),

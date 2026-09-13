@@ -4,6 +4,7 @@ import { esExito, type Resultado } from '../comun/resultado.js';
 import { POLITICA_POR_DEFECTO } from '../conciliacion/conciliar.js';
 import { registrarDeteccion, type DeteccionDePago } from '../conciliacion/deteccion.js';
 import {
+  AbonosSinConciliarEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
@@ -22,6 +23,7 @@ import {
   verificarPago,
   vigilar,
   type Dependencias,
+  type DepsCierre,
 } from './cobrar.js';
 
 const MONTO = 12_345;
@@ -65,15 +67,18 @@ function armar(qr: QrContado = new QrContado(() => T0)) {
   const watcher = new PaymentWatcherEnMemoria();
   const mensajeria = new MessagingProviderEnMemoria();
 
-  const deps: Dependencias = {
+  const abonosSinConciliar = new AbonosSinConciliarEnMemoria();
+
+  const deps: Dependencias & DepsCierre = {
     cobros,
     evidencia,
     qr,
     watcher,
     mensajeria,
     politica: POLITICA_POR_DEFECTO,
+    abonosSinConciliar,
   };
-  return { deps, evidencia, cobros, watcher, mensajeria, qr };
+  return { deps, evidencia, cobros, watcher, mensajeria, qr, abonosSinConciliar };
 }
 
 function abono(sobrescribir: Partial<{ monto: number; ocurridoEn: Date }> = {}): DeteccionDePago {
@@ -594,6 +599,80 @@ describe('conciliarDia()', () => {
 
     const r = await conciliarDia(deps, enMinutos(30), enMinutos(40));
     expect(esExito(r) && r.valor.huerfanos).toEqual(['baneco:mock-qr-000001:tx-1']);
+  });
+
+  it('guarda los abonos sin conciliar para la pestaña Revisión, no solo el log', async () => {
+    const { deps, watcher, abonosSinConciliar } = armar();
+    const cobro = await hastaEnviado(deps);
+    await anular(deps, cobro, 'x', enMinutos(10));
+    watcher.cargarAbono(REFERENCIA, abono());
+
+    await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    const abiertos = await abonosSinConciliar.listarAbiertos(10);
+    expect(esExito(abiertos) && abiertos.valor).toEqual([
+      {
+        idDeduplicacion: 'baneco:mock-qr-000001:tx-1',
+        motivo: 'HUERFANO',
+        cobroId: 'cobro-1',
+        montoCentavos: bs(MONTO),
+        ocurridoEn: enMinutos(30),
+        origen: 'watcher-baneco',
+        registradoEn: enMinutos(40),
+        resolucion: null,
+      },
+    ]);
+  });
+
+  it('repetir el cierre no duplica el abono ni reabre uno ya cerrado', async () => {
+    const { deps, watcher, abonosSinConciliar } = armar();
+    watcher.cargarAbono(
+      'qr-de-nadie',
+      registrarDeteccion({
+        idDeduplicacion: 'baneco:qr-de-nadie:tx-1',
+        montoCentavos: bs(500),
+        ocurridoEn: enMinutos(30),
+        origen: 'watcher-baneco',
+        referencia: null,
+      }),
+    );
+    await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    await abonosSinConciliar.cerrar('baneco:qr-de-nadie:tx-1', {
+      motivo: 'Devuelto al pagador',
+      resueltoEn: enMinutos(50),
+    });
+
+    const otraVez = await conciliarDia(deps, enMinutos(30), enMinutos(60));
+    expect(esExito(otraVez) && otraVez.valor.huerfanos).toEqual(['baneco:qr-de-nadie:tx-1']);
+    const abiertos = await abonosSinConciliar.listarAbiertos(10);
+    expect(esExito(abiertos) && abiertos.valor).toEqual([]);
+  });
+
+  it('si el abono no se puede guardar, no cuenta como reportado: el día no cierra', async () => {
+    // Reportarlo sin guardarlo sería volver a dejar la plata solo en un log.
+    class AlmacenCaido extends AbonosSinConciliarEnMemoria {
+      override registrar(): ReturnType<AbonosSinConciliarEnMemoria['registrar']> {
+        return Promise.resolve({
+          ok: false,
+          error: { tipo: 'INDISPONIBLE', mensaje: 'caído', reintentable: true, codigoProveedor: null },
+        });
+      }
+    }
+    const base = armar();
+    const deps = { ...base.deps, abonosSinConciliar: new AlmacenCaido() };
+    base.watcher.cargarAbono(
+      'qr-de-nadie',
+      registrarDeteccion({
+        idDeduplicacion: 'baneco:qr-de-nadie:tx-1',
+        montoCentavos: bs(500),
+        ocurridoEn: enMinutos(30),
+        origen: 'watcher-baneco',
+        referencia: null,
+      }),
+    );
+
+    const r = await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    expect(esExito(r) && r.valor.huerfanos).toEqual([]);
+    expect(esExito(r) && r.valor.conError.map((e) => e.idDeduplicacion)).toEqual(['baneco:qr-de-nadie:tx-1']);
   });
 });
 

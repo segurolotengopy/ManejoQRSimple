@@ -25,8 +25,11 @@ import {
   registrarComprobante,
   renovarYReenviar,
   resolverRevision,
+  cerrarAbonoSinConciliar,
   verificarAdmision,
   verificarPago,
+  type AbonosSinConciliarStore,
+  type CasoAbono,
   type CasoRevision,
   type Cobro,
   type Dependencias,
@@ -39,6 +42,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   cuerpoAnular,
+  cuerpoCerrarAbono,
   cuerpoComprobante,
   cuerpoCrearCobro,
   cuerpoQrDePrueba,
@@ -54,6 +58,8 @@ const HORA_MS = 3_600_000;
 export type ContextoApi = {
   readonly deps: Dependencias;
   readonly evidencia: EvidenceStore;
+  /** Abonos que el cierre diario no pudo atar a un cobro: van a la cola de revisión. */
+  readonly abonosSinConciliar: AbonosSinConciliarStore;
   /** Vigencia por defecto de un QR nuevo. */
   readonly horasDeVigenciaPorDefecto: number;
   readonly ahora: () => Date;
@@ -119,6 +125,28 @@ function aVistaCaso(caso: CasoRevision): Record<string, unknown> {
   };
 }
 
+/**
+ * Vista de un abono sin conciliar. Solo lo que guarda el dominio: monto,
+ * momento y la clave del banco. Nada del pagador (reglas #4 y #9).
+ */
+function aVistaAbono(caso: CasoAbono): Record<string, unknown> {
+  const { abono } = caso;
+  return {
+    idDeduplicacion: abono.idDeduplicacion,
+    motivo: abono.motivo,
+    cobroId: abono.cobroId,
+    // Cómo está ahora ese cobro y si ya registra este pago: un "sin
+    // corroborar" que después se confirmó no es plata para devolver.
+    cobroEstado: caso.cobro?.estado ?? null,
+    yaRegistradoEnElCobro: caso.cobro?.registraElPago ?? false,
+    monto: aDecimalBob(abono.montoCentavos),
+    ocurridoEn: abono.ocurridoEn.toISOString(),
+    registradoEn: abono.registradoEn.toISOString(),
+    horasAbierto: Math.floor(caso.horasAbierto),
+    nivel: caso.nivel,
+  };
+}
+
 function aVistaEvidencia(registro: RegistroEvidencia): Record<string, unknown> {
   return {
     desde: registro.desde,
@@ -171,6 +199,14 @@ function comoHttp(err: ErrorCasoUso): Respuesta {
         'ABONO_DESACTUALIZADO',
         'El banco reportó otro pago mientras revisabas: actualizá y volvé a mirar el caso antes de decidir.',
       );
+    case 'ABONO_INEXISTENTE':
+      return noEncontrado();
+    case 'MOTIVO_INSUFICIENTE':
+      return error(
+        400,
+        'MOTIVO_INSUFICIENTE',
+        `Contá en al menos ${String(err.minimo)} caracteres qué se hizo con la plata.`,
+      );
     case 'PUERTO': {
       // Para diagnosticar: qué tipo de falla y qué código devolvió el banco
       // (su `responseCode`, o el HTTP). Son códigos, no datos de nadie.
@@ -183,7 +219,7 @@ function comoHttp(err: ErrorCasoUso): Respuesta {
         return error(
           409,
           'CONFLICTO',
-          'El cobro cambió mientras operabas (el satélite pudo haberlo actualizado). Actualizá y volvé a intentar.',
+          'El dato cambió mientras operabas (otra pestaña o el satélite pudo haberlo actualizado). Actualizá y volvé a intentar.',
           detalle,
         );
       }
@@ -364,17 +400,35 @@ export async function comprobante(ctx: ContextoApi, id: string, cuerpo: unknown)
 /** `GET /api/revision` — la cola de revisión manual, lo más urgente primero. */
 export async function verRevision(ctx: ContextoApi): Promise<Respuesta> {
   const cola = await listarRevision(
-    ctx.deps,
+    { ...ctx.deps, abonosSinConciliar: ctx.abonosSinConciliar },
     ctx.ahora(),
     ctx.politicaRevision ?? POLITICA_REVISION_POR_DEFECTO,
   );
   return esExito(cola)
     ? ok({
         casos: cola.valor.casos.map(aVistaCaso),
+        abonos: cola.valor.abonos.map(aVistaAbono),
         resumen: cola.valor.resumen,
         truncado: cola.valor.truncado,
       })
     : comoHttp(cola.error);
+}
+
+/**
+ * `POST /api/abonos/:id/cerrar` — cierra un abono sin conciliar con lo que se
+ * hizo con la plata. No toca ningún cobro.
+ */
+export async function cerrarAbono(ctx: ContextoApi, id: string, cuerpo: unknown): Promise<Respuesta> {
+  const datos = cuerpoCerrarAbono.safeParse(cuerpo);
+  if (!datos.success) {
+    return error(400, 'CUERPO_INVALIDO', datos.error.issues[0]?.message ?? 'cuerpo inválido');
+  }
+  const cerrado = await cerrarAbonoSinConciliar(ctx, id, datos.data.motivo, ctx.ahora());
+  if (!esExito(cerrado)) {
+    return comoHttp(cerrado.error);
+  }
+  ctx.registro?.agregar('info', 'api', `abono sin conciliar cerrado: ${id}`);
+  return ok({ idDeduplicacion: cerrado.valor.idDeduplicacion, cerrado: true });
 }
 
 /**

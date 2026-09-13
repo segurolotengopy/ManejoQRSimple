@@ -16,7 +16,9 @@ import type { Cobro, QrEmitido } from '../cobro/cobro.js';
 import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
+import type { AbonoSinConciliar, ResolucionAbono } from '../revision/abono-sin-conciliar.js';
 import type {
+  AbonosSinConciliarStore,
   CobroRepository,
   ErrorPuerto,
   EvidenceStore,
@@ -215,6 +217,44 @@ export class EvidenceStoreEnMemoria implements EvidenceStore {
 
   listarDeCobro(cobroId: string): Ok<readonly RegistroEvidencia[]> {
     return Promise.resolve(exito(this.registros.filter((r) => r.cobroId === cobroId)));
+  }
+}
+
+export class AbonosSinConciliarEnMemoria implements AbonosSinConciliarStore {
+  private readonly abonos = new Map<string, AbonoSinConciliar>();
+
+  registrar(abono: AbonoSinConciliar): Ok<void> {
+    // Si ya existe no se toca: ni se duplica ni se reabre uno cerrado.
+    if (!this.abonos.has(abono.idDeduplicacion)) {
+      this.abonos.set(abono.idDeduplicacion, abono);
+    }
+    return Promise.resolve(exito(undefined));
+  }
+
+  listarAbiertos(limite: number): Ok<readonly AbonoSinConciliar[]> {
+    return Promise.resolve(
+      exito([...this.abonos.values()].filter((a) => a.resolucion === null).slice(0, limite)),
+    );
+  }
+
+  cerrar(idDeduplicacion: string, resolucion: ResolucionAbono): Ok<AbonoSinConciliar | null> {
+    const actual = this.abonos.get(idDeduplicacion);
+    if (actual === undefined) {
+      return Promise.resolve(exito(null));
+    }
+    if (actual.resolucion !== null) {
+      return Promise.resolve(
+        fallo({
+          tipo: 'CONFLICTO',
+          mensaje: `El abono ${idDeduplicacion} ya estaba cerrado`,
+          reintentable: false,
+          codigoProveedor: null,
+        }),
+      );
+    }
+    const cerrado = { ...actual, resolucion };
+    this.abonos.set(idDeduplicacion, cerrado);
+    return Promise.resolve(exito(cerrado));
   }
 }
 

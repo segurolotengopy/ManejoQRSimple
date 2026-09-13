@@ -190,10 +190,21 @@ export function ordenarCasos(casos: readonly CasoRevision[]): readonly CasoRevis
   );
 }
 
-export function resumirRevision(casos: readonly CasoRevision[]): ResumenRevision {
+/**
+ * Cuenta los cobros en revisión **y** los abonos sin conciliar: los dos son
+ * plata que espera a una persona, y las alertas (insignia, título, avisos)
+ * tienen que ver los dos. Los abonos llegan por su forma (`{ nivel }`) y no
+ * por su tipo, para que este módulo no dependa de `abono-sin-conciliar.ts`,
+ * que ya depende de este.
+ */
+export function resumirRevision(
+  casos: readonly CasoRevision[],
+  abonos: readonly { readonly nivel: NivelAlerta }[] = [],
+): ResumenRevision {
+  const niveles = [...casos.map((c) => c.nivel), ...abonos.map((a) => a.nivel)];
   return {
-    total: casos.length,
-    criticos: casos.filter((c) => c.nivel === 'CRITICO').length,
-    atrasados: casos.filter((c) => c.nivel === 'ATRASADO').length,
+    total: niveles.length,
+    criticos: niveles.filter((n) => n === 'CRITICO').length,
+    atrasados: niveles.filter((n) => n === 'ATRASADO').length,
   };
 }

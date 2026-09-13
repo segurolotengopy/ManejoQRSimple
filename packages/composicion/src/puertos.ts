@@ -29,11 +29,13 @@ import {
   type LlamadaAlBanco,
 } from '@mqs/baneco-gateway';
 import {
+  AbonosSinConciliarFirestore,
   CobroRepositoryFirestore,
   EvidenceStoreFirestore,
   PaymentWatcherAbonosFirestore,
 } from '@mqs/firestore-store';
 import {
+  AbonosSinConciliarEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
@@ -43,6 +45,7 @@ import {
   esExito,
   exito,
   fallo,
+  type AbonosSinConciliarStore,
   type CobroRepository,
   type Dependencias,
   type EvidenceStore,
@@ -97,6 +100,12 @@ export type { AlmacenImagenQr, LlamadaAlBanco };
 
 export type PuertosArmados = {
   readonly deps: Dependencias;
+  /**
+   * Abonos que el cierre diario no pudo atar a un cobro. Lo escribe el
+   * satélite y lo lee (y cierra) la API: en la misma persistencia que los
+   * cobros, para que los dos procesos vean lo mismo.
+   */
+  readonly abonosSinConciliar: AbonosSinConciliarStore;
   /** Qué quedó conectado detrás de cada puerto, para poder loguearlo. */
   readonly resumen: string;
 };
@@ -160,8 +169,12 @@ export function construirPuertos(
   const evidencia: EvidenceStore = enFirestore
     ? new EvidenceStoreFirestore(opciones.db)
     : new EvidenceStoreEnMemoria();
+  const abonosSinConciliar: AbonosSinConciliarStore = enFirestore
+    ? new AbonosSinConciliarFirestore(opciones.db)
+    : new AbonosSinConciliarEnMemoria();
 
   return exito({
+    abonosSinConciliar,
     deps: {
       cobros,
       evidencia,

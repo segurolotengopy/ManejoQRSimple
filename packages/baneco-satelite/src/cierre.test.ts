@@ -1,4 +1,5 @@
 import {
+  AbonosSinConciliarEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
@@ -7,7 +8,7 @@ import {
   centavos,
   esExito,
   registrarDeteccion,
-  type DepsVerificacion,
+  type DepsCierre,
   type PaymentWatcher,
 } from '@mqs/qr-core';
 import { describe, expect, it } from 'vitest';
@@ -26,14 +27,16 @@ const AHORA = new Date('2026-08-28T12:00:00.000Z');
 function armar(watcherPropio?: PaymentWatcher) {
   const evidencia = new EvidenceStoreEnMemoria();
   const watcher = new PaymentWatcherEnMemoria();
-  const deps: DepsVerificacion = {
+  const abonosSinConciliar = new AbonosSinConciliarEnMemoria();
+  const deps: DepsCierre = {
     cobros: new CobroRepositoryEnMemoria(evidencia),
     evidencia,
     watcher: watcherPropio ?? watcher,
     mensajeria: new MessagingProviderEnMemoria(),
     politica: POLITICA_POR_DEFECTO,
+    abonosSinConciliar,
   };
-  return { deps, watcher };
+  return { deps, watcher, abonosSinConciliar };
 }
 
 function abonoHuerfano() {
@@ -83,7 +86,7 @@ describe('fueraDeVentana()', () => {
 
 describe('cerrarDiasPendientes()', () => {
   it('cierra la ventana y reporta el abono que ningún cobro explica', async () => {
-    const { deps, watcher } = armar();
+    const { deps, watcher, abonosSinConciliar } = armar();
     watcher.cargarAbono('qr-de-nadie', abonoHuerfano());
 
     const resultados = await cerrarDiasPendientes(deps, AHORA, new Set());
@@ -91,6 +94,9 @@ describe('cerrarDiasPendientes()', () => {
     const ayer = resultados.at(-1);
     expect(ayer?.tipo === 'CERRADO' && ayer.resumen.huerfanos).toEqual(['baneco:qr-de-nadie:tx-9']);
     expect(resultados.every(cerroCompleto)).toBe(true);
+    // Y quedó guardado para la pestaña Revisión, no solo en el log.
+    const abiertos = await abonosSinConciliar.listarAbiertos(10);
+    expect(esExito(abiertos) && abiertos.valor.map((a) => a.idDeduplicacion)).toEqual(['baneco:qr-de-nadie:tx-9']);
   });
 
   it('si el banco no responde, ningún día queda cerrado', async () => {

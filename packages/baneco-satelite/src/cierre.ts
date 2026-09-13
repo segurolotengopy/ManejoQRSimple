@@ -19,7 +19,7 @@
 import {
   conciliarDia,
   esExito,
-  type DepsVerificacion,
+  type DepsCierre,
   type ErrorCasoUso,
   type ResumenConciliacionDiaria,
 } from '@mqs/qr-core';
@@ -79,7 +79,7 @@ export function cerroCompleto(resultado: ResultadoCierre): boolean {
 
 /** Cierra, en orden, los días de la ventana que falten. */
 export async function cerrarDiasPendientes(
-  deps: DepsVerificacion,
+  deps: DepsCierre,
   ahora: Date,
   cerrados: ReadonlySet<string>,
 ): Promise<readonly ResultadoCierre[]> {
@@ -98,7 +98,8 @@ export async function cerrarDiasPendientes(
 /**
  * Línea de log del cierre. Solo conteos: los ids de los abonos para revisar se
  * listan aparte, y son claves del banco (`baneco:{qrId}:{transactionId}`), sin
- * datos del pagador (reglas #4 y #9).
+ * datos del pagador (reglas #4 y #9). Esos abonos ya quedaron guardados para
+ * la pestaña Revisión: el log es un eco, no el único registro.
  */
 export function describirCierre(clave: string, resumen: ResumenConciliacionDiaria): string {
   const partes = [

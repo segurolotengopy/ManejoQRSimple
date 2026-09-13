@@ -25,6 +25,8 @@ cobros/{cobroId}                 estado, cliente (mínimo), montoCentavos,
 cobros/{cobroId}/qrs/{version}   historial de QRs emitidos (append-only)
 cobros/{cobroId}/evidencia/{n}   transiciones y hechos (append-only)
 abonos/{hashMovimiento}          detecciones del watcher (dedup por id de doc)
+abonosSinConciliar/{clave}       pagos que el cierre diario no pudo atar a un cobro
+                                 (id = clave del banco codificada; se cierran, no se borran)
 comprobantes/{messageId}         entradas del webhook (dedup por id de doc)
 ```
 
@@ -38,6 +40,8 @@ mismo `hashMovimiento` o `messageId` es un no-op detectable, no un duplicado.
 - `evidencia/*` y `qrs/*`: **create-only** (niega update y delete a todos los
   clientes; solo Functions con Admin SDK bajo las reglas del dominio).
 - `abonos/*`: escribe únicamente la credencial del scraper (§4); demo-web solo lee.
+- `abonosSinConciliar/*`: los escribe el satélite (cierre diario) y los cierra la API,
+  ambos con Admin SDK; ningún cliente escribe.
 - Datos del cliente final: nombre y teléfono, nada más (regla inviolable #9).
 
 ## 4. Credencial del scraper (mínimo privilegio)

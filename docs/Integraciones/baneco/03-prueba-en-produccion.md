@@ -27,7 +27,10 @@ en la máquina del dueño.
 
 1. **Credenciales de producción completas.** Hacen falta cuatro datos, y el documento que
    mandó el banco trae tres (usuario, llave AES y URL): **falta la contraseña del usuario
-   API**. Si no la tenés, se gestiona en una agencia del banco (respuesta B4).
+   API**. Ningún documento del banco explica cómo se obtiene. Hay que pedírsela al oficial
+   de cuenta y, si hace falta, gestionarla en una agencia (B4). El procedimiento y el
+   borrador del correo están en `01-preguntas-al-banco.md`, sección H (pedido H1). **No
+   pruebes contraseñas:** el usuario API se bloquea con intentos fallidos.
 2. **El número de la cuenta de cobro** (`accountCredit`): la cuenta a la que se acreditan
    los pagos.
 3. **Dos cuentas para pagar:** una en Banco Económico y otra en **otro banco** (prueba 3).

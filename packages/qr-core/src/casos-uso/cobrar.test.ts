@@ -635,7 +635,8 @@ describe('conciliarDia()', () => {
         referencia: null,
       }),
     );
-    await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    const primero = await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    expect(esExito(primero) && primero.valor.nuevosParaRevisar).toEqual(['baneco:qr-de-nadie:tx-1']);
     await abonosSinConciliar.cerrar('baneco:qr-de-nadie:tx-1', {
       motivo: 'Devuelto al pagador',
       resueltoEn: enMinutos(50),
@@ -643,6 +644,8 @@ describe('conciliarDia()', () => {
 
     const otraVez = await conciliarDia(deps, enMinutos(30), enMinutos(60));
     expect(esExito(otraVez) && otraVez.valor.huerfanos).toEqual(['baneco:qr-de-nadie:tx-1']);
+    // Lo vuelve a ver, pero no es novedad: el satélite no repite el aviso.
+    expect(esExito(otraVez) && otraVez.valor.nuevosParaRevisar).toEqual([]);
     const abiertos = await abonosSinConciliar.listarAbiertos(10);
     expect(esExito(abiertos) && abiertos.valor).toEqual([]);
   });

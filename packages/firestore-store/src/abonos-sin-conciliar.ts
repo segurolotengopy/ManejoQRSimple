@@ -58,7 +58,7 @@ export class AbonosSinConciliarFirestore implements AbonosSinConciliarStore {
     return this.db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc(encodeURIComponent(idDeduplicacion));
   }
 
-  async registrar(abono: AbonoSinConciliar): Promise<Resultado<void, ErrorPuerto>> {
+  async registrar(abono: AbonoSinConciliar): Promise<Resultado<boolean, ErrorPuerto>> {
     try {
       await this.ref(abono.idDeduplicacion).create({
         idDeduplicacion: abono.idDeduplicacion,
@@ -74,10 +74,10 @@ export class AbonosSinConciliarFirestore implements AbonosSinConciliarStore {
             ? null
             : { motivo: abono.resolucion.motivo, resueltoEn: Timestamp.fromDate(abono.resolucion.resueltoEn) },
       });
-      return exito(undefined);
+      return exito(true);
     } catch (causa) {
       // Ya estaba: es el caso normal de un cierre repetido, no una falla.
-      return codigoDe(causa) === YA_EXISTE ? exito(undefined) : fallo(errorDeFirestore(causa, 'registrar'));
+      return codigoDe(causa) === YA_EXISTE ? exito(false) : fallo(errorDeFirestore(causa, 'registrar'));
     }
   }
 

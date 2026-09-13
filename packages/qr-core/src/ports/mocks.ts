@@ -223,12 +223,13 @@ export class EvidenceStoreEnMemoria implements EvidenceStore {
 export class AbonosSinConciliarEnMemoria implements AbonosSinConciliarStore {
   private readonly abonos = new Map<string, AbonoSinConciliar>();
 
-  registrar(abono: AbonoSinConciliar): Ok<void> {
+  registrar(abono: AbonoSinConciliar): Ok<boolean> {
     // Si ya existe no se toca: ni se duplica ni se reabre uno cerrado.
-    if (!this.abonos.has(abono.idDeduplicacion)) {
-      this.abonos.set(abono.idDeduplicacion, abono);
+    if (this.abonos.has(abono.idDeduplicacion)) {
+      return Promise.resolve(exito(false));
     }
-    return Promise.resolve(exito(undefined));
+    this.abonos.set(abono.idDeduplicacion, abono);
+    return Promise.resolve(exito(true));
   }
 
   listarAbiertos(limite: number): Ok<readonly AbonoSinConciliar[]> {

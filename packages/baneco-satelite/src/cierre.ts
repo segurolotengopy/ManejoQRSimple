@@ -111,6 +111,10 @@ export function describirCierre(clave: string, resumen: ResumenConciliacionDiari
     `sinCorroborar=${String(resumen.sinCorroborar.length)}`,
     `huerfanos=${String(resumen.huerfanos.length)}`,
   ];
+  if (resumen.huerfanos.length + resumen.sinCorroborar.length > 0) {
+    // Un cierre repetido vuelve a contarlos; "nuevos" dice cuántos son novedad.
+    partes.push(`nuevosParaRevisar=${String(resumen.nuevosParaRevisar.length)}`);
+  }
   if (resumen.conError.length > 0) {
     partes.push(`conError=${String(resumen.conError.length)}`);
   }

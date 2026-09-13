@@ -4,10 +4,10 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-12 (sesión "respuestas de Baneco" — #20, #21, #24,
-#25, #26 y #27 mergeados; la prueba controlada en producción está lista y espera la
-**contraseña del usuario API**, que ningún documento del banco explica cómo obtener:
-pedido H1)
+**Última actualización:** 2026-09-13 (sesión "respuestas de Baneco" — #20, #21 y #24 a
+#30 mergeados; la prueba controlada en producción está lista y espera la **contraseña
+del usuario API**, que ningún documento del banco explica cómo obtener: pedido H1. B0 ya
+tiene el modo pago asistido y espera la cuenta de pruebas, A4)
 
 ---
 
@@ -269,6 +269,30 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
         (≥ 10 caracteres). Cerrar no toca ningún cobro.
       - Consola: sección "Pagos sin cobro que los explique" en la pestaña Revisión.
         Guía: `docs/09-revision-manual.md` §4 ("Pago sin cobro").
+- [x] **2026-09-13 — Barrido documental del análisis Baneco §8.2 (PR #28, mergeado).**
+      docs/02 §5, docs/05 (D2/D3 y entornos), docs/06 (T9–T11, secretos de Baneco),
+      docs/07 (Fase 3 bifurcada por proveedor). Solo queda `.env.example`, del dueño.
+- [x] **2026-09-13 — El cierre avisa solo por abonos nuevos (PR #29, mergeado).**
+      `AbonosSinConciliarStore.registrar` devuelve si lo guardó ahora;
+      `ResumenConciliacionDiaria.nuevosParaRevisar`; el satélite ya no repite el aviso
+      de abonos ya guardados o cerrados.
+- [x] **2026-09-13 — B0: modo pago asistido (PR #30, mergeado).** Tres modos nuevos de
+      `npm run baneco:b0`:
+      - `--pago-asistido`: un QR de 1 BOB, 4 días, que no se anula.
+      - `--capturar-pago`: fixtures `statusQR-pagado` y `paidQR-con-pago`, más el sondeo
+        de anular un QR pagado.
+      - `--anular-pendiente`: lo anula si nunca se pagó.
+
+      Pasó cuatro rondas de auditoría de seguridad:
+      - Dentro de los pagos solo pasan campos permitidos.
+      - Lista blanca del sobre de `paidQR`: ante una forma inesperada no se escribe y
+        sale con código 4.
+      - La verificación final usa también los datos del pagador.
+      - Reserva atómica del estado antes de emitir; solo un rechazo explícito del banco
+        la libera.
+      - Barrera por host exacto de certificación y https.
+
+      No se corrió contra el banco: espera la cuenta de pruebas (A4).
 
 ### En espera (bloqueos externos)
 
@@ -277,7 +301,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 | Contraseña del usuario API de producción (pedido H1) y número de la cuenta de cobro | 2026-09-12 | La prueba en producción (P1) | Ningún documento del banco explica cómo se obtiene (revisados espec. v1.3.0, documento de producción y presentación). Se pide al oficial de cuenta; si no, en agencia (B4). **No probar contraseñas:** el usuario se bloquea. Procedimiento y borrador del correo: `01-preguntas-al-banco.md` §H. |
 | Cuenta de abono de pruebas de Baneco (A4) | 2026-09-11 | Que B0 genere QRs (sin ella solo prueba el login) | El login y el cifrado se pueden probar ya con las credenciales compartidas del PDF. |
 | Catálogo de bancos (D9) | 2026-09-12 | Nada (deseable) | El banco dijo adjuntarlo y no llegó: pedirlo de nuevo. |
-| Pago manual de un QR de prueba por el banco (A2) | — | Capturar un `statusQR` pagado y un `paidQR` reales → fixtures reales | Hace falta primero el modo "pago asistido" de B0. |
+| Pago manual de un QR de prueba por el banco (A2) | — | Capturar un `statusQR` pagado y un `paidQR` reales → fixtures reales | El modo "pago asistido" de B0 ya existe (PR #30); falta la cuenta de pruebas (A4) para correrlo. |
 | IPs del webhook (D1) | 2026-08-27 | Solo el Hito B3 (webhook) | Se opera sin webhook. |
 | Decisión del dueño sobre WhatsAppModular (docs/04 §2.3) | 2026-08-27 | `wa-bridge` — **sin él ningún cobro real pasa de `QR_ACTIVO`** | Demo con `MESSAGING_PROVIDER=mock`. |
 | Capturas de la consola Yape BCP | — | Riel Yape (diferido, D1) | Sin impacto en Baneco. |
@@ -341,6 +365,12 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 2. Cuando el banco responda el correo H: cargar el usuario y la cuenta de pruebas (A4)
    como `BANECO_CERT_*` en el `.env` local, nunca en el repo, y el catálogo de bancos
    (D9) en `privado-no-gh/`. Si interesa, pedir los manuales de **Bec QR Connect** (G2).
+   Con la cuenta de pruebas, correr el B0 (guía: `tools/baneco-b0/README.md`):
+   1. `npm run baneco:b0` (sondeo completo).
+   2. `npm run baneco:b0 -- --pago-asistido` y mandar la imagen del QR al oficial.
+   3. Cuando lo pague, `npm run baneco:b0 -- --capturar-pago`.
+   4. Pasarle a Claude Code los informes `02-hallazgos-*.md` y las fixtures. Si alguna
+      corrida sale con código 4, no commitear nada sin revisarlo.
 3. Revisar `.env.example`: si documenta `BANECO_POLL_INTERVAL_SECONDS` con 180,
    actualizarlo a 30 (Claude Code no tiene permiso de lectura sobre `.env.*`).
 4. Decidir la opción de WhatsAppModular en docs/04 §2.3.
@@ -356,12 +386,10 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    documentar los hallazgos en `02-hallazgos-produccion.md`, reemplazar las fixtures
    derivadas de la espec. por respuestas reales saneadas, y ajustar el adaptador a
    los `responseCode` observados (doble anulación, anular un QR pagado).
-2. **Hito B0**, apenas llegue la cuenta de pruebas: correr `npm run baneco:b0`
-   (primero el login, que confirma end-to-end el cifrado y resuelve V1/V4) y agregar
-   el modo **pago asistido** (A2): un QR que no se anula, su PNG en
-   `tools/baneco-b0/out/` (git-ignored) para mandarlo por correo, y una segunda
-   corrida que capture el `statusQR` pagado y el `paidQR` como fixtures reales.
-   Incluir el sondeo de doble anulación (riesgo B2).
+2. **Hito B0**, con el informe y las fixtures que produzca el dueño: documentar los
+   hallazgos, reemplazar las fixtures derivadas de la espec. y ajustar el adaptador a
+   los `responseCode` observados (doble anulación, riesgo B2; anular un QR pagado). El
+   modo pago asistido ya está (PR #30).
 3. ~~Persistir los abonos huérfanos y sin corroborar~~ — hecho en el PR #27.
 4. ~~Barrido documental pendiente de §8.2~~ — hecho (docs/02 §5, docs/05 §1 y §5,
    docs/06 T9–T11 y secretos, docs/07 Fase 3). Solo queda `.env.example`, del dueño.

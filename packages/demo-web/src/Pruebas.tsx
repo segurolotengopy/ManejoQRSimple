@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ClienteApi, DetalleCobro, ErrorApi, EstadoPrueba } from './api.js';
-import { diagnosticar } from './diagnostico.js';
+import { diagnosticar, sigueCambiando } from './diagnostico.js';
 import { fechaCorta, montoParaMostrar, tonoDeEstado, vigenciaRestante } from './formato.js';
 import { informe, PRUEBAS, type RegistroPruebas, type ResultadoPrueba } from './planPruebas.js';
 
@@ -110,7 +110,7 @@ export function Pruebas({ api, estado, onEstado, onError }: Props): React.JSX.El
       setAhora(new Date(Date.now() + desfase.current));
       for (const id of cobros.current) {
         const s = actual.current[id] ?? VACIO;
-        if (s.detalle !== null && !ESPERANDO.has(s.detalle.cobro.estado)) {
+        if (s.detalle !== null && !sigueCambiando(s.detalle.cobro.estado)) {
           continue;
         }
         const verificar =

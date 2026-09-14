@@ -7,7 +7,7 @@
  * hallazgo.
  */
 
-import type { Cobro, ErrorApi, RegistroEvidencia } from './api.js';
+import type { Cobro, ErrorApi, EstadoCobro, RegistroEvidencia } from './api.js';
 
 export type Problema = { readonly nivel: 'error' | 'aviso' | 'ok'; readonly texto: string };
 
@@ -22,6 +22,20 @@ export type EntradaDiagnostico = {
 };
 
 const ESPERANDO = new Set(['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO']);
+
+/**
+ * ¿Hay que seguir refrescando este cobro en la pestaña Pruebas?
+ *
+ * Los que esperan pago, y además `PAGO_DETECTADO`: es un estado de paso que la
+ * conciliación lleva enseguida a `CONFIRMADO` o `EN_REVISION`. El dominio
+ * escribe la evidencia antes que el estado, así que una consulta que cae entre
+ * las dos escrituras ve `PAGO_DETECTADO` con la confirmación ya en la
+ * evidencia. Si se deja de refrescar ahí, la tarjeta queda congelada en un
+ * estado que ya no existe (visto en la prueba en producción del 2026-09-13).
+ */
+export function sigueCambiando(estado: EstadoCobro): boolean {
+  return ESPERANDO.has(estado) || estado === 'PAGO_DETECTADO';
+}
 
 /** El banco dice que el reflejo en statusQR es en línea (D5): un minuto es mucho. */
 export const SEGUNDOS_PARA_DETECTAR = 60;

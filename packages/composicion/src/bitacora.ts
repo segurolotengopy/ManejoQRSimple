@@ -7,20 +7,41 @@
  * que leerlos en el momento, o repetir la prueba para volver a verlos. Ahora
  * cada proceso escribe un archivo por día —`api-AAAA-MM-DD.jsonl` y
  * `satelite-AAAA-MM-DD.jsonl`, día de Bolivia— en un directorio **fuera del
- * repo** (`~/.manejoqr/logs/` por defecto, permisos 700/600), y la API los lee
- * para la pestaña Logs.
+ * repo** (`~/.manejoqr/logs/` por defecto), y la API los lee para la pestaña
+ * Logs.
  *
  * Qué se escribe: lo mismo que ya se mostraba, **saneado antes de tocar el
  * disco** (`sanearTexto`): rutas, estados HTTP, `responseCode`, demoras,
  * conteos y claves del banco. Nunca cuerpos, credenciales, tokens, teléfonos
- * ni números de cuenta. Es append-only y no rota solo: borrar logs es una
+ * ni números de cuenta. Es append-only y no rota sola: borrar logs es una
  * decisión de una persona, no de un proceso.
+ *
+ * Garantías que no dependen de cómo se creó el directorio:
+ * - El directorio y cada archivo tienen que ser **del usuario del proceso**; si
+ *   no, no se escribe. Los permisos se corrigen a 700/600 si están abiertos.
+ * - Los archivos se abren sin seguir enlaces simbólicos (`O_NOFOLLOW`).
+ * - **Tope por archivo** (20 MB por día y proceso): lo que exceda no se escribe,
+ *   para que nadie llene el disco a fuerza de pedidos.
+ * - Al leer, solo la **cola** de cada archivo (1 MB): la pestaña Logs consulta
+ *   cada 3 s y no puede bloquear la API leyendo archivos enteros.
  *
  * Una falla al escribir no tumba el proceso: se avisa una vez por la terminal
  * y se sigue. Perder una línea de depuración es mejor que dejar de cobrar.
  */
 
-import { appendFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import {
+  chmodSync,
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readSync,
+  writeSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import type { LlamadaAlBanco } from '@mqs/baneco-gateway';
@@ -75,8 +96,25 @@ const ARCHIVO = /^(api|satelite)-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 const NIVELES: readonly string[] = ['info', 'aviso', 'error'];
 const ORIGENES: readonly string[] = ['api', 'banco', 'sistema', 'satelite'];
 
+/** Largo máximo del texto de una línea: una ruta enorme no infla el archivo. */
+const LARGO_MAXIMO_TEXTO = 500;
+
+export type OpcionesBitacora = {
+  /** Bytes máximos por archivo (día y proceso). Por defecto, 20 MB. */
+  readonly topeBytes?: number;
+  /** Bytes que se leen del final de cada archivo. Por defecto, 1 MB. */
+  readonly colaBytes?: number;
+};
+
+/** ¿Es del usuario de este proceso? Donde no hay uid (Windows), no se puede saber. */
+function esPropio(info: { readonly uid: number }): boolean {
+  return typeof process.getuid !== 'function' || info.uid === process.getuid();
+}
+
 export class Bitacora {
-  private avisado = false;
+  private readonly avisados = new Set<string>();
+  private readonly topeBytes: number;
+  private readonly colaBytes: number;
 
   constructor(
     private readonly directorio: string,
@@ -84,32 +122,58 @@ export class Bitacora {
     private readonly alFallar: (mensaje: string) => void = (m) => {
       console.error(m);
     },
-  ) {}
+    opciones: OpcionesBitacora = {},
+  ) {
+    this.topeBytes = opciones.topeBytes ?? 20 * 1024 * 1024;
+    this.colaBytes = opciones.colaBytes ?? 1024 * 1024;
+  }
 
-  /** Sanea y agrega una línea al archivo del día. Devuelve la entrada escrita. */
+  /** Sanea y agrega una línea al archivo del día. Devuelve la entrada. */
   escribir(nivel: NivelLog, origen: OrigenLog, texto: string, en: Date = new Date()): EntradaLog {
-    const entrada: EntradaLog = { en: en.toISOString(), nivel, origen, proceso: this.proceso, texto: sanearTexto(texto) };
+    const entrada: EntradaLog = {
+      en: en.toISOString(),
+      nivel,
+      origen,
+      proceso: this.proceso,
+      texto: sanearTexto(texto).slice(0, LARGO_MAXIMO_TEXTO),
+    };
     try {
-      mkdirSync(this.directorio, { recursive: true, mode: 0o700 });
-      appendFileSync(
+      this.prepararDirectorio();
+      const fd = openSync(
         join(this.directorio, `${this.proceso}-${diaBoliviano(en)}.jsonl`),
-        `${JSON.stringify(entrada)}\n`,
-        { encoding: 'utf8', mode: 0o600 },
+        constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW,
+        0o600,
       );
-    } catch {
-      if (!this.avisado) {
-        this.avisado = true;
-        this.alFallar(`  ! No se pudo escribir la bitácora en ${this.directorio}; los logs siguen solo en memoria.`);
+      try {
+        const info = fstatSync(fd);
+        if (!esPropio(info)) {
+          throw new Error('archivo de otro usuario');
+        }
+        if ((info.mode & 0o077) !== 0) {
+          fchmodSync(fd, 0o600);
+        }
+        if (info.size >= this.topeBytes) {
+          this.avisar(
+            'tope',
+            `  ! La bitácora de hoy (${this.proceso}) llegó a su tope: no se escriben más líneas hasta mañana.`,
+          );
+          return entrada;
+        }
+        writeSync(fd, `${JSON.stringify(entrada)}\n`);
+      } finally {
+        closeSync(fd);
       }
+    } catch {
+      this.avisar('falla', `  ! No se pudo escribir la bitácora en ${this.directorio}; los logs siguen solo en memoria.`);
     }
     return entrada;
   }
 
   /**
    * Las últimas `max` líneas de los procesos pedidos, de la más vieja a la más
-   * nueva. Lee de los archivos más recientes hacia atrás hasta juntar `max`.
-   * Una línea que no tiene la forma esperada se saltea: es un log, no un dato
-   * del negocio.
+   * nueva. Lee la cola de los archivos más recientes hacia atrás hasta juntar
+   * `max`. Una línea que no tiene la forma esperada se saltea: es un log, no
+   * un dato del negocio.
    */
   leerUltimas(max: number, procesos: readonly Proceso[]): readonly EntradaLog[] {
     let nombres: string[];
@@ -135,13 +199,7 @@ export class Bitacora {
         break;
       }
       diaAnterior = partes[2] ?? null;
-      let contenido: string;
-      try {
-        contenido = readFileSync(join(this.directorio, nombre), 'utf8');
-      } catch {
-        continue;
-      }
-      for (const linea of contenido.split('\n')) {
+      for (const linea of this.leerCola(join(this.directorio, nombre))) {
         const entrada = aEntrada(linea);
         if (entrada !== null) {
           juntadas.push(entrada);
@@ -149,6 +207,49 @@ export class Bitacora {
       }
     }
     return juntadas.sort((a, b) => a.en.localeCompare(b.en)).slice(-max);
+  }
+
+  /** Las líneas completas del último tramo del archivo (sin seguir enlaces). */
+  private leerCola(ruta: string): readonly string[] {
+    let fd: number;
+    try {
+      fd = openSync(ruta, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch {
+      return [];
+    }
+    try {
+      const { size } = fstatSync(fd);
+      const largo = Math.min(size, this.colaBytes);
+      const buffer = Buffer.alloc(largo);
+      readSync(fd, buffer, 0, largo, size - largo);
+      const lineas = buffer.toString('utf8').split('\n');
+      // Si no se leyó desde el principio, la primera línea puede estar cortada.
+      return largo < size ? lineas.slice(1) : lineas;
+    } catch {
+      return [];
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  /** Crea el directorio si falta y exige que sea del usuario, con permisos 700. */
+  private prepararDirectorio(): void {
+    mkdirSync(this.directorio, { recursive: true, mode: 0o700 });
+    // `lstat`: un enlace simbólico en lugar del directorio no se sigue.
+    const info = lstatSync(this.directorio);
+    if (!info.isDirectory() || !esPropio(info)) {
+      throw new Error('directorio de bitácora ajeno o no es un directorio');
+    }
+    if ((info.mode & 0o077) !== 0) {
+      chmodSync(this.directorio, 0o700);
+    }
+  }
+
+  private avisar(clave: string, mensaje: string): void {
+    if (!this.avisados.has(clave)) {
+      this.avisados.add(clave);
+      this.alFallar(mensaje);
+    }
   }
 }
 
@@ -179,5 +280,11 @@ function aEntrada(linea: string): EntradaLog | null {
     return null;
   }
   // Se vuelve a sanear al leer: un archivo editado a mano no mete nada crudo.
-  return { en, nivel: nivel as NivelLog, origen: origen as OrigenLog, proceso, texto: sanearTexto(texto) };
+  return {
+    en,
+    nivel: nivel as NivelLog,
+    origen: origen as OrigenLog,
+    proceso,
+    texto: sanearTexto(texto).slice(0, LARGO_MAXIMO_TEXTO),
+  };
 }

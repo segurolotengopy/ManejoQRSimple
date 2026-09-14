@@ -132,8 +132,11 @@ async function main(): Promise<number> {
     registro,
   });
 
-  servidor.listen(puerto, () => {
-    console.log(`▶ API de ManejoQRSimple en http://localhost:${String(puerto)}`);
+  // Solo en la máquina local por defecto: la consola corre acá mismo, y nadie
+  // más en la red tiene por qué llegar a una API que crea y anula cobros.
+  const host = process.env['API_HOST'] ?? '127.0.0.1';
+  servidor.listen(puerto, host, () => {
+    console.log(`▶ API de ManejoQRSimple en http://${host}:${String(puerto)}`);
     console.log(`  Adaptadores: ${puertos.valor.resumen}`);
     console.log(`  Origen permitido: ${origenPermitido}`);
     console.log(`  Logs: ${directorioLogs} (también en la pestaña Logs, aunque se reinicie)`);

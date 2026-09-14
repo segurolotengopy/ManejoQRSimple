@@ -95,9 +95,14 @@ async function main(): Promise<number> {
     env: process.env,
     db,
     mensajeria,
-    // Cada llamada al banco, solo a la bitácora: en la terminal serían ruido.
+    // Las llamadas al banco, solo a la bitácora: en la terminal serían ruido.
+    // Se omiten las consultas de estado exitosas: son una por cobro pendiente
+    // en cada pasada, y taparían —y agrandarían— lo que importa.
     observarBanco: (llamada) => {
       const { nivel, texto } = describirLlamada(llamada);
+      if (nivel === 'info' && llamada.ruta.includes('/statusQR/')) {
+        return;
+      }
       bitacora.escribir(nivel, 'satelite', `banco: ${texto}`);
     },
   });

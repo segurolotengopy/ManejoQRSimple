@@ -96,8 +96,31 @@ export class QrProviderBaneco implements QrProvider {
     });
   }
 
+  /**
+   * Anula el QR en el banco. **Idempotente**, como exige el puerto.
+   *
+   * El banco no lo es: en la prueba en producción (2026-09-13/14,
+   * `02-hallazgos-produccion.md`) `cancelQR` respondió `responseCode 403` tanto
+   * sobre un QR ya anulado como sobre uno pagado. El código solo no distingue
+   * los dos casos, y confundirlos sería grave: dar por anulado un QR pagado
+   * soltaría un cobro con plata recibida.
+   *
+   * Por eso, ante un rechazo del banco se le **pregunta el estado**: si
+   * `statusQR` informa anulado, la anulación ya estaba hecha y es éxito; en
+   * cualquier otro caso (pagado, activo, o la consulta falla) se devuelve el
+   * rechazo original. Un error sin `responseCode` (HTTP, red) no se toca: ahí
+   * el banco no dijo nada sobre el QR.
+   */
   async anular(referenciaProveedor: string): Promise<Resultado<void, ErrorPuerto>> {
-    return this.cliente.anularQr(referenciaProveedor);
+    const anulado = await this.cliente.anularQr(referenciaProveedor);
+    if (esExito(anulado)) {
+      return anulado;
+    }
+    if (anulado.error.tipo !== 'RECHAZADO_POR_PROVEEDOR' || anulado.error.codigoProveedor === null) {
+      return anulado;
+    }
+    const estado = await this.cliente.estadoQr(referenciaProveedor);
+    return esExito(estado) && estado.valor.estado === ESTADO_QR.ANULADO ? exito(undefined) : anulado;
   }
 }
 

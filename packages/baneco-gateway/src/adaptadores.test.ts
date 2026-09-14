@@ -327,3 +327,48 @@ describe('el token nunca viaja en el cuerpo ni se repite de más', () => {
     expect(descifrar(cuerpo.password, config.llave)).toEqual({ ok: true, valor: passwordEnClaro });
   });
 });
+
+describe('QrProviderBaneco.anular() con la respuesta real del banco', () => {
+  // Prueba en producción (2026-09-13/14): cancelQR respondió HTTP 200 con
+  // responseCode 403 sobre un QR ya anulado (P7) y sobre uno pagado (P6).
+  const RECHAZO_403 = { status: 200, cuerpo: { responseCode: 403, message: 'no se puede anular' } };
+  const CANCEL = '/ApiGateway/api/qrsimple/cancelQR';
+
+  it('un 403 sobre un QR que el banco informa anulado es éxito: la anulación ya estaba hecha', async () => {
+    const { proveedor, transporte } = armar({ sobrescribir: { [CANCEL]: RECHAZO_403 } });
+    const r = await proveedor.anular(QR_ANULADO);
+    expect(esExito(r)).toBe(true);
+    // Se lo preguntó al banco, no lo supuso.
+    expect(transporte.peticiones.some((p) => p.url.endsWith(`/statusQR/${QR_ANULADO}`))).toBe(true);
+  });
+
+  it('un 403 sobre un QR pagado sigue siendo error: nunca se da por anulado un QR con plata', async () => {
+    const { proveedor } = armar({ sobrescribir: { [CANCEL]: RECHAZO_403 } });
+    const r = await proveedor.anular(QR_PAGADO);
+    expect(!esExito(r) && r.error).toMatchObject({ tipo: 'RECHAZADO_POR_PROVEEDOR', codigoProveedor: '403' });
+  });
+
+  it('un 403 sobre un QR que sigue activo sigue siendo error', async () => {
+    const { proveedor } = armar({ sobrescribir: { [CANCEL]: RECHAZO_403 } });
+    const r = await proveedor.anular(QR_ACTIVO);
+    expect(!esExito(r) && r.error.codigoProveedor).toBe('403');
+  });
+
+  it('si la consulta del estado falla, se devuelve el rechazo original', async () => {
+    const { proveedor } = armar({
+      sobrescribir: {
+        [CANCEL]: RECHAZO_403,
+        [`/ApiGateway/api/qrsimple/v2/statusQR/${QR_ANULADO}`]: { status: 500, cuerpo: null },
+      },
+    });
+    const r = await proveedor.anular(QR_ANULADO);
+    expect(!esExito(r) && r.error.codigoProveedor).toBe('403');
+  });
+
+  it('un error sin responseCode (HTTP) no consulta el estado: el banco no dijo nada del QR', async () => {
+    const { proveedor, transporte } = armar({ sobrescribir: { [CANCEL]: { status: 400, cuerpo: null } } });
+    const r = await proveedor.anular(QR_ANULADO);
+    expect(esExito(r)).toBe(false);
+    expect(transporte.peticiones.some((p) => p.url.includes('/statusQR/'))).toBe(false);
+  });
+});

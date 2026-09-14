@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Cobro, EstadoCobro, RegistroEvidencia } from './api.js';
-import { diagnosticar, type EntradaDiagnostico } from './diagnostico.js';
+import { diagnosticar, sigueCambiando, type EntradaDiagnostico } from './diagnostico.js';
 
 const AHORA = new Date('2026-09-12T15:00:00.000Z');
 
@@ -109,5 +109,19 @@ describe('diagnosticar()', () => {
       },
     });
     expect(textos(e)).toMatch(/responseCode 57/);
+  });
+});
+
+describe('sigueCambiando()', () => {
+  it('sigue refrescando un cobro en PAGO_DETECTADO: es un estado de paso', () => {
+    // Prueba en producción del 2026-09-13: una consulta cayó entre la escritura
+    // de la evidencia de CONFIRMADO y la del estado, y la tarjeta quedó
+    // congelada en PAGO_DETECTADO aunque el cobro estaba confirmado.
+    expect(sigueCambiando('PAGO_DETECTADO')).toBe(true);
+  });
+
+  it('sigue refrescando los que esperan pago y deja de hacerlo con los que ya se decidieron', () => {
+    const estados: EstadoCobro[] = ['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO', 'CONFIRMADO', 'ANULADO', 'VENCIDO', 'EN_REVISION', 'RECHAZADO'];
+    expect(estados.filter(sigueCambiando)).toEqual(['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO']);
   });
 });

@@ -106,13 +106,19 @@ La pestaña Pruebas tiene este mismo plan como checklist, y arma el informe.
 | P4 | Pagar un QR anulado | Otro QR → **Anular en el banco** → intentá pagarlo. | La app rechaza el pago. |
 | P5 | Pagar dos veces | Intentá pagar de nuevo el QR de P2. | La app rechaza el segundo pago. |
 | P6 | Anular un QR pagado | En el cobro de P2, **Sondear anulación**. | El banco lo rechaza. Anotá el responseCode. |
-| P7 | Anular dos veces | En el cobro de P4, **Sondear anulación**. | Éxito o un responseCode para anotar. |
+| P7 | Anular dos veces | En el cobro de P4, **Sondear anulación**. | **Éxito** en la tarjeta: el adaptador trata la doble anulación como hecha. Anotá el `responseCode` crudo del banco desde la pestaña Logs (Baneco: 403). |
 | P8 | El vencimiento anula | QR de **5 min**, no lo pagues, esperá a que venza, intentá pagarlo. | `VENCIDO` con el QR anulado; la app rechaza el pago. |
 | P9 | Cierre diario | Al día siguiente: `prueba:emulador` y `prueba:satelite`. | El log dice `yaRegistrados` con los pagos de hoy y `huerfanos=0`. |
 
 P1–P8 se hacen el mismo día, en unos 30–45 minutos. Gasto total: unos Bs 3 (P2, P3 y lo
 que se pague por error), más la comisión que corresponda (C9, a confirmar con el
 ejecutivo).
+
+**Lo que muestra la tarjeta es lo que decide el adaptador, no la respuesta cruda del
+banco.** Desde el hallazgo de P7, el adaptador trata la doble anulación como éxito si el QR
+ya figura anulado (`02-hallazgos-produccion.md` §3.1). El `responseCode` que devolvió el
+banco queda siempre en la pestaña **Logs**, en la línea `DELETE …/cancelQR`; es el dato
+para el catálogo.
 
 **"Sondear anulación"** le pide al banco anular el QR **sin tocar el cobro**, para ver qué
 responde (como hace B0). Solo está disponible sobre cobros pagados, anulados o vencidos:

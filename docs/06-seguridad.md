@@ -41,6 +41,20 @@ variables sin valores. Variable nueva ⇒ actualizar `.env.example` en el mismo 
 - Nada de HTML crudo de la consola en logs persistentes; en debug local,
   solo efímero.
 - Logs estructurados (pino) con `cobroId` y `correlationId`.
+- **Bitácora en disco** de la API y el satélite (`~/.manejoqr/logs/`, fuera del repo,
+  `composicion/src/bitacora.ts`):
+  - Cada línea pasa por `sanearTexto` **antes** de escribirse (tokens `Bearer`, teléfonos y
+    números de 9 a 17 dígitos enmascarados) y otra vez al leerse, recortada a 500
+    caracteres. Solo rutas, estados HTTP, `responseCode`, demoras, conteos y claves del
+    banco; nunca cuerpos ni query strings.
+  - El directorio y los archivos tienen que ser del usuario del proceso; los permisos se
+    corrigen a 700/600 aunque ya existieran, y los archivos se abren sin seguir enlaces
+    simbólicos.
+  - Tope de 20 MB por archivo (día y proceso). Los pedidos sin token válido (401) no se
+    registran y la API escucha solo en `127.0.0.1` (`API_HOST` para cambiarlo): nadie
+    llena el disco a fuerza de pedidos.
+  - La API lee solo el último MB de cada archivo para la pestaña Logs.
+  - No rota sola: borrarla es decisión del dueño.
 
 ## 4. Seguridad en el pipeline
 

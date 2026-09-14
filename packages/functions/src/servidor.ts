@@ -91,15 +91,23 @@ async function atender(
 
   // Las lecturas exitosas no se registran: la consola consulta el estado cada
   // pocos segundos, y esas líneas tapaban lo que importa en un buffer de 500.
-  // Sí queda toda escritura, todo error y (aparte) toda llamada al banco.
-  if (opciones.registro !== undefined && !(metodo === 'GET' && respuesta.status < 400)) {
+  // Tampoco los 401: son pedidos sin token válido, que cualquiera puede mandar
+  // en cantidad, y con la bitácora en disco llenarían el disco. Sí queda toda
+  // escritura autenticada, todo otro error y (aparte) toda llamada al banco.
+  const esLecturaExitosa = metodo === 'GET' && respuesta.status < 400;
+  if (opciones.registro !== undefined && !esLecturaExitosa && respuesta.status !== 401) {
     const { status } = respuesta;
     opciones.registro.agregar(
       status >= 500 ? 'error' : status >= 400 ? 'aviso' : 'info',
       'api',
-      `${metodo} ${peticion.ruta} → ${String(status)}${sufijoDeError(respuesta.cuerpo)} · ${String(Date.now() - inicio)} ms`,
+      `${metodo} ${recortarRuta(peticion.ruta)} → ${String(status)}${sufijoDeError(respuesta.cuerpo)} · ${String(Date.now() - inicio)} ms`,
     );
   }
+}
+
+/** La ruta la elige quien pide: se recorta para que no infle el log. */
+function recortarRuta(ruta: string): string {
+  return ruta.length > 200 ? `${ruta.slice(0, 200)}…` : ruta;
 }
 
 /** ` CODIGO (tipo, responseCode N)` si la respuesta es un error de la API. */

@@ -117,6 +117,9 @@ tiene el modo pago asistido y espera la cuenta de pruebas, A4)
     credenciales en `~/.manejoqr/baneco-prod.env` (600, fuera del repo; Claude Code no
     las lee). No es el pase a producción. Guía:
     `docs/Integraciones/baneco/03-prueba-en-produccion.md`.
+    **Ampliada el 2026-09-14:** es un procedimiento que se **repite completo (P1–P9)**
+    cada vez que se abre una cuenta de cobro nueva en el banco o se registra otro
+    banco como proveedor. Primera corrida: 2026-09-13/14 con Baneco, P1–P9 ok.
 
 ## Estado actual
 
@@ -293,6 +296,15 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       - Barrera por host exacto de certificación y https.
 
       No se corrió contra el banco: espera la cuenta de pruebas (A4).
+- [x] **2026-09-14 — Logs persistentes (rama `feat/logs-persistentes`).** Pedido del dueño
+      durante la prueba en producción: un `responseCode` o la línea del cierre diario se
+      perdían al reiniciar la API o al cerrar la terminal del satélite.
+      - `composicion/src/bitacora.ts`: un archivo JSONL por proceso y por día de Bolivia en
+        `~/.manejoqr/logs/` (700/600, `BITACORA_DIR` para cambiarlo), saneado al escribir
+        y al leer.
+      - La API carga lo guardado al arrancar; la pestaña Logs suma el origen "satélite"
+        (arranque, cierres, errores, pasadas con novedades y sus llamadas al banco) y
+        muestra la fecha de cada línea.
 
 ### En espera (bloqueos externos)
 

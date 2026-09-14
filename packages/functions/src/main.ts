@@ -13,6 +13,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  Bitacora,
   MensajeriaNoConfigurada,
   construirPuertos,
   describirError,
@@ -65,12 +66,18 @@ async function main(): Promise<number> {
     process.env['QR_IMAGENES_DIR'] ?? join(homedir(), '.manejoqr', 'qrs'),
   );
 
-  // Logs de depuración para la pestaña Logs. Los errores salen además por la terminal.
-  const registro = new RegistroEventos(undefined, (linea) => {
-    if (linea.nivel === 'error') {
-      console.error(`  ! [${linea.origen}] ${linea.texto}`);
-    }
-  });
+  // Logs de depuración para la pestaña Logs, persistidos fuera del repo: lo de
+  // ayer se sigue viendo después de reiniciar. Los errores salen además por la terminal.
+  const directorioLogs = process.env['BITACORA_DIR'] ?? join(homedir(), '.manejoqr', 'logs');
+  const registro = new RegistroEventos(
+    undefined,
+    (linea) => {
+      if (linea.nivel === 'error') {
+        console.error(`  ! [${linea.origen}] ${linea.texto}`);
+      }
+    },
+    new Bitacora(directorioLogs, 'api'),
+  );
 
   const db = conectarFirestore();
   const puertos = construirPuertos({
@@ -125,10 +132,14 @@ async function main(): Promise<number> {
     registro,
   });
 
-  servidor.listen(puerto, () => {
-    console.log(`▶ API de ManejoQRSimple en http://localhost:${String(puerto)}`);
+  // Solo en la máquina local por defecto: la consola corre acá mismo, y nadie
+  // más en la red tiene por qué llegar a una API que crea y anula cobros.
+  const host = process.env['API_HOST'] ?? '127.0.0.1';
+  servidor.listen(puerto, host, () => {
+    console.log(`▶ API de ManejoQRSimple en http://${host}:${String(puerto)}`);
     console.log(`  Adaptadores: ${puertos.valor.resumen}`);
     console.log(`  Origen permitido: ${origenPermitido}`);
+    console.log(`  Logs: ${directorioLogs} (también en la pestaña Logs, aunque se reinicie)`);
     console.log('  Autenticación: token fijo (Authorization: Bearer …)');
     if (prueba !== null) {
       console.log(

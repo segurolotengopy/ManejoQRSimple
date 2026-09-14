@@ -17,11 +17,17 @@
  *   npm run satelite:baneco -- --una  # una sola pasada y termina
  */
 
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
 import {
+  Bitacora,
   MensajeriaNoConfigurada,
   construirPuertos,
   describirError,
+  describirLlamada,
   verificarProduccion,
+  type NivelLog,
 } from '@mqs/composicion';
 import { esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
@@ -71,10 +77,35 @@ async function main(): Promise<number> {
     return 1;
   }
 
+  // Bitácora en disco, fuera del repo: el cierre diario y las llamadas al banco
+  // se pueden leer después (pestaña Logs de la consola), no solo en esta terminal.
+  const directorioLogs = process.env['BITACORA_DIR'] ?? join(homedir(), '.manejoqr', 'logs');
+  const bitacora = new Bitacora(directorioLogs, 'satelite');
+  /** Imprime en la terminal y deja la línea en la bitácora. */
+  const registrar = (nivel: NivelLog, texto: string): void => {
+    const imprimir = nivel === 'error' ? console.error : nivel === 'aviso' ? console.warn : console.log;
+    imprimir(texto);
+    bitacora.escribir(nivel, 'satelite', texto.trim());
+  };
+
   const mensajeria = new MensajeriaNoConfigurada();
   const db = conectarFirestore();
 
-  const puertos = construirPuertos({ env: process.env, db, mensajeria });
+  const puertos = construirPuertos({
+    env: process.env,
+    db,
+    mensajeria,
+    // Las llamadas al banco, solo a la bitácora: en la terminal serían ruido.
+    // Se omiten las consultas de estado exitosas: son una por cobro pendiente
+    // en cada pasada, y taparían —y agrandarían— lo que importa.
+    observarBanco: (llamada) => {
+      const { nivel, texto } = describirLlamada(llamada);
+      if (nivel === 'info' && llamada.ruta.includes('/statusQR/')) {
+        return;
+      }
+      bitacora.escribir(nivel, 'satelite', `banco: ${texto}`);
+    },
+  });
   if (!esExito(puertos)) {
     console.error(`✖ No se pudieron armar los puertos: ${describirError(puertos.error)}`);
     return 1;
@@ -87,7 +118,9 @@ async function main(): Promise<number> {
   console.log(`  Adaptadores: ${puertos.valor.resumen}`);
   console.log(unaSola ? '  Modo: una sola pasada.' : `  Intervalo: ${String(intervalo)} s.`);
   console.log('  Verifica, concilia y anula en el banco los QRs que vencen; no emite ni renueva.');
-  console.log('  Cierra los días anteriores contra el reporte paidQR del banco.\n');
+  console.log('  Cierra los días anteriores contra el reporte paidQR del banco.');
+  console.log(`  Logs: ${directorioLogs} (también en la pestaña Logs de la consola)\n`);
+  bitacora.escribir('info', 'satelite', `Satélite iniciado · ${puertos.valor.resumen}${unaSola ? ' · una pasada' : ''}`);
 
   // En un objeto y no en un `let`: el manejador de señal lo muta desde una
   // clausura, y TypeScript no puede ver eso en una variable local.
@@ -118,28 +151,37 @@ async function main(): Promise<number> {
     if ('errorFatal' in resultado) {
       // No se pudo listar los cobros pendientes: no hay forma de saber cuáles
       // quedaron sin mirar, así que se reporta fuerte y se reintenta.
-      console.error(`✖ Pasada fallida: ${JSON.stringify(resultado.errorFatal)}`);
+      registrar('error', `✖ Pasada fallida: ${JSON.stringify(resultado.errorFatal)}`);
     } else {
-      console.log(`${new Date().toISOString()} ${describirPasada(resultado)}`);
+      const lineaPasada = describirPasada(resultado);
+      console.log(`${new Date().toISOString()} ${lineaPasada}`);
+      // A disco solo las pasadas con novedades: una línea cada 10 s taparía lo que importa.
+      const novedades =
+        resultado.confirmados.length + resultado.enRevision.length + resultado.vencidos.length + resultado.conError.length;
+      if (novedades > 0) {
+        bitacora.escribir('info', 'satelite', `pasada: ${lineaPasada}`);
+      }
       for (const { cobroId, error } of resultado.conError) {
-        console.error(`  ! cobro ${cobroId}: ${error.tipo}`);
+        registrar('error', `  ! cobro ${cobroId}: ${error.tipo}`);
       }
       const ahora = new Date();
       const depsCierre = { ...puertos.valor.deps, abonosSinConciliar: puertos.valor.abonosSinConciliar };
       for (const cierre of await cerrarDiasPendientes(depsCierre, ahora, cerrados)) {
         if (cierre.tipo === 'CERRADO') {
-          console.log(`${ahora.toISOString()} ${describirCierre(cierre.clave, cierre.resumen)}`);
+          const lineaCierre = describirCierre(cierre.clave, cierre.resumen);
+          console.log(`${ahora.toISOString()} ${lineaCierre}`);
+          bitacora.escribir('info', 'satelite', lineaCierre);
           for (const id of cierre.resumen.nuevosParaRevisar) {
             // Plata en la cuenta que ningún cobro explica: nunca se descarta.
             // Ya quedó guardada; el aviso es para quien mira la terminal, y
             // solo por lo nuevo: un abono ya visto (o ya cerrado) no se repite.
-            console.warn(`  ! abono nuevo para revisar (pestaña Revisión): ${id}`);
+            registrar('aviso', `  ! abono nuevo para revisar (pestaña Revisión): ${id}`);
           }
           for (const { idDeduplicacion, error } of cierre.resumen.conError) {
-            console.error(`  ! abono ${idDeduplicacion} sin procesar (${error.tipo}); se reintenta.`);
+            registrar('error', `  ! abono ${idDeduplicacion} sin procesar (${error.tipo}); se reintenta.`);
           }
         } else {
-          console.error(`  ! cierre ${cierre.clave} fallido (${cierre.error.tipo}); se reintenta.`);
+          registrar('error', `  ! cierre ${cierre.clave} fallido (${cierre.error.tipo}); se reintenta.`);
         }
         if (cerroCompleto(cierre)) {
           cerrados.add(cierre.clave);
@@ -150,7 +192,7 @@ async function main(): Promise<number> {
       }
       for (const clave of fueraDeVentana(ahora, sinCerrar)) {
         // Salió de la ventana sin cerrarse: ya no se reintenta solo.
-        console.error(`✖ El día ${clave} quedó sin cerrar: conciliarlo a mano contra paidQR.`);
+        registrar('error', `✖ El día ${clave} quedó sin cerrar: conciliarlo a mano contra paidQR.`);
         sinCerrar.delete(clave);
       }
       for (const clave of fueraDeVentana(ahora, cerrados)) {

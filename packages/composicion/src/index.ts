@@ -22,3 +22,14 @@ export {
   type PuertosArmados,
 } from './puertos.js';
 export { hablaConProduccion, verificarProduccion } from './produccion.js';
+export {
+  Bitacora,
+  describirLlamada,
+  diaBoliviano,
+  sanearTexto,
+  type EntradaLog,
+  type LlamadaObservada,
+  type NivelLog,
+  type OrigenLog,
+  type Proceso,
+} from './bitacora.js';

@@ -5,7 +5,7 @@
 
 import type { ErrorApi, LineaLog } from './api.js';
 
-export type FiltroLogs = 'todo' | 'banco' | 'api' | 'consola' | 'problemas';
+export type FiltroLogs = 'todo' | 'banco' | 'api' | 'satelite' | 'consola' | 'problemas';
 
 /** Las líneas que pasan el filtro, de la más vieja a la más nueva. */
 export function filtrarLogs(lineas: readonly LineaLog[], filtro: FiltroLogs): readonly LineaLog[] {
@@ -22,11 +22,23 @@ export function filtrarLogs(lineas: readonly LineaLog[], filtro: FiltroLogs): re
   return [...pasan].sort((a, b) => a.en.localeCompare(b.en));
 }
 
-/** `12:34:56  AVISO  [banco]  POST /… → HTTP 200 · responseCode 57 · 120 ms` */
+/**
+ * `13/09 21:05:36  AVISO  [banco]  POST /… → HTTP 200 · responseCode 57 · 120 ms`.
+ * Con día: los logs persisten entre reinicios y mezclan días distintos.
+ */
 export function textoDeLinea(l: LineaLog): string {
   const fecha = new Date(l.en);
-  const hora = Number.isNaN(fecha.getTime()) ? l.en : fecha.toLocaleTimeString('es-BO', { hour12: false });
-  return `${hora}  ${l.nivel.toUpperCase().padEnd(5)}  [${l.origen}]  ${l.texto}`;
+  const cuando = Number.isNaN(fecha.getTime())
+    ? l.en
+    : fecha.toLocaleString('es-BO', {
+        hour12: false,
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+  return `${cuando}  ${l.nivel.toUpperCase().padEnd(5)}  [${l.origen}]  ${l.texto}`;
 }
 
 /** Un error que vio la consola, como línea de log. */

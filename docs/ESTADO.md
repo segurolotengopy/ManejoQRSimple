@@ -4,10 +4,10 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-13 (sesión "respuestas de Baneco" — #20, #21 y #24 a
-#30 mergeados; la prueba controlada en producción está lista y espera la **contraseña
-del usuario API**, que ningún documento del banco explica cómo obtener: pedido H1. B0 ya
-tiene el modo pago asistido y espera la cuenta de pruebas, A4)
+**Última actualización:** 2026-09-14 (sesión "respuestas de Baneco" — **prueba en
+producción con Baneco hecha: P1–P9 ok**, hallazgos en
+`docs/Integraciones/baneco/02-hallazgos-produccion.md`. B0 tiene el modo pago asistido y
+espera la cuenta de pruebas, A4)
 
 ---
 
@@ -310,7 +310,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 | Qué | Desde | Bloquea | Mientras tanto |
 |---|---|---|---|
-| Contraseña del usuario API de producción (pedido H1) y número de la cuenta de cobro | 2026-09-12 | La prueba en producción (P1) | Ningún documento del banco explica cómo se obtiene (revisados espec. v1.3.0, documento de producción y presentación). Se pide al oficial de cuenta; si no, en agencia (B4). **No probar contraseñas:** el usuario se bloquea. Procedimiento y borrador del correo: `01-preguntas-al-banco.md` §H. |
+| ~~Contraseña del usuario API de producción (pedido H1)~~ | 2026-09-12 | — | **Resuelto el 2026-09-13:** el dueño la obtuvo y la prueba en producción corrió P1–P9 ok. |
 | Cuenta de abono de pruebas de Baneco (A4) | 2026-09-11 | Que B0 genere QRs (sin ella solo prueba el login) | El login y el cifrado se pueden probar ya con las credenciales compartidas del PDF. |
 | Catálogo de bancos (D9) | 2026-09-12 | Nada (deseable) | El banco dijo adjuntarlo y no llegó: pedirlo de nuevo. |
 | Pago manual de un QR de prueba por el banco (A2) | — | Capturar un `statusQR` pagado y un `paidQR` reales → fixtures reales | El modo "pago asistido" de B0 ya existe (PR #30); falta la cuenta de pruebas (A4) para correrlo. |
@@ -327,10 +327,10 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
   el PR #27: se guardan y aparecen en la pestaña Revisión. Queda un
   límite deliberado: un pago sin cobro se **cierra** con motivo, no se asigna a un cobro
   (`docs/09-revision-manual.md` §5).
-- **Doble anulación (B2 de la auditoría):** reintentar `cancelQR` sobre un QR ya
-  anulado depende de que el banco lo trate como idempotente (C5 no lo responde). Lo
-  sondea B0 (P4); si el banco devuelve error, el adaptador tiene que mapear ese
-  `responseCode` a éxito.
+- ~~**Doble anulación (B2 de la auditoría)**~~ — **resuelto con evidencia real:** en
+  producción, `cancelQR` sobre un QR ya anulado devuelve `responseCode 403`, el mismo
+  código que sobre uno pagado. El adaptador consulta `statusQR` ante ese rechazo y solo lo
+  trata como éxito si el QR figura anulado (`02-hallazgos-produccion.md` §3.1).
 - **Operaciones simultáneas sobre un mismo caso en revisión** (B1 de la auditoría de
   la consola): dos pestañas, un doble clic o una búsqueda durante el cierre diario
   pueden dejar un registro de más en la evidencia (detección repetida o resolución no
@@ -363,13 +363,13 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 **Dueño — prueba en producción** (guía: `docs/Integraciones/baneco/03-prueba-en-produccion.md`):
 
-0. **Conseguir la contraseña del usuario API** (pedido H1): mirar si llegó por otro
-   canal (correo aparte, SMS, sobre); si no, mandar el correo de
-   `01-preguntas-al-banco.md` §H al oficial de cuenta, que ya pide también A4 y D9. Si el
-   banco dice que es en agencia, ir a una (B4).
-1. Con la contraseña y la cuenta de cobro: crear `~/.manejoqr/baneco-prod.env` (§2),
-   levantar las cuatro terminales (§3) y hacer P1–P8 desde la pestaña Pruebas; P9 al
-   día siguiente. Pasarle el informe a Claude Code.
+0. ~~Conseguir la contraseña y hacer la prueba en producción~~ — **hecho el 2026-09-13/14,
+   P1–P9 ok**. Cuando ya no hagan falta, borrar `~/.manejoqr/emulador-prueba` y
+   `~/.manejoqr/qrs`; conservar `~/.manejoqr/logs/`. La prueba se repite completa con cada
+   cuenta de cobro nueva o banco nuevo (decisión 16).
+1. Pedirle al oficial, si todavía no respondió el correo H, el usuario y la cuenta de
+   pruebas (A4) y el catálogo de bancos (D9). Confirmar con el ejecutivo las comisiones
+   (C9).
 
 **Dueño — lo demás:**
 
@@ -394,10 +394,10 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 **Claude Code:**
 
-1. ~~Mergear #21 y #24~~ — hecho. Con el informe de la prueba en producción:
-   documentar los hallazgos en `02-hallazgos-produccion.md`, reemplazar las fixtures
-   derivadas de la espec. por respuestas reales saneadas, y ajustar el adaptador a
-   los `responseCode` observados (doble anulación, anular un QR pagado).
+1. ~~Documentar la prueba en producción y ajustar el adaptador~~ — hecho
+   (`02-hallazgos-produccion.md`; `cancelQR` 403 → consulta de `statusQR`). Quedan las
+   fixtures reales saneadas, que llegan con el B0 en certificación (los logs no guardan
+   cuerpos, a propósito).
 2. **Hito B0**, con el informe y las fixtures que produzca el dueño: documentar los
    hallazgos, reemplazar las fixtures derivadas de la espec. y ajustar el adaptador a
    los `responseCode` observados (doble anulación, riesgo B2; anular un QR pagado). El

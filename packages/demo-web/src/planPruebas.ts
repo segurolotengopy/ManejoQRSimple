@@ -54,7 +54,9 @@ export const PRUEBAS: readonly Prueba[] = [
     id: 'P7',
     titulo: 'Anular dos veces el mismo QR',
     pasos: 'Sobre el cobro anulado de P4, tocá "Sondear anulación".',
-    esperado: 'Éxito (idempotente) o un responseCode para anotar.',
+    esperado:
+      'Éxito: el adaptador consulta el estado y trata la doble anulación como hecha. El banco en sí ' +
+      'responde un código (en Baneco, 403): anotalo desde la pestaña Logs, línea DELETE cancelQR.',
   },
   {
     id: 'P8',

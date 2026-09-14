@@ -41,6 +41,11 @@ variables sin valores. Variable nueva ⇒ actualizar `.env.example` en el mismo 
 - Nada de HTML crudo de la consola en logs persistentes; en debug local,
   solo efímero.
 - Logs estructurados (pino) con `cobroId` y `correlationId`.
+- **Bitácora en disco** de la API y el satélite (`~/.manejoqr/logs/`, 700/600, fuera del
+  repo, `composicion/src/bitacora.ts`): cada línea pasa por `sanearTexto` **antes** de
+  escribirse (tokens `Bearer`, teléfonos y números de 9–17 dígitos enmascarados) y otra vez
+  al leerse. Solo rutas, estados HTTP, `responseCode`, demoras, conteos y claves del banco;
+  nunca cuerpos ni query strings. No rota sola: borrarla es decisión del dueño.
 
 ## 4. Seguridad en el pipeline
 

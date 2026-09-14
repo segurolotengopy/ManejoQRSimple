@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { Bitacora } from '@mqs/composicion';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { describirLlamada, RegistroEventos, sanearTexto } from './registro.js';
 
@@ -47,5 +52,39 @@ describe('describirLlamada()', () => {
   it('sin respuesta es un error, con el tipo de falla', () => {
     const d = describirLlamada({ metodo: 'GET', ruta: '/x', ms: 15000, status: null, responseCode: null, falla: 'INDISPONIBLE' });
     expect(d).toEqual({ nivel: 'error', texto: 'GET /x → sin respuesta (INDISPONIBLE) · 15000 ms' });
+  });
+});
+
+describe('RegistroEventos con bitácora en disco', () => {
+  let base: string;
+  beforeEach(() => {
+    base = mkdtempSync(join(tmpdir(), 'mqs-registro-'));
+  });
+  afterEach(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  it('lo de ayer sigue en la pestaña Logs después de reiniciar la API', () => {
+    // El caso real: el responseCode de "Sondear anulación" se perdía al reiniciar.
+    const antes = new RegistroEventos(() => new Date('2026-09-14T05:01:30.000Z'), null, new Bitacora(base, 'api'));
+    antes.agregar('aviso', 'banco', 'DELETE /apiGateway/api/qrsimple/cancelQR → HTTP 200 · responseCode 403 · 151 ms');
+
+    const despues = new RegistroEventos(() => new Date('2026-09-15T10:00:00.000Z'), null, new Bitacora(base, 'api'));
+    expect(despues.listar().map((l) => l.texto)).toEqual([
+      'DELETE /apiGateway/api/qrsimple/cancelQR → HTTP 200 · responseCode 403 · 151 ms',
+    ]);
+  });
+
+  it('muestra también las líneas del satélite, en orden', () => {
+    const satelite = new Bitacora(base, 'satelite');
+    satelite.escribir('info', 'satelite', 'cierre 2026-09-13: abonos=3 yaRegistrados=3 huerfanos=0', new Date('2026-09-14T04:52:10.000Z'));
+    const registro = new RegistroEventos(() => new Date('2026-09-14T05:00:00.000Z'), null, new Bitacora(base, 'api'));
+    registro.agregar('info', 'api', 'POST /api/pruebas/qr → 201');
+
+    const lineas = registro.listar();
+    expect(lineas.map((l) => [l.n, l.origen])).toEqual([
+      [1, 'satelite'],
+      [2, 'api'],
+    ]);
   });
 });

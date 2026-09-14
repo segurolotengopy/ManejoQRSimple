@@ -9,6 +9,15 @@ con barreras que no dependen de acordarse de nada.
 Esto **no es el pase a producción**: es una prueba acotada de un día. Los datos quedan
 en la máquina del dueño.
 
+**Es un procedimiento que se repite, no una prueba única** (decisión del dueño,
+2026-09-14). Se vuelve a correr completo, P1–P9, cada vez que:
+
+- se abre una **cuenta de cobro nueva** en el banco (otra `accountCredit`), o
+- se registra **otro banco** como proveedor de QR.
+
+Primera corrida: 2026-09-13/14 con Banco Económico. Pagos desde Baneco y desde el BNB,
+P1–P9 ok; hallazgos en `02-hallazgos-produccion.md`.
+
 ## 1. Barreras (en el código, no en la disciplina)
 
 | Barrera | Dónde |
@@ -89,10 +98,16 @@ límite de inotify.
 
 **Pestaña Logs** (para depurar): cada pedido a la API con su estado y demora, cada
 llamada al banco con su ruta, estado HTTP, `responseCode` y demora, y los errores que vio
-la consola. Se actualiza cada 3 s, se puede filtrar ("Llamadas al banco", "Solo avisos y
-errores") y pausar. Nunca muestra cuerpos, credenciales, tokens ni query strings, y
-enmascara teléfonos y números de cuenta. Los errores también salen por la terminal de la
-API. Los logs del satélite están en su propia terminal.
+la consola, **y las del satélite**: su arranque, los cierres diarios, los errores y sus
+llamadas al banco. Se actualiza cada 3 s, se puede filtrar ("Llamadas al banco",
+"Satélite", "Solo avisos y errores") y pausar. Nunca muestra cuerpos, credenciales, tokens
+ni query strings, y enmascara teléfonos y números de cuenta.
+
+**Los logs se guardan en disco** en `~/.manejoqr/logs/`, un archivo por proceso y por día
+de Bolivia (`api-AAAA-MM-DD.jsonl`, `satelite-AAAA-MM-DD.jsonl`), con permisos 700/600 y el
+mismo saneamiento. Sobreviven a un reinicio: al volver a levantar la API, la pestaña Logs
+muestra lo de días anteriores. Un `responseCode` o la línea del cierre diario no hay que
+capturarlos en el momento.
 
 ## 4. Las nueve pruebas
 
@@ -142,8 +157,11 @@ quien pagó.
    aparece debajo del botón.
 2. `Ctrl+C` en las cuatro terminales. El emulador guarda sus datos al salir, así P9 los
    encuentra mañana.
-3. Mañana, después de P9: borrar `~/.manejoqr/emulador-prueba` y `~/.manejoqr/qrs` si ya
-   no hacen falta. Las credenciales pueden quedar donde están, con permisos 600.
+3. **Recién cuando el informe esté documentado** (P1–P9 con sus `responseCode` y la
+   corrección del adaptador hecha), borrar `~/.manejoqr/emulador-prueba` y
+   `~/.manejoqr/qrs`. Sin el emulador no hay cobros sobre los que repetir un sondeo. Los
+   logs de `~/.manejoqr/logs/` conviene conservarlos: son el registro de la prueba. Las
+   credenciales pueden quedar donde están, con permisos 600.
 
 ## 7. Si algo falla
 

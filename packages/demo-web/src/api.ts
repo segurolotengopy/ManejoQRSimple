@@ -144,12 +144,17 @@ export type ErrorApi = {
   readonly detalle?: DetalleError;
 };
 
-/** Una línea de log: de la API (`api`, `banco`, `sistema`) o de la propia consola. */
+/**
+ * Una línea de log: de la API (`api`, `banco`, `sistema`), del satélite
+ * (`satelite`: vigilancia, cierre diario y sus llamadas al banco) o de la
+ * propia consola. Las de la API y el satélite vienen de la bitácora en disco:
+ * sobreviven a un reinicio.
+ */
 export type LineaLog = {
   readonly n: number;
   readonly en: string;
   readonly nivel: 'info' | 'aviso' | 'error';
-  readonly origen: 'api' | 'banco' | 'sistema' | 'consola';
+  readonly origen: 'api' | 'banco' | 'sistema' | 'satelite' | 'consola';
   readonly texto: string;
 };
 

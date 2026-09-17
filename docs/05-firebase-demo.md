@@ -69,7 +69,7 @@ leer los cobros pendientes y escribir estado y evidencia. Se pasa por
 | Entorno | Dónde | Datos |
 |---|---|---|
 | local | emuladores Firebase | sintéticos, semilla con `npm run demo:sembrar` (`tools/demo-local`) |
-| prueba en producción | emulador local persistente (`~/.manejoqr/emulador-prueba`) | cobros reales de Bs 1 del dueño contra la API de producción del banco, con topes (docs/Integraciones/baneco/03) |
+| prueba en producción | emulador local persistente, uno por cuenta de cobro (`~/.manejoqr/emulador-<cuenta>`) | cobros reales de Bs 1 del dueño contra la API de producción del banco, con topes (docs/Integraciones/baneco/03) |
 | demo | proyecto ManejoQRSimple | cobros reales de demostración del dueño |
 
 Sin entorno de producción hasta tener API oficial (alcance declarado del proyecto).

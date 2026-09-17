@@ -52,11 +52,13 @@ npm run test:emulador     # tests de integración contra el emulador de Firestor
 npm run demo              # demo local completo sin banco (ver tools/demo-local)
 npm run api               # API HTTP del demo (ver packages/functions)
 npm run dev               # consola del comerciante (ver packages/demo-web)
+npm run prueba:cuenta -- <alias>   # prepara ~/.manejoqr/baneco-<alias>.env (600)
 npm run prueba:emulador   # prueba en producción: emulador con datos persistentes
 npm run prueba:api        # API en modo prueba contra producción (topes de monto y cantidad)
 npm run prueba:satelite   # satélite en modo prueba (consulta cada 10 s)
 npm run prueba:consola    # consola compilada en :5173, pestaña Pruebas
                           # (guía: docs/Integraciones/baneco/03-prueba-en-produccion.md)
+                          # Otra cuenta de cobro: CUENTA=<alias> en emulador, api y satélite
 ```
 
 Antes de cualquier commit: `npm run typecheck && npm run lint && npm test` deben pasar.

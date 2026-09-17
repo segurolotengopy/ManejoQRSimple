@@ -532,6 +532,7 @@ export function verPrueba(ctx: ContextoApi): Respuesta {
     intentos: prueba.corrida.intentos,
     restantes: Math.max(0, prueba.maxQrs - prueba.corrida.intentos),
     adaptadores: prueba.adaptadores,
+    cuenta: prueba.cuenta,
     cobros: [...prueba.corrida.cobros],
   });
 }

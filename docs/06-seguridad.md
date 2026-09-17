@@ -26,9 +26,9 @@
 | `WM_API_TOKEN` (WhatsAppModular) | `.env` local / Secret Manager | Repo, código, fixtures |
 | Secreto HMAC webhook | `.env` local / Secret Manager | Repo, código, fixtures |
 | Baneco certificación (`BANECO_CERT_*`: usuario, contraseña, llave AES, cuenta de pruebas) | `.env` local | Repo, fixtures, informes de B0 (B0 aborta si un secreto aparece en lo que escribe) |
-| Baneco producción (`BANECO_PROD_*`: usuario, contraseña, llave AES, cuenta de cobro) | `~/.manejoqr/baneco-prod.env`, 600 — Claude Code no lo lee | Repo, `.env`, chat, logs, Firestore. La llave se pide por un canal que no sea un adjunto de correo (B3) |
+| Baneco producción (`BANECO_PROD_*`: usuario, contraseña, llave AES, cuenta de cobro) | `~/.manejoqr/baneco-<cuenta>.env`, 600 — uno por cuenta de cobro; Claude Code no lo lee | Repo, `.env`, chat, logs, Firestore. La llave se pide por un canal que no sea un adjunto de correo (B3) |
 | Adjuntos originales del banco | `docs/Integraciones/baneco/privado-no-gh/` (git-ignored, D4) | GitHub, cualquier nube |
-| Token de la API local (`API_TOKEN_LOCAL` / `VITE_API_TOKEN`) | `~/.manejoqr/baneco-prod.env` y `demo-web/.env.local` | Repo; queda embebido en el bundle, así que publicar la consola exige Firebase Auth |
+| Token de la API local (`API_TOKEN_LOCAL` / `VITE_API_TOKEN`) | `~/.manejoqr/baneco-<cuenta>.env` y `demo-web/.env.local` | Repo; queda embebido en el bundle, así que publicar la consola exige Firebase Auth |
 
 `.env` nunca se versiona (`.gitignore`); `.env.example` lista todas las
 variables sin valores. Variable nueva ⇒ actualizar `.env.example` en el mismo PR.

@@ -27,6 +27,13 @@ export {
   COLECCION_ABONOS_SIN_CONCILIAR,
 } from './abonos-sin-conciliar.js';
 export {
+  explicarMarca,
+  fijarCuentaDePrueba,
+  COLECCION_CONFIGURACION,
+  DOC_CUENTA_DE_PRUEBA,
+  type MarcaDeCuenta,
+} from './cuenta-de-prueba.js';
+export {
   cobroADocumento,
   documentoACobro,
   documentoAEvidencia,

@@ -171,6 +171,8 @@ export type EstadoPrueba = {
   readonly intentos: number;
   readonly restantes: number;
   readonly adaptadores: string;
+  /** Alias de la cuenta de cobro de esta corrida (`prod`, `sucursal-2`). */
+  readonly cuenta: string;
   readonly cobros: readonly string[];
 };
 

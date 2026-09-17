@@ -6,7 +6,7 @@
  * monto lo decide el servidor, no la consola.
  */
 
-import { hablaConProduccion } from '@mqs/composicion';
+import { hablaConProduccion, leerCuentaDePrueba } from '@mqs/composicion';
 import { centavos, esExito, exito, fallo, type Centavos, type Resultado } from '@mqs/qr-core';
 
 /** Techo absoluto del monto de un QR de prueba: Bs 10. */
@@ -19,6 +19,13 @@ export type ModoPrueba = {
   readonly maxQrs: number;
   /** Qué adaptadores quedaron conectados, para mostrarlo en la consola. */
   readonly adaptadores: string;
+  /**
+   * Alias de la cuenta de cobro de esta corrida (`prod`, `sucursal-2`). Se
+   * muestra en la consola y encabeza el informe: con dos cuentas en el mismo
+   * banco, la pantalla es idéntica y el único modo de saber cuál se está
+   * probando es que lo diga.
+   */
+  readonly cuenta: string;
   /**
    * ¿Los QRs son reales? Solo si se habla con la API de producción del banco.
    * Con el banco simulado el modo prueba sirve para ensayar, y decir "reales"
@@ -72,10 +79,18 @@ export function leerModoPrueba(env: Entorno, adaptadores: string): Resultado<Mod
   if (!esExito(montoCentavos)) {
     return fallo('PRUEBA_MONTO_CENTAVOS no es un monto válido.');
   }
+  const cuenta = leerCuentaDePrueba(env);
+  if (cuenta === null) {
+    return fallo(
+      'CUENTA solo admite minúsculas, números y guiones (hasta 24 caracteres): ' +
+        'es el alias de la cuenta de cobro y parte del nombre de su archivo de credenciales.',
+    );
+  }
   return exito({
     montoCentavos: montoCentavos.valor,
     maxQrs,
     adaptadores,
+    cuenta,
     produccion: hablaConProduccion(env),
     corrida: { intentos: 0, cobros: [] },
   });

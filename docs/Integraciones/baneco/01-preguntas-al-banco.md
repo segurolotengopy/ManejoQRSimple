@@ -145,8 +145,9 @@ Qué hacer, en orden:
 4. **No probar contraseñas.** Ni la de la banca por internet ni otras: el usuario API se
    bloquea con intentos fallidos y solo se desbloquea en agencia (B4).
 
-Al recibirla, va solo a `~/.manejoqr/baneco-prod.env` (permisos 600,
-`03-prueba-en-produccion.md` §2). Nunca al repo, a un chat ni a `.env`.
+Al recibirla, va solo al archivo de esa cuenta, `~/.manejoqr/baneco-<cuenta>.env` (permisos
+600, `03-prueba-en-produccion.md` §2). Nunca al repo, a un chat ni a `.env`. Cada cuenta de
+cobro tiene su archivo y su pedido: el trámite se repite por cuenta.
 
 **Borrador del correo** (sin datos sensibles: el usuario se nombra por su función, no por
 su valor):

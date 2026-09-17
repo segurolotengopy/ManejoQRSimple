@@ -12,8 +12,11 @@ describe('plan de pruebas en producción', () => {
       new Date('2026-09-12T20:00:00.000Z'),
       { P1: { resultado: 'ok', nota: 'login en 1 s' }, P6: { resultado: 'falla', nota: 'code 57 | raro' } },
       [{ id: 'abcdef0123456789', estado: 'CONFIRMADO', monto: '1.00' }],
+      'sucursal-2',
     );
-    expect(texto).toContain('## Prueba en producción — 2026-09-12');
+    // El alias de la cuenta encabeza el informe: la prueba se repite por cada
+    // cuenta nueva y los informes se archivan juntos.
+    expect(texto).toContain('## Prueba en producción — 2026-09-12 — cuenta `sucursal-2`');
     expect(texto).toContain('| P1 | Autenticación en producción | ✅ ok | login en 1 s |');
     // Un "|" en la nota rompería la tabla.
     expect(texto).toContain('| ❌ falla | code 57 / raro |');

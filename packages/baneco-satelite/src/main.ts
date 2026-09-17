@@ -26,6 +26,9 @@ import {
   construirPuertos,
   describirError,
   describirLlamada,
+  explicarMarca,
+  fijarCuentaDePrueba,
+  leerCuentaDePrueba,
   verificarProduccion,
   type NivelLog,
 } from '@mqs/composicion';
@@ -91,6 +94,21 @@ async function main(): Promise<number> {
   const mensajeria = new MensajeriaNoConfigurada();
   const db = conectarFirestore();
 
+  // En la prueba controlada, los datos son de una cuenta de cobro concreta: el
+  // satélite no mira los QRs de una cuenta con las credenciales de otra.
+  const cuenta = leerCuentaDePrueba(process.env);
+  if (cuenta === null) {
+    console.error('✖ CUENTA solo admite minúsculas, números y guiones (hasta 24 caracteres).');
+    return 1;
+  }
+  if (process.env['MODO_PRUEBA_PRODUCCION'] === '1' && db !== null) {
+    const problema = explicarMarca(await fijarCuentaDePrueba(db, cuenta, new Date()));
+    if (problema !== null) {
+      console.error(`✖ ${problema}`);
+      return 1;
+    }
+  }
+
   const puertos = construirPuertos({
     env: process.env,
     db,
@@ -114,13 +132,21 @@ async function main(): Promise<number> {
   const unaSola = process.argv.includes('--una');
   const intervalo = intervaloSegundos();
 
+  const enPrueba = process.env['MODO_PRUEBA_PRODUCCION'] === '1';
   console.log('▶ Satélite Baneco');
   console.log(`  Adaptadores: ${puertos.valor.resumen}`);
+  if (enPrueba) {
+    console.log(`  Cuenta de cobro: ${cuenta}`);
+  }
   console.log(unaSola ? '  Modo: una sola pasada.' : `  Intervalo: ${String(intervalo)} s.`);
   console.log('  Verifica, concilia y anula en el banco los QRs que vencen; no emite ni renueva.');
   console.log('  Cierra los días anteriores contra el reporte paidQR del banco.');
   console.log(`  Logs: ${directorioLogs} (también en la pestaña Logs de la consola)\n`);
-  bitacora.escribir('info', 'satelite', `Satélite iniciado · ${puertos.valor.resumen}${unaSola ? ' · una pasada' : ''}`);
+  bitacora.escribir(
+    'info',
+    'satelite',
+    `Satélite iniciado · ${puertos.valor.resumen}${enPrueba ? ` · cuenta ${cuenta}` : ''}${unaSola ? ' · una pasada' : ''}`,
+  );
 
   // En un objeto y no en un `let`: el manejador de señal lo muta desde una
   // clausura, y TypeScript no puede ver eso en una variable local.

@@ -197,6 +197,9 @@ export function Pruebas({ api, estado, onEstado, onError }: Props): React.JSX.El
           ) : (
             <span className="chip espera">banco simulado · nada es real</span>
           )}
+          {/* Con dos cuentas en el mismo banco la pantalla es idéntica: el alias
+              es lo único que distingue en cuál se está cobrando. */}
+          <span className="chip">cuenta {estado.cuenta}</span>
         </p>
         <p className="tenue">
           Cada QR es de Bs {estado.monto}. Quedan {estado.restantes} de {estado.maxQrs}. {estado.adaptadores}
@@ -246,6 +249,7 @@ export function Pruebas({ api, estado, onEstado, onError }: Props): React.JSX.El
       )}
 
       <Checklist
+        cuenta={estado.cuenta}
         cobros={ids.map((id) => {
           const d = seguimiento[id]?.detalle;
           return { id, estado: d?.cobro.estado ?? '—', monto: d?.cobro.monto ?? estado.monto };
@@ -361,8 +365,11 @@ function leerPlan(): RegistroPruebas {
 
 function Checklist({
   cobros,
+  cuenta,
 }: {
   readonly cobros: readonly { id: string; estado: string; monto: string }[];
+  /** Alias de la cuenta de cobro: encabeza el informe que se archiva. */
+  readonly cuenta: string;
 }): React.JSX.Element {
   const [registro, setRegistro] = useState<RegistroPruebas>(leerPlan);
 
@@ -424,7 +431,7 @@ function Checklist({
         </tbody>
       </table>
       <h3>Informe</h3>
-      <textarea className="informe" readOnly value={informe(new Date(), registro, cobros)} rows={16} />
+      <textarea className="informe" readOnly value={informe(new Date(), registro, cobros, cuenta)} rows={16} />
     </div>
   );
 }

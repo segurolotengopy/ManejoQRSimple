@@ -101,6 +101,8 @@ async function main(): Promise<number> {
     console.error('✖ CUENTA solo admite minúsculas, números y guiones (hasta 24 caracteres).');
     return 1;
   }
+  // `db === null` acá es el satélite en memoria, que solo sirve para ensayar el
+  // bucle: contra producción la barrera ya lo rechazó (`verificarProduccion`).
   if (process.env['MODO_PRUEBA_PRODUCCION'] === '1' && db !== null) {
     const problema = explicarMarca(await fijarCuentaDePrueba(db, cuenta, new Date()));
     if (problema !== null) {

@@ -3,8 +3,15 @@ import { describe, expect, it } from 'vitest';
 import { archivoDeCredenciales, esAliasDeCuenta, leerCuentaDePrueba } from './cuenta.js';
 
 describe('esAliasDeCuenta()', () => {
-  it.each(['prod', 'sucursal-2', 'a', '0123456789012345678901234'.slice(0, 24)])('acepta %s', (alias) => {
+  it.each(['prod', 'sucursal-2', 'a', `a${'b'.repeat(23)}`])('acepta %s', (alias) => {
     expect(esAliasDeCuenta(alias)).toBe(true);
+  });
+
+  it('un número de cuenta no sirve como alias', () => {
+    // El alias va al emulador, a la bitácora, a la pantalla y al informe que se
+    // archiva en el repo: ahí no entra ningún dato bancario (regla #4).
+    expect(esAliasDeCuenta('1041234567')).toBe(false);
+    expect(esAliasDeCuenta('2da-cuenta')).toBe(false);
   });
 
   it.each([

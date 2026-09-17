@@ -52,8 +52,10 @@ P1–P9 ok; hallazgos en `02-hallazgos-produccion.md`.
    | La primera | `prod` | `~/.manejoqr/baneco-prod.env` | `npm run prueba:api` |
    | Cualquier otra | el que elija el dueño (`sucursal-2`) | `~/.manejoqr/baneco-sucursal-2.env` | `CUENTA=sucursal-2 npm run prueba:api` |
 
-   El alias admite minúsculas, números y guiones. Es un **rótulo** —se muestra en la
-   consola y encabeza el informe—, nunca el número de cuenta.
+   El alias empieza con letra y sigue con minúsculas, números y guiones. Es un **rótulo**
+   —se muestra en la consola, se guarda en el emulador y encabeza el informe que se
+   archiva en el repo—, y por eso **no puede ser el número de cuenta**: que arranque con
+   letra lo vuelve imposible, no solo desaconsejado.
 
    El archivo lo crea Claude Code, con la plantilla y los permisos 600:
 
@@ -204,6 +206,7 @@ quien pagó.
 | La API no arranca y dice que producción solo se admite en la prueba controlada | Falta el modo prueba o el emulador. | Usá los scripts `prueba:*`, no `api`. |
 | `FALTA_VARIABLE BANECO_PROD_…` | Falta un dato en el archivo de credenciales. | `npm run prueba:cuenta -- <alias> --revisar` dice cuáles faltan (§2). |
 | `Los datos de este emulador son de la cuenta «X»…` | Una terminal arrancó con otro `CUENTA` que el resto. | Arrancá las cuatro con el mismo alias, o levantá el emulador de la otra cuenta. |
+| `«…» no sirve como alias de cuenta` al levantar el emulador | `CUENTA` mal escrita (mayúsculas, empieza con número). | Corregila. El emulador imprime al arrancar la carpeta que usa: tiene que ser la misma todos los días. |
 | `ENOENT … baneco-<alias>.env` | No existe el archivo de credenciales de ese alias. | `npm run prueba:cuenta -- <alias>` lo crea; `-- --listar` dice cuáles hay. |
 | Diagnóstico: **credenciales rechazadas** | El banco rechazó el login. | **No reintentes en bucle**: el usuario API se bloquea y se desbloquea solo en agencia (B4). Revisá los datos y probá una vez. |
 | Diagnóstico: **no se llega al banco** | Red, URL o mayúsculas de la URL. | Revisá conexión; probá `ApiGateway` (§2). |

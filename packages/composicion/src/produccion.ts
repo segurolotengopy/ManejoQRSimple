@@ -39,5 +39,14 @@ export function verificarProduccion(env: Entorno): string | null {
       'falta FIRESTORE_EMULATOR_HOST (levantá `npm run prueba:emulador`).'
     );
   }
+  if (env['SATELITE_SIN_FIRESTORE'] === '1') {
+    // Sin persistencia no hay cobros contra los cuales conciliar, ni queda
+    // marcada la cuenta de la corrida: el satélite le hablaría a la API de
+    // producción y perdería al salir todo lo que viera, abonos incluidos.
+    return (
+      'SATELITE_SIN_FIRESTORE=1 no se admite contra producción: sin persistencia no hay ' +
+      'nada contra qué conciliar y los abonos del día se pierden al salir.'
+    );
+  }
   return null;
 }

@@ -36,7 +36,7 @@
     "satelite:demo": "QR_PROVIDER=mock PAYMENT_WATCHER=simulado node packages/baneco-satelite/dist/main.js --una",
     "api": "npm run build && MESSAGING_PROVIDER=mock QR_PROVIDER=mock PAYMENT_WATCHER=simulado node packages/functions/dist/main.js",
     "prueba:cuenta": "npm run build && node tools/cuentas/dist/main.js",
-    "prueba:emulador": "EMU=$HOME/.manejoqr/emulador-${CUENTA:-prod}; firebase emulators:start --only firestore --project manejoqrsimple --config firebase.demo.json $([ -d $EMU ] && echo --import=$EMU) --export-on-exit=$EMU",
+    "prueba:emulador": "npm run build && EMU=$(node tools/cuentas/dist/main.js --dir ${CUENTA:-prod}) && echo \"Datos de la prueba: $EMU\" && firebase emulators:start --only firestore --project manejoqrsimple --config firebase.demo.json $([ -d \"$EMU\" ] && echo --import=\"$EMU\") --export-on-exit=\"$EMU\"",
     "prueba:api": "npm run build && FIRESTORE_EMULATOR_HOST=localhost:8080 BANECO_ENV=prod QR_PROVIDER=baneco PAYMENT_WATCHER=baneco MESSAGING_PROVIDER=mock MODO_PRUEBA_PRODUCCION=1 PRUEBA_CUENTA=${CUENTA:-prod} QR_IMAGENES_DIR=$HOME/.manejoqr/qrs/${CUENTA:-prod} node --env-file=$HOME/.manejoqr/baneco-${CUENTA:-prod}.env packages/functions/dist/main.js",
     "prueba:satelite": "FIRESTORE_EMULATOR_HOST=localhost:8080 BANECO_ENV=prod QR_PROVIDER=baneco PAYMENT_WATCHER=baneco MODO_PRUEBA_PRODUCCION=1 BANECO_POLL_INTERVAL_SECONDS=10 PRUEBA_CUENTA=${CUENTA:-prod} node --env-file=$HOME/.manejoqr/baneco-${CUENTA:-prod}.env packages/baneco-satelite/dist/main.js",
     "prueba:consola": "npm run build:app -w @mqs/demo-web && npm run preview -w @mqs/demo-web -- --port 5173 --strictPort"

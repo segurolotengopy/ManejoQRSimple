@@ -16,9 +16,8 @@ describe('plantilla()', () => {
 });
 
 describe('variablesSinCompletar()', () => {
-  it('un archivo completo no tiene faltantes', () => {
+  it('un archivo completo no tiene faltantes, sin declarar la URL del banco', () => {
     const completo = [
-      'BANECO_PROD_BASE_URL=https://ejemplo.invalido/apiGateway',
       'BANECO_PROD_USERNAME=usuario',
       // Valores de mentira a propósito: nada con forma de llave ni de token.
       'BANECO_PROD_PASSWORD=lo-que-sea',
@@ -30,11 +29,10 @@ describe('variablesSinCompletar()', () => {
   });
 
   it('cuenta como faltante lo vacío, lo ausente y el marcador sin reemplazar', () => {
-    const medio = ['BANECO_PROD_BASE_URL=https://ejemplo.invalido', 'BANECO_PROD_USERNAME=', 'BANECO_PROD_PASSWORD=<contraseña>'].join('\n');
+    const medio = ['BANECO_PROD_USERNAME=', 'BANECO_PROD_PASSWORD=<contraseña>', 'BANECO_PROD_AES_KEY=una-llave'].join('\n');
     expect(variablesSinCompletar(medio)).toEqual([
       'BANECO_PROD_USERNAME',
       'BANECO_PROD_PASSWORD',
-      'BANECO_PROD_AES_KEY',
       'BANECO_PROD_ACCOUNT_CREDIT',
       'API_TOKEN_LOCAL',
     ]);

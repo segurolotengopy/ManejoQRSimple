@@ -71,12 +71,20 @@ P1–P9 ok; hallazgos en `02-hallazgos-produccion.md`.
    npm run prueba:cuenta -- sucursal-2 --revisar
    ```
 
-   Las variables son las mismas para toda cuenta: `BANECO_PROD_BASE_URL`,
-   `BANECO_PROD_USERNAME`, `BANECO_PROD_PASSWORD`, `BANECO_PROD_AES_KEY`,
-   `BANECO_PROD_ACCOUNT_CREDIT` y `API_TOKEN_LOCAL` (el mismo valor que `VITE_API_TOKEN`
-   en `packages/demo-web/.env.local`). La URL va tal cual la escribe el documento del
-   banco (`apiGateway`). Certificación usa `ApiGateway`: si la primera llamada da 404,
-   probá con esa mayúscula (verificación V1).
+   Las variables son cuatro del banco —`BANECO_PROD_USERNAME`, `BANECO_PROD_PASSWORD`,
+   `BANECO_PROD_AES_KEY` y `BANECO_PROD_ACCOUNT_CREDIT`— más `API_TOKEN_LOCAL` (el mismo
+   valor que `VITE_API_TOKEN` en `packages/demo-web/.env.local`).
+
+   **La URL del API Gateway no va en el archivo** (dato del dueño, 2026-09-18): es del
+   banco y la misma para toda cuenta de cobro, así que vive en el código
+   (`baneco-gateway/src/config.ts`, `URL_PRODUCCION`). Si algún día el banco la mueve,
+   `BANECO_PROD_BASE_URL` sigue mandando sobre ella. En **certificación** sí hay que
+   declarar `BANECO_CERT_BASE_URL`: esa URL cambió de mayúsculas entre documentos
+   (`ApiGateway`, verificación V1) y no se adivina.
+
+   Un marcador `<…>` sin reemplazar cuenta como variable faltante y el proceso no
+   arranca: probar el login con el texto de la plantilla sería un intento fallido, y el
+   usuario API se bloquea con intentos fallidos (B4).
 
    `npm run prueba:cuenta -- --listar` dice qué cuentas hay preparadas (los alias, no su
    contenido).

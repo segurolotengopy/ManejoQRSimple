@@ -332,6 +332,14 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
         la bitácora (que sigue siendo una sola) y en el título del informe.
       - La carpeta por defecto del emulador pasó de `emulador-prueba` a `emulador-prod`:
         la vieja, si todavía está, ya no se usa y se puede borrar.
+      - **La URL del API Gateway de producción es del banco, no de cada usuario API**
+        (dato del dueño, 2026-09-18): `https://apimkt.baneco.com.bo/apiGateway`. Quedó
+        como `URL_PRODUCCION` en `baneco-gateway/src/config.ts` y ya no se declara en el
+        archivo de cada cuenta; `BANECO_PROD_BASE_URL` sigue mandando si el banco la
+        mueve. En certificación la URL sigue siendo obligatoria (casing `ApiGateway`, V1).
+      - Un marcador `<…>` sin reemplazar cuenta como variable faltante: probar el login
+        con el texto de la plantilla sería un intento fallido, y el usuario API se
+        bloquea con intentos fallidos (B4).
 
 ### En espera (bloqueos externos)
 

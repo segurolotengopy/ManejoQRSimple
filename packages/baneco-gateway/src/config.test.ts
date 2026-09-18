@@ -1,7 +1,7 @@
 import { esExito } from '@mqs/qr-core';
 import { describe, expect, it } from 'vitest';
 
-import { describir, leerConfig } from './config.js';
+import { describir, leerConfig, URL_PRODUCCION } from './config.js';
 import { LLAVE_DE_PRUEBA } from './pruebas/fixtures.js';
 
 const ENTORNO_CERT = {
@@ -79,6 +79,52 @@ describe('leerConfig()', () => {
       expect(r.error.tipo).toBe('URL_DE_PRODUCCION_EN_CERT');
     }
   });
+
+  it('en producción la URL del banco no hace falta declararla', () => {
+    // Es del banco, no de cada usuario API: la misma para toda cuenta de cobro.
+    const r = leerConfig({
+      BANECO_ENV: 'prod',
+      BANECO_PROD_USERNAME: 'usuario',
+      BANECO_PROD_PASSWORD: 'password',
+      BANECO_PROD_AES_KEY: LLAVE_DE_PRUEBA,
+      BANECO_PROD_ACCOUNT_CREDIT: '1234567890',
+    });
+    expect(esExito(r) && r.valor.baseUrl).toBe(URL_PRODUCCION);
+  });
+
+  it('una URL declarada manda sobre la de por defecto', () => {
+    const r = leerConfig({
+      BANECO_ENV: 'prod',
+      BANECO_PROD_BASE_URL: 'https://otra.test/apiGateway',
+      BANECO_PROD_USERNAME: 'usuario',
+      BANECO_PROD_PASSWORD: 'password',
+      BANECO_PROD_AES_KEY: LLAVE_DE_PRUEBA,
+      BANECO_PROD_ACCOUNT_CREDIT: '1234567890',
+    });
+    expect(esExito(r) && r.valor.baseUrl).toBe('https://otra.test/apiGateway');
+  });
+
+  it('en certificación la URL sigue siendo obligatoria', () => {
+    // La de desarrollo cambió de mayúsculas entre documentos (V1): no se adivina.
+    const { BANECO_CERT_BASE_URL: _omitida, ...sinUrl } = ENTORNO_CERT;
+    expect(leerConfig(sinUrl)).toEqual({
+      ok: false,
+      error: { tipo: 'FALTA_VARIABLE', variable: 'BANECO_CERT_BASE_URL' },
+    });
+  });
+
+  it.each(['USERNAME', 'PASSWORD', 'AES_KEY', 'ACCOUNT_CREDIT'])(
+    'un marcador <…> sin reemplazar cuenta como faltante: %s',
+    (sufijo) => {
+      // Intentar el login con el texto de la plantilla es un intento fallido, y
+      // el usuario API se bloquea con intentos fallidos (B4).
+      const variable = `BANECO_CERT_${sufijo}`;
+      expect(leerConfig({ ...ENTORNO_CERT, [variable]: '<completar>' })).toEqual({
+        ok: false,
+        error: { tipo: 'FALTA_VARIABLE', variable },
+      });
+    },
+  );
 
   it('en ambiente prod lee las variables BANECO_PROD_*', () => {
     const r = leerConfig({

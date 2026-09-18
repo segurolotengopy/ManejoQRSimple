@@ -6,9 +6,14 @@
  * ni esta herramienta ni Claude Code leen su contenido nunca (regla #2).
  */
 
-/** Variables que el dueño tiene que completar, en el orden en que se piden. */
+/**
+ * Variables que el dueño tiene que completar, en el orden en que se piden.
+ *
+ * `BANECO_PROD_BASE_URL` **no** está: la URL del API Gateway es del banco, no
+ * de cada cuenta, y vive en `baneco-gateway/src/config.ts`. Se puede poner
+ * igual en el archivo, y manda sobre el valor por defecto, pero no hace falta.
+ */
 export const VARIABLES = [
-  'BANECO_PROD_BASE_URL',
   'BANECO_PROD_USERNAME',
   'BANECO_PROD_PASSWORD',
   'BANECO_PROD_AES_KEY',
@@ -24,11 +29,11 @@ export function plantilla(alias: string): string {
     '# el repositorio, ni en .env: este archivo vive fuera del repo, con permisos',
     '# 600, y no se versiona ni se sube a ninguna nube (CLAUDE.md, regla #2).',
     '#',
-    '# La URL va tal cual la escribe el documento del banco (`apiGateway`).',
+    '# La URL del API Gateway no va acá: es del banco y la misma para toda',
+    '# cuenta de cobro, así que ya está en el código.',
     '# No pruebes contraseñas al tanteo: el usuario API se bloquea con intentos',
     '# fallidos y se desbloquea en agencia (pregunta B4).',
     '',
-    'BANECO_PROD_BASE_URL=<URL de producción del documento del banco>',
     'BANECO_PROD_USERNAME=<usuario API de esta cuenta>',
     'BANECO_PROD_PASSWORD=<contraseña del usuario API de esta cuenta>',
     'BANECO_PROD_AES_KEY=<llave AES de 32 caracteres de esta cuenta>',
@@ -40,6 +45,9 @@ export function plantilla(alias: string): string {
     '# Opcionales; el código tiene techos fijos por encima de esto:',
     '# PRUEBA_MONTO_CENTAVOS=100',
     '# PRUEBA_MAX_QRS=10',
+    '',
+    '# Solo si el banco mueve su API Gateway; si no, dejalo comentado:',
+    '# BANECO_PROD_BASE_URL=',
     '',
   ].join('\n');
 }

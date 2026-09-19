@@ -1,9 +1,10 @@
 # 02 — Hallazgos de la prueba controlada en producción
 
-**Corrida:** 2026-09-13 (P1–P8) y 2026-09-14 (P9, y P6–P7 repetidas). Banco Económico,
-API de producción, QRs de **Bs 1**, datos en el emulador local. Procedimiento:
-[`03-prueba-en-produccion.md`](./03-prueba-en-produccion.md). Se repite completo con cada
-cuenta de cobro nueva o banco nuevo (ESTADO, decisión 16).
+**Corridas:** la primera cuenta (alias `prod`) el 2026-09-13 (P1–P8) y el 2026-09-14 (P9,
+y P6–P7 repetidas); la **segunda cuenta** (alias `cuenta-2`) el 2026-09-18/19, en §5.
+Banco Económico, API de producción, QRs de **Bs 1**, datos en el emulador local.
+Procedimiento: [`03-prueba-en-produccion.md`](./03-prueba-en-produccion.md). Se repite
+completo con cada cuenta de cobro nueva o banco nuevo (ESTADO, decisión 16).
 
 **Resultado:** **P1–P9 ok.** El ciclo completo del cobro funciona contra el banco real:
 autenticación y cifrado, QR interoperable, pagos desde Baneco y desde otro banco,
@@ -97,7 +98,44 @@ documentado.
 | todas | `0` | Éxito. |
 | `cancelQR` | `403` | El QR no se puede anular: **ya estaba anulado o está pagado**. Para saber cuál, hay que consultar `statusQR`. |
 
-## 5. Lo que queda abierto
+## 5. Segunda cuenta de cobro — corrida del 2026-09-18/19
+
+Primera repetición del procedimiento con una **cuenta de cobro nueva** en el mismo banco
+(alias `cuenta-2`), que es justamente el caso que la decisión 16 manda repetir. Ocho QRs
+de Bs 1, cuatro pagados.
+
+| # | Prueba | Resultado | Evidencia |
+|---|---|---|---|
+| P1 | Autenticación | ✅ | El banco aceptó las credenciales de la cuenta nueva: el satélite cerró los tres días anteriores y la consola emitió QRs sin un solo error. |
+| P2 | Pago desde la app de Banco Económico | ✅ | `CONFIRMADO`. |
+| P3 | Pago desde otro banco | ✅ | `CONFIRMADO`. Interoperabilidad confirmada también en esta cuenta. |
+| P4 | Pagar un QR anulado | ✅ | Anulado a los 6 s de emitido; la app rechazó el pago. |
+| P5 | Pagar dos veces el mismo QR | ✅ | La app rechazó el segundo pago. |
+| P6 | Anular un QR ya pagado | ✅ | El banco lo rechaza; el cobro sigue `CONFIRMADO`. |
+| P7 | Anular dos veces el mismo QR | ✅ | Éxito en la tarjeta: con el adaptador ya corregido (§3.1), la doble anulación se trata como hecha. |
+| P8 | El vencimiento anula el QR | ✅ | Dos QRs de 5 min: `VENCIDO` a los 309 s y 305 s, con la anulación en el banco en la evidencia. |
+| P9 | Cierre diario | ✅ | `cierre 2026-09-18: abonos=4 confirmados=0 enRevision=0 yaRegistrados=4 sinCorroborar=0 huerfanos=0`. |
+
+**Tiempos de confirmación, desde la emisión del QR:** 18, 24, 33 y 122 s. Los tres
+primeros mejoran los 41–66 s de la primera corrida; el de 122 s es tiempo de la persona
+—escanear y pagar—, no del sistema.
+
+**Lo que verifica esta corrida, más allá de las nueve pruebas:**
+
+- **Los cuatro pagos entraron por el banco**, no por otra vía: la evidencia de cada cobro
+  es `QR_ACTIVO → PAGO_DETECTADO (watcher-baneco) → CONFIRMADO`.
+- **No quedó ningún QR cobrable suelto:** los cuatro no pagados terminaron `VENCIDO` o
+  `ANULADO`, estados que exigen la constancia de anulación del banco.
+- **El cierre diario cerró en cero:** `yaRegistrados=4`, `huerfanos=0`. El reporte del
+  banco y nuestros cobros dicen lo mismo, y ningún pago quedó sin explicar.
+- **Las dos cuentas no se mezclan:** el emulador quedó marcado con el alias `cuenta-2`, y
+  un proceso arrancado con otro alias no habría arrancado.
+- **3.750 pasadas del satélite** entre la corrida y el cierre, sin un error.
+
+Sin hallazgos nuevos del banco: el catálogo de §4 no cambió. Los `responseCode` crudos de
+esta corrida quedaron en la bitácora (`~/.manejoqr/logs/`, pestaña Logs).
+
+## 6. Lo que queda abierto
 
 - **Fixtures reales:** las de `baneco-gateway` siguen derivadas de la especificación. Los
   logs no guardan cuerpos a propósito, así que las respuestas reales saneadas llegarán con

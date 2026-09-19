@@ -4,9 +4,11 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-19 (sesión "segunda cuenta de cobro" — la prueba en
-producción admite **varias cuentas**, cada una con su alias, sus credenciales y sus datos,
-y la **segunda cuenta ya corrió P1–P9 ok** (`02-hallazgos-produccion.md` §5).
+**Última actualización:** 2026-09-19, cierre de la sesión "segunda cuenta de cobro"
+(**PR #36 mergeado**): la prueba en producción admite **varias cuentas**, cada una con su
+alias, sus credenciales y sus datos, y la **segunda cuenta corrió P1–P9 ok**
+(`02-hallazgos-produccion.md` §5). Además se cerró **C9: no hay comisión bancaria**
+(decisión 17).
 Antes: prueba con Baneco P1–P9 ok, hallazgos en
 `docs/Integraciones/baneco/02-hallazgos-produccion.md`; B0 tiene el modo pago asistido y
 espera la cuenta de pruebas, A4)
@@ -126,6 +128,14 @@ espera la cuenta de pruebas, A4)
     primera) y, con él, su archivo de credenciales, su emulador y sus imágenes de QR.
     Se corre con `CUENTA=<alias>` en el emulador, la API y el satélite; el alias se ve
     en la consola y encabeza el informe.
+17. **Comisiones (C9) — respondida por el dueño el 2026-09-17:** el **cobro por QR
+    Simple no tiene comisión bancaria**; el servicio del banco es gratuito. El dato
+    quedó registrado ese día en el registro de proyectos
+    (`~/Claude-Proyectos/proyectos/manejoqrsimple.md`) desde otra sesión, y se trae acá
+    al cerrar la del 2026-09-19. Consecuencia técnica: **el monto acreditado es el del
+    QR**, así que la conciliación por monto exacto no necesita tolerancia por comisión
+    — que era justo el riesgo que C9 dejaba abierto. Si alguna vez el banco cobrara
+    una, habría que revisar la conciliación antes de producción.
 
 ## Estado actual
 
@@ -302,7 +312,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       - Barrera por host exacto de certificación y https.
 
       No se corrió contra el banco: espera la cuenta de pruebas (A4).
-- [x] **2026-09-14 — Logs persistentes (rama `feat/logs-persistentes`).** Pedido del dueño
+- [x] **2026-09-14 — Logs persistentes (PR #33, mergeado).** Pedido del dueño
       durante la prueba en producción: un `responseCode` o la línea del cierre diario se
       perdían al reiniciar la API o al cerrar la terminal del satélite.
       - `composicion/src/bitacora.ts`: un archivo JSONL por proceso y por día de Bolivia en
@@ -314,8 +324,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
       Mergeado como PR #33; la corrección de la doble anulación y los hallazgos de la
       prueba, como PR #34; el refresco de la tarjeta en `PAGO_DETECTADO`, como PR #32.
-- [x] **2026-09-16 — Varias cuentas de cobro en la prueba (rama
-      `feat/segunda-cuenta-de-cobro`).** El dueño consiguió credenciales de una segunda
+- [x] **2026-09-16/19 — Varias cuentas de cobro en la prueba (PR #36, mergeado).** El dueño consiguió credenciales de una segunda
       cuenta en Banco Económico, y la prueba P1–P9 se repite por cada cuenta (decisión 16).
       - Cada cuenta tiene un **alias** (`prod` la primera) y, con él, su archivo de
         credenciales `~/.manejoqr/baneco-<alias>.env`, su emulador `emulador-<alias>` y sus
@@ -412,8 +421,8 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    ningún hallazgo nuevo del banco. Cuando ya no hagan falta, borrar
    `~/.manejoqr/emulador-cuenta-2` y `~/.manejoqr/qrs/cuenta-2`.
 1. Pedirle al oficial, si todavía no respondió el correo H, el usuario y la cuenta de
-   pruebas (A4) y el catálogo de bancos (D9). Confirmar con el ejecutivo las comisiones
-   (C9).
+   pruebas (A4) y el catálogo de bancos (D9). ~~Confirmar las comisiones (C9)~~ —
+   respondida (decisión 17).
 
 **Dueño — lo demás:**
 
@@ -430,8 +439,8 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 3. Revisar `.env.example`: si documenta `BANECO_POLL_INTERVAL_SECONDS` con 180,
    actualizarlo a 30 (Claude Code no tiene permiso de lectura sobre `.env.*`).
 4. Decidir la opción de WhatsAppModular en docs/04 §2.3.
-5. Comercial: negociar comisiones con el ejecutivo (C9) y, al acercarse producción,
-   pedir la llave de producción por un canal que no sea un adjunto de correo (B3).
+5. Comercial: al acercarse producción, pedir la llave de producción por un canal que no
+   sea un adjunto de correo (B3). Las comisiones (C9) ya están respondidas: no hay.
 6. Adoptar la rutina de `docs/09-revision-manual.md` §3: una revisión diaria de la
    pestaña Revisión.
 7. Persistir el límite de inotify (archivo en `/etc/sysctl.d/`).

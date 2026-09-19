@@ -159,8 +159,8 @@ La pestaña Pruebas tiene este mismo plan como checklist, y arma el informe.
 | P9 | Cierre diario | Al día siguiente: `prueba:emulador` y `prueba:satelite`. | El log dice `yaRegistrados` con los pagos de hoy y `huerfanos=0`. |
 
 P1–P8 se hacen el mismo día, en unos 30–45 minutos. Gasto total: unos Bs 3 (P2, P3 y lo
-que se pague por error), más la comisión que corresponda (C9, a confirmar con el
-ejecutivo).
+que se pague por error). Sin comisión bancaria: el cobro por QR Simple no la tiene (C9,
+cerrada el 2026-09-17).
 
 **Lo que muestra la tarjeta es lo que decide el adaptador, no la respuesta cruda del
 banco.** Desde el hallazgo de P7, el adaptador trata la doble anulación como éxito si el QR

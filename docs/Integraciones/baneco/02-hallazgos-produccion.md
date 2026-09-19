@@ -141,5 +141,6 @@ esta corrida quedaron en la bitácora (`~/.manejoqr/logs/`, pestaña Logs).
   logs no guardan cuerpos a propósito, así que las respuestas reales saneadas llegarán con
   el modo pago asistido del B0 en certificación (`tools/baneco-b0`, espera la cuenta de
   pruebas A4).
-- **Comisiones (C9):** confirmar con el ejecutivo si al abono se le descuenta alguna. En la
-  prueba, los pagos se conciliaron por el monto del QR.
+- ~~**Comisiones (C9)**~~ — cerrada el 2026-09-17: **no hay comisión bancaria** por cobro
+  QR Simple. Coincide con lo observado en las dos corridas, donde los pagos conciliaron
+  por el monto exacto del QR.

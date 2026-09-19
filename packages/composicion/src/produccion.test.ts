@@ -27,6 +27,19 @@ describe('barrera de producción', () => {
     ).toBeNull();
   });
 
+  it('el satélite sin Firestore no habla con producción', () => {
+    // Con la persistencia en memoria no hay cobros contra los cuales conciliar
+    // ni queda marcada la cuenta: los abonos reales del día se perderían al salir.
+    expect(
+      verificarProduccion({
+        ...PROD,
+        MODO_PRUEBA_PRODUCCION: '1',
+        FIRESTORE_EMULATOR_HOST: 'localhost:8080',
+        SATELITE_SIN_FIRESTORE: '1',
+      }),
+    ).toMatch(/SATELITE_SIN_FIRESTORE/);
+  });
+
   it('basta con que uno de los dos puertos hable con el banco', () => {
     expect(hablaConProduccion({ BANECO_ENV: 'prod', PAYMENT_WATCHER: 'baneco' })).toBe(true);
   });

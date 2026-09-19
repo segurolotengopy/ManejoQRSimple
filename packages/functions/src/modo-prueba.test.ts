@@ -52,3 +52,23 @@ describe('topes de la prueba en producción', () => {
     expect(esExito(leerModoPrueba({ PRUEBA_MONTO_CENTAVOS: '1000', PRUEBA_MAX_QRS: '30' }, 'x'))).toBe(true);
   });
 });
+
+describe('cuenta de cobro de la corrida', () => {
+  it('sin CUENTA, la primera cuenta', () => {
+    const r = leerModoPrueba({}, 'x');
+    expect(esExito(r) && r.valor.cuenta).toBe('prod');
+  });
+
+  it('con CUENTA, ese alias: es lo que ve el dueño en la consola', () => {
+    const r = leerModoPrueba({ PRUEBA_CUENTA: 'sucursal-2' }, 'x');
+    expect(esExito(r) && r.valor.cuenta).toBe('sucursal-2');
+  });
+
+  it('un alias que no sirve como nombre de archivo no arranca', () => {
+    // Si CUENTA está mal escrita, el archivo de credenciales que cargó `node
+    // --env-file` no es el que el dueño cree: mejor no arrancar.
+    const r = leerModoPrueba({ PRUEBA_CUENTA: '../otra' }, 'x');
+    expect(esExito(r)).toBe(false);
+    expect(!esExito(r) && r.error).toContain('CUENTA');
+  });
+});

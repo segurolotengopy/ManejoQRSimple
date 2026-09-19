@@ -85,8 +85,19 @@ const MARCA: Readonly<Record<ResultadoPrueba, string>> = {
   'no-aplica': '➖ no aplica',
 };
 
-/** El informe de la corrida, en Markdown. Sin datos de quien pagó (regla #4). */
-export function informe(fecha: Date, registro: RegistroPruebas, cobros: readonly CobroDelInforme[]): string {
+/**
+ * El informe de la corrida, en Markdown. Sin datos de quien pagó (regla #4).
+ *
+ * Encabeza con el **alias** de la cuenta de cobro, no con su número: la prueba
+ * se repite entera por cada cuenta nueva, y un informe sin decir de cuál es no
+ * se puede archivar.
+ */
+export function informe(
+  fecha: Date,
+  registro: RegistroPruebas,
+  cobros: readonly CobroDelInforme[],
+  cuenta: string,
+): string {
   const filas = PRUEBAS.map((p) => {
     const r = registro[p.id] ?? { resultado: 'pendiente', nota: '' };
     const nota = r.nota.replace(/\|/g, '/').replace(/\n/g, ' ');
@@ -94,7 +105,7 @@ export function informe(fecha: Date, registro: RegistroPruebas, cobros: readonly
   });
   const lineasCobros = cobros.map((c) => `- \`${c.id.slice(0, 8)}\` — Bs ${c.monto} — ${c.estado}`);
   return [
-    `## Prueba en producción — ${fecha.toISOString().slice(0, 10)}`,
+    `## Prueba en producción — ${fecha.toISOString().slice(0, 10)} — cuenta \`${cuenta}\``,
     '',
     '| # | Prueba | Resultado | Nota |',
     '|---|---|---|---|',

@@ -1,7 +1,7 @@
 import { esExito } from '@mqs/qr-core';
 import { describe, expect, it } from 'vitest';
 
-import { describir, leerConfig } from './config.js';
+import { describir, leerConfig, URL_PRODUCCION } from './config.js';
 import { LLAVE_DE_PRUEBA } from './pruebas/fixtures.js';
 
 const ENTORNO_CERT = {
@@ -77,6 +77,74 @@ describe('leerConfig()', () => {
     expect(esExito(r)).toBe(false);
     if (!esExito(r)) {
       expect(r.error.tipo).toBe('URL_DE_PRODUCCION_EN_CERT');
+    }
+  });
+
+  it('en producción la URL del banco no hace falta declararla', () => {
+    // Es del banco, no de cada usuario API: la misma para toda cuenta de cobro.
+    const r = leerConfig({
+      BANECO_ENV: 'prod',
+      BANECO_PROD_USERNAME: 'usuario',
+      BANECO_PROD_PASSWORD: 'password',
+      BANECO_PROD_AES_KEY: LLAVE_DE_PRUEBA,
+      BANECO_PROD_ACCOUNT_CREDIT: '1234567890',
+    });
+    expect(esExito(r) && r.valor.baseUrl).toBe(URL_PRODUCCION);
+  });
+
+  it('una URL declarada manda sobre la de por defecto', () => {
+    const r = leerConfig({
+      BANECO_ENV: 'prod',
+      BANECO_PROD_BASE_URL: 'https://otra.test/apiGateway',
+      BANECO_PROD_USERNAME: 'usuario',
+      BANECO_PROD_PASSWORD: 'password',
+      BANECO_PROD_AES_KEY: LLAVE_DE_PRUEBA,
+      BANECO_PROD_ACCOUNT_CREDIT: '1234567890',
+    });
+    expect(esExito(r) && r.valor.baseUrl).toBe('https://otra.test/apiGateway');
+  });
+
+  it('en certificación la URL sigue siendo obligatoria', () => {
+    // La de desarrollo cambió de mayúsculas entre documentos (V1): no se adivina.
+    const { BANECO_CERT_BASE_URL: _omitida, ...sinUrl } = ENTORNO_CERT;
+    expect(leerConfig(sinUrl)).toEqual({
+      ok: false,
+      error: { tipo: 'FALTA_VARIABLE', variable: 'BANECO_CERT_BASE_URL' },
+    });
+  });
+
+  it.each(['USERNAME', 'PASSWORD', 'AES_KEY', 'ACCOUNT_CREDIT'])(
+    'un marcador <…> sin reemplazar no arranca, y se distingue de una variable ausente: %s',
+    (sufijo) => {
+      // Intentar el login con el texto de la plantilla es un intento fallido, y
+      // el usuario API se bloquea con intentos fallidos (B4). El error dice
+      // "marcador" y no "falta": si dijera "falta" sobre una línea completada,
+      // el camino natural sería editar el valor de verdad y reintentar.
+      const variable = `BANECO_CERT_${sufijo}`;
+      const r = leerConfig({ ...ENTORNO_CERT, [variable]: '<completar>' });
+      expect(esExito(r)).toBe(false);
+      if (!esExito(r)) {
+        expect(r.error).toMatchObject({ tipo: 'VARIABLE_INVALIDA', variable });
+        expect(r.error.tipo === 'VARIABLE_INVALIDA' && r.error.motivo).toContain('falso positivo');
+      }
+    },
+  );
+
+  it('en producción, una URL declarada como marcador no se cae al valor por defecto', () => {
+    // El caso real: el banco avisa que movió el gateway y la URL se pega con
+    // los `<>` que le puso el correo. Arrancar contra la URL vieja parecería
+    // una falla del banco.
+    const r = leerConfig({
+      BANECO_ENV: 'prod',
+      BANECO_PROD_BASE_URL: '<https://nuevo.baneco.com.bo/apiGateway>',
+      BANECO_PROD_USERNAME: 'usuario',
+      BANECO_PROD_PASSWORD: 'password',
+      BANECO_PROD_AES_KEY: LLAVE_DE_PRUEBA,
+      BANECO_PROD_ACCOUNT_CREDIT: '1234567890',
+    });
+    expect(esExito(r)).toBe(false);
+    if (!esExito(r)) {
+      expect(r.error).toMatchObject({ tipo: 'VARIABLE_INVALIDA', variable: 'BANECO_PROD_BASE_URL' });
     }
   });
 

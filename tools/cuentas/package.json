@@ -1,0 +1,15 @@
+{
+  "name": "@mqs/cuentas",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Prepara el archivo de credenciales de una cuenta de cobro para la prueba en producción. Escribe la plantilla con permisos 600; los valores los completa el dueño.",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@mqs/composicion": "*"
+  }
+}

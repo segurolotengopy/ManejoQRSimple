@@ -23,6 +23,19 @@ export {
 } from './puertos.js';
 export { hablaConProduccion, verificarProduccion } from './produccion.js';
 export {
+  archivoDeCredenciales,
+  esAliasDeCuenta,
+  leerCuentaDePrueba,
+  ALIAS_DE_CUENTA,
+  CUENTA_POR_DEFECTO,
+} from './cuenta.js';
+/**
+ * La marca de cuenta del emulador se re-exporta desde acá para que los procesos
+ * —la API y el satélite— no tengan que importar el adaptador de Firestore solo
+ * por esto: la raíz de composición es la que cablea persistencia.
+ */
+export { explicarMarca, fijarCuentaDePrueba, type MarcaDeCuenta } from '@mqs/firestore-store';
+export {
   Bitacora,
   describirLlamada,
   diaBoliviano,

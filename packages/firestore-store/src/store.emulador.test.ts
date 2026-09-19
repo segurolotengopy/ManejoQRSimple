@@ -22,6 +22,7 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AbonosSinConciliarFirestore, COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
+import { COLECCION_CONFIGURACION, explicarMarca, fijarCuentaDePrueba } from './cuenta-de-prueba.js';
 import { CobroRepositoryFirestore, EvidenceStoreFirestore } from './repositorio.js';
 
 let app: App;
@@ -98,6 +99,30 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.recursiveDelete(db.collection('cobros'));
   await db.recursiveDelete(db.collection(COLECCION_ABONOS_SIN_CONCILIAR));
+  await db.recursiveDelete(db.collection(COLECCION_CONFIGURACION));
+});
+
+describe('fijarCuentaDePrueba()', () => {
+  it('marca el emulador vacío y deja pasar al mismo alias', async () => {
+    await expect(fijarCuentaDePrueba(db, 'prod', T0)).resolves.toEqual({ tipo: 'MARCADA', cuenta: 'prod' });
+    await expect(fijarCuentaDePrueba(db, 'prod', T0)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
+  });
+
+  it('otra cuenta sobre los mismos datos no arranca', async () => {
+    await fijarCuentaDePrueba(db, 'prod', T0);
+    const marca = await fijarCuentaDePrueba(db, 'sucursal-2', T0);
+    expect(marca).toEqual({ tipo: 'CONFLICTO', cuenta: 'sucursal-2', guardada: 'prod' });
+    // El conflicto no pisa la marca: los datos siguen siendo de la primera.
+    await expect(fijarCuentaDePrueba(db, 'prod', T0)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
+    expect(explicarMarca(marca)).toContain('sucursal-2');
+  });
+
+  it('una marca ilegible tampoco deja arrancar', async () => {
+    await db.collection(COLECCION_CONFIGURACION).doc('cuentaDePrueba').set({ cuenta: 7 });
+    const marca = await fijarCuentaDePrueba(db, 'prod', T0);
+    expect(marca.tipo).toBe('ERROR');
+    expect(explicarMarca(marca)).not.toBeNull();
+  });
 });
 
 describe('contrato de los puertos contra Firestore real', () => {

@@ -29,10 +29,17 @@ export type ErrorAuth = { readonly tipo: 'FALTA_TOKEN_LOCAL' };
  * verificador, y sin verificador la API no arranca.
  */
 export function verificadorDeTokenFijo(tokenEsperado: string | undefined): VerificadorDeToken | null {
-  if (tokenEsperado === undefined || tokenEsperado.trim().length < 16) {
+  const valor = tokenEsperado?.trim();
+  if (valor === undefined || valor.length < 16) {
     return null;
   }
-  const esperado = Buffer.from(tokenEsperado.trim(), 'utf8');
+  // El marcador de la plantilla de credenciales mide más de 16 caracteres, así
+  // que el largo no alcanza: un archivo a medio llenar levantaría la API con un
+  // token cuyo valor exacto está publicado en este repositorio.
+  if (valor.startsWith('<') && valor.endsWith('>')) {
+    return null;
+  }
+  const esperado = Buffer.from(valor, 'utf8');
 
   return (token: string): Promise<string | null> => {
     const recibido = Buffer.from(token, 'utf8');

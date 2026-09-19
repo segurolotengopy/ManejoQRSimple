@@ -26,9 +26,10 @@ P1–P9 ok; hallazgos en `02-hallazgos-produccion.md`.
 | Cada QR de prueba es de **Bs 1** (configurable hasta un techo fijo de **Bs 10**). El monto lo fija el servidor, no la consola. | `packages/functions/src/modo-prueba.ts` |
 | Como máximo **10 QRs** por prueba (techo fijo 30). Se cuentan los pedidos al banco, salgan o no, **vengan del botón de pruebas, del formulario común o de "renovar"**. Reiniciar la API no reinicia el cupo: retoma los cobros del emulador y cuenta los de las últimas 24 h. | `modo-prueba.ts`, `handlers.ts` |
 | En modo prueba, **ningún** cobro puede superar el monto de prueba ni vivir más de **24 h**, tampoco los del formulario común. | `handlers.ts`, `crearCobro` |
-| Los datos van al **emulador**, que los guarda en `~/.manejoqr/emulador-prueba` al cerrarse. | `npm run prueba:emulador` |
-| Las **imágenes de QR** van a `~/.manejoqr/qrs/` (permisos 700/600), fuera del repo. | `packages/functions/src/imagenes.ts` |
-| Las **credenciales** viven en `~/.manejoqr/baneco-prod.env` (permisos 600). Ni en el repo ni en `.env`; Claude Code no las lee. | §2 |
+| Los datos van al **emulador**, que los guarda en `~/.manejoqr/emulador-<cuenta>` al cerrarse. | `npm run prueba:emulador` |
+| Las **imágenes de QR** van a `~/.manejoqr/qrs/<cuenta>/` (permisos 700/600), fuera del repo. | `packages/functions/src/imagenes.ts` |
+| Las **credenciales** viven en `~/.manejoqr/baneco-<cuenta>.env` (permisos 600). Ni en el repo ni en `.env`; Claude Code no las lee. | §2 |
+| **Una cuenta no corre sobre los datos de otra:** el emulador queda marcado con el alias de la cuenta, y un proceso con otro alias no arranca. | `packages/firestore-store/src/cuenta-de-prueba.ts` |
 | **"Cerrar la prueba"** anula en el banco todo QR que quedó sin pagar —de **todos** los cobros del emulador de la prueba, aunque la API se haya reiniciado—, después de mirar si alguien lo pagó. | consola, pestaña Pruebas |
 | La consola compara vencimientos con la **hora del servidor**, no la del navegador. | `Pruebas.tsx` |
 
@@ -43,35 +44,57 @@ P1–P9 ok; hallazgos en `02-hallazgos-produccion.md`.
 2. **El número de la cuenta de cobro** (`accountCredit`): la cuenta a la que se acreditan
    los pagos.
 3. **Dos cuentas para pagar:** una en Banco Económico y otra en **otro banco** (prueba 3).
-4. Crear el archivo de credenciales, con permisos 600:
+4. **El archivo de credenciales de esa cuenta.** Cada cuenta de cobro tiene el suyo, con
+   su propio alias:
+
+   | Cuenta | Alias | Archivo | Cómo se arranca |
+   |---|---|---|---|
+   | La primera | `prod` | `~/.manejoqr/baneco-prod.env` | `npm run prueba:api` |
+   | Cualquier otra | el que elija el dueño (`sucursal-2`) | `~/.manejoqr/baneco-sucursal-2.env` | `CUENTA=sucursal-2 npm run prueba:api` |
+
+   El alias empieza con letra y sigue con minúsculas, números y guiones. Es un **rótulo**
+   —se muestra en la consola, se guarda en el emulador y encabeza el informe que se
+   archiva en el repo—, y por eso **no puede ser el número de cuenta**: que arranque con
+   letra lo vuelve imposible, no solo desaconsejado.
+
+   El archivo lo crea Claude Code, con la plantilla y los permisos 600:
 
    ```bash
-   mkdir -p ~/.manejoqr && chmod 700 ~/.manejoqr
+   npm run prueba:cuenta -- sucursal-2
    ```
+
+   Lo único que hace el dueño es **abrirlo con su editor y reemplazar cada `<…>`** por su
+   valor. Nada de eso se pega en un chat ni entra al repositorio. Para saber si quedó algo
+   sin completar —dice qué variable falta, nunca su valor—:
 
    ```bash
-   touch ~/.manejoqr/baneco-prod.env && chmod 600 ~/.manejoqr/baneco-prod.env
+   npm run prueba:cuenta -- sucursal-2 --revisar
    ```
 
-   Contenido (completar con un editor reemplazando cada `<…>`, **nunca** pegarlo en un
-   chat):
+   Las variables son cuatro del banco —`BANECO_PROD_USERNAME`, `BANECO_PROD_PASSWORD`,
+   `BANECO_PROD_AES_KEY` y `BANECO_PROD_ACCOUNT_CREDIT`— más `API_TOKEN_LOCAL` (el mismo
+   valor que `VITE_API_TOKEN` en `packages/demo-web/.env.local`).
 
-   ```ini
-   BANECO_PROD_BASE_URL=<URL de producción del documento del banco>
-   BANECO_PROD_USERNAME=<usuario API>
-   BANECO_PROD_PASSWORD=<contraseña del usuario API>
-   BANECO_PROD_AES_KEY=<llave AES de 32 caracteres>
-   BANECO_PROD_ACCOUNT_CREDIT=<número de la cuenta de cobro>
-   API_TOKEN_LOCAL=<el mismo valor que VITE_API_TOKEN en packages/demo-web/.env.local>
-   # Opcionales, con techo fijo en el código:
-   # PRUEBA_MONTO_CENTAVOS=100
-   # PRUEBA_MAX_QRS=10
-   ```
+   **La URL del API Gateway no va en el archivo** (dato del dueño, 2026-09-18): es del
+   banco y la misma para toda cuenta de cobro, así que vive en el código
+   (`baneco-gateway/src/config.ts`, `URL_PRODUCCION`). Si algún día el banco la mueve,
+   `BANECO_PROD_BASE_URL` sigue mandando sobre ella. En **certificación** sí hay que
+   declarar `BANECO_CERT_BASE_URL`: esa URL cambió de mayúsculas entre documentos
+   (`ApiGateway`, verificación V1) y no se adivina.
 
-   La URL va tal cual la escribe el documento del banco (`apiGateway`). Certificación usa
-   `ApiGateway`: si la primera llamada da 404, probá con esa mayúscula (verificación V1).
+   Un marcador `<…>` sin reemplazar cuenta como variable faltante y el proceso no
+   arranca: probar el login con el texto de la plantilla sería un intento fallido, y el
+   usuario API se bloquea con intentos fallidos (B4).
+
+   `npm run prueba:cuenta -- --listar` dice qué cuentas hay preparadas (los alias, no su
+   contenido).
 
 ## 3. Arranque: cuatro terminales
+
+Con la primera cuenta, tal cual. Con cualquier otra, **las tres primeras llevan el mismo
+`CUENTA=<alias>`**: `CUENTA=sucursal-2 npm run prueba:emulador`, y lo mismo en la API y en
+el satélite. Si una terminal arranca con otro alias, el proceso se niega: el emulador está
+marcado con la cuenta de la que son sus datos.
 
 ```bash
 npm run prueba:emulador
@@ -89,9 +112,14 @@ npm run prueba:satelite
 npm run prueba:consola
 ```
 
-La API tiene que mostrar `⚠ PRUEBA EN PRODUCCIÓN: QRs reales de Bs 1.00`. Después abrí
+La API tiene que mostrar `⚠ PRUEBA EN PRODUCCIÓN de la cuenta «prod»: QRs reales de
+Bs 1.00`, con el alias de la cuenta que corresponde. Después abrí
 **http://localhost:5173** y entrá a la pestaña **Pruebas** (marcada `PROD`). Si la
 pestaña no aparece, la API no está en modo prueba o el token de la consola no coincide.
+
+La pestaña muestra el alias de la cuenta al lado del aviso de plata real: con dos cuentas
+del mismo banco la pantalla es idéntica, y ese chip es lo único que distingue en cuál se
+está cobrando. El informe del final también lo lleva en el título.
 
 `prueba:consola` sirve la consola compilada (sin recarga en vivo), así que no depende del
 límite de inotify.
@@ -108,6 +136,11 @@ de Bolivia (`api-AAAA-MM-DD.jsonl`, `satelite-AAAA-MM-DD.jsonl`), con permisos 7
 mismo saneamiento. Sobreviven a un reinicio: al volver a levantar la API, la pestaña Logs
 muestra lo de días anteriores. Un `responseCode` o la línea del cierre diario no hay que
 capturarlos en el momento.
+
+La bitácora es **una sola para todas las cuentas**, a propósito: así no se pierde nada al
+cambiar de cuenta. Cada corrida queda separada por su línea de arranque —`API iniciada ·
+… · cuenta sucursal-2`, `Satélite iniciado · … · cuenta sucursal-2`—, que es la que dice
+de qué cuenta es lo que sigue.
 
 ## 4. Las nueve pruebas
 
@@ -164,17 +197,25 @@ quien pagó.
 2. `Ctrl+C` en las cuatro terminales. El emulador guarda sus datos al salir, así P9 los
    encuentra mañana.
 3. **Recién cuando el informe esté documentado** (P1–P9 con sus `responseCode` y la
-   corrección del adaptador hecha), borrar `~/.manejoqr/emulador-prueba` y
-   `~/.manejoqr/qrs`. Sin el emulador no hay cobros sobre los que repetir un sondeo. Los
-   logs de `~/.manejoqr/logs/` conviene conservarlos: son el registro de la prueba. Las
-   credenciales pueden quedar donde están, con permisos 600.
+   corrección del adaptador hecha), borrar `~/.manejoqr/emulador-<cuenta>` y
+   `~/.manejoqr/qrs/<cuenta>`. Sin el emulador no hay cobros sobre los que repetir un
+   sondeo. Los logs de `~/.manejoqr/logs/` conviene conservarlos: son el registro de la
+   prueba. Las credenciales pueden quedar donde están, con permisos 600: la cuenta sigue
+   siendo la misma cuando haya que volver a probar.
+
+   Los datos de una cuenta no estorban a otra: cada una tiene su carpeta. `emulador-prueba`
+   es el nombre viejo, de cuando había una sola cuenta (corrida del 2026-09-13); si todavía
+   está, se puede borrar.
 
 ## 7. Si algo falla
 
 | Síntoma | Qué es | Qué hacer |
 |---|---|---|
 | La API no arranca y dice que producción solo se admite en la prueba controlada | Falta el modo prueba o el emulador. | Usá los scripts `prueba:*`, no `api`. |
-| `FALTA_VARIABLE BANECO_PROD_…` | Falta un dato en el archivo de credenciales. | Completalo (§2). |
+| `FALTA_VARIABLE BANECO_PROD_…` | Falta un dato en el archivo de credenciales. | `npm run prueba:cuenta -- <alias> --revisar` dice cuáles faltan (§2). |
+| `Los datos de este emulador son de la cuenta «X»…` | Una terminal arrancó con otro `CUENTA` que el resto. | Arrancá las cuatro con el mismo alias, o levantá el emulador de la otra cuenta. |
+| `«…» no sirve como alias de cuenta` al levantar el emulador | `CUENTA` mal escrita (mayúsculas, empieza con número). | Corregila. El emulador imprime al arrancar la carpeta que usa: tiene que ser la misma todos los días. |
+| `ENOENT … baneco-<alias>.env` | No existe el archivo de credenciales de ese alias. | `npm run prueba:cuenta -- <alias>` lo crea; `-- --listar` dice cuáles hay. |
 | Diagnóstico: **credenciales rechazadas** | El banco rechazó el login. | **No reintentes en bucle**: el usuario API se bloquea y se desbloquea solo en agencia (B4). Revisá los datos y probá una vez. |
 | Diagnóstico: **no se llega al banco** | Red, URL o mayúsculas de la URL. | Revisá conexión; probá `ApiGateway` (§2). |
 | Pagaste y no se confirma | El banco no lo refleja o el satélite no corre. | Esperá 1 min con "Ya pagué"; mirá la terminal del satélite; anotá la hora. |

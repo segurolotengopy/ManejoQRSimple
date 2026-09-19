@@ -17,6 +17,8 @@ import {
   MensajeriaNoConfigurada,
   construirPuertos,
   describirError,
+  explicarMarca,
+  fijarCuentaDePrueba,
   verificarProduccion,
 } from '@mqs/composicion';
 import { aDecimalBob, esExito } from '@mqs/qr-core';
@@ -103,6 +105,13 @@ async function main(): Promise<number> {
       return 1;
     }
     prueba = leido.valor;
+    // Antes de tocar nada: ¿los datos de este emulador son de esta cuenta?
+    const marca = await fijarCuentaDePrueba(db, prueba.cuenta, new Date());
+    const problema = explicarMarca(marca);
+    if (problema !== null) {
+      console.error(`✖ ${problema}`);
+      return 1;
+    }
     // Reiniciar la API no pierde de vista los QRs de antes ni reinicia el cupo.
     const previos = await puertos.valor.deps.cobros.listarRecientes(500);
     if (!esExito(previos)) {
@@ -111,7 +120,13 @@ async function main(): Promise<number> {
     }
     reanudarCorrida(prueba, previos.valor, new Date());
   }
-  registro.agregar('info', 'sistema', `API iniciada · ${puertos.valor.resumen}${prueba === null ? '' : ' · modo prueba'}`);
+  // La bitácora es una sola para todas las cuentas: la línea de arranque es lo
+  // que marca dónde empieza cada corrida y de qué cuenta es.
+  registro.agregar(
+    'info',
+    'sistema',
+    `API iniciada · ${puertos.valor.resumen}${prueba === null ? '' : ` · modo prueba · cuenta ${prueba.cuenta}`}`,
+  );
 
   const puerto = Number(process.env['API_PORT'] ?? String(PUERTO_POR_DEFECTO));
   const origenPermitido = process.env['API_ORIGEN_PERMITIDO'] ?? 'http://localhost:5173';
@@ -144,7 +159,7 @@ async function main(): Promise<number> {
     if (prueba !== null) {
       console.log(
         prueba.produccion
-          ? `\n  ⚠ PRUEBA EN PRODUCCIÓN: QRs reales de Bs ${aDecimalBob(prueba.montoCentavos)}, ` +
+          ? `\n  ⚠ PRUEBA EN PRODUCCIÓN de la cuenta «${prueba.cuenta}»: QRs reales de Bs ${aDecimalBob(prueba.montoCentavos)}, ` +
               `hasta ${String(prueba.maxQrs)} por corrida. Datos en el emulador local.`
           : `\n  Modo prueba con el banco SIMULADO: los QRs no son reales (Bs ${aDecimalBob(prueba.montoCentavos)}, ` +
               `hasta ${String(prueba.maxQrs)} por corrida).`,

@@ -4,9 +4,11 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-14 (sesión "respuestas de Baneco" — **prueba en
-producción con Baneco hecha: P1–P9 ok**, hallazgos en
-`docs/Integraciones/baneco/02-hallazgos-produccion.md`. B0 tiene el modo pago asistido y
+**Última actualización:** 2026-09-19 (sesión "segunda cuenta de cobro" — la prueba en
+producción admite **varias cuentas**, cada una con su alias, sus credenciales y sus datos,
+y la **segunda cuenta ya corrió P1–P9 ok** (`02-hallazgos-produccion.md` §5).
+Antes: prueba con Baneco P1–P9 ok, hallazgos en
+`docs/Integraciones/baneco/02-hallazgos-produccion.md`; B0 tiene el modo pago asistido y
 espera la cuenta de pruebas, A4)
 
 ---
@@ -114,12 +116,16 @@ espera la cuenta de pruebas, A4)
 16. **Prueba controlada en producción (2026-09-12):** como el banco no simula pagos
     (A2), el ciclo completo se valida en producción con plata propia desde cuentas
     internas: QRs de Bs 1, hasta 10 por corrida, datos en el emulador local,
-    credenciales en `~/.manejoqr/baneco-prod.env` (600, fuera del repo; Claude Code no
+    credenciales en `~/.manejoqr/baneco-<cuenta>.env` (600, fuera del repo; Claude Code no
     las lee). No es el pase a producción. Guía:
     `docs/Integraciones/baneco/03-prueba-en-produccion.md`.
     **Ampliada el 2026-09-14:** es un procedimiento que se **repite completo (P1–P9)**
     cada vez que se abre una cuenta de cobro nueva en el banco o se registra otro
     banco como proveedor. Primera corrida: 2026-09-13/14 con Baneco, P1–P9 ok.
+    **Ampliada el 2026-09-16:** cada cuenta de cobro tiene un **alias** (`prod` la
+    primera) y, con él, su archivo de credenciales, su emulador y sus imágenes de QR.
+    Se corre con `CUENTA=<alias>` en el emulador, la API y el satélite; el alias se ve
+    en la consola y encabeza el informe.
 
 ## Estado actual
 
@@ -306,6 +312,39 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
         (arranque, cierres, errores, pasadas con novedades y sus llamadas al banco) y
         muestra la fecha de cada línea.
 
+      Mergeado como PR #33; la corrección de la doble anulación y los hallazgos de la
+      prueba, como PR #34; el refresco de la tarjeta en `PAGO_DETECTADO`, como PR #32.
+- [x] **2026-09-16 — Varias cuentas de cobro en la prueba (rama
+      `feat/segunda-cuenta-de-cobro`).** El dueño consiguió credenciales de una segunda
+      cuenta en Banco Económico, y la prueba P1–P9 se repite por cada cuenta (decisión 16).
+      - Cada cuenta tiene un **alias** (`prod` la primera) y, con él, su archivo de
+        credenciales `~/.manejoqr/baneco-<alias>.env`, su emulador `emulador-<alias>` y sus
+        imágenes `qrs/<alias>/`. Se elige con `CUENTA=<alias>` en `prueba:emulador`,
+        `prueba:api` y `prueba:satelite`.
+      - `npm run prueba:cuenta -- <alias>` (nuevo, `tools/cuentas`) crea el archivo con la
+        plantilla y permisos 600 y dice qué variables faltan **por nombre**; los valores
+        los escribe el dueño en su editor. `--revisar` vuelve a decir qué falta;
+        `--listar`, qué cuentas hay preparadas.
+      - Barrera nueva: el emulador queda marcado con el alias de la cuenta
+        (`configuracion/cuentaDePrueba`, solo el rótulo — ningún dato bancario) y un
+        proceso con otro alias no arranca. Evita mirar los QRs de una cuenta con las
+        credenciales de otra.
+      - El alias se ve en la pestaña Pruebas, en el arranque de la API y del satélite, en
+        la bitácora (que sigue siendo una sola) y en el título del informe.
+      - La carpeta por defecto del emulador pasó de `emulador-prueba` a `emulador-prod`:
+        la vieja, si todavía está, ya no se usa y se puede borrar.
+      - **La URL del API Gateway de producción es del banco, no de cada usuario API**
+        (dato del dueño, 2026-09-18): `https://apimkt.baneco.com.bo/apiGateway`. Quedó
+        como `URL_PRODUCCION` en `baneco-gateway/src/config.ts` y ya no se declara en el
+        archivo de cada cuenta; `BANECO_PROD_BASE_URL` sigue mandando si el banco la
+        mueve. En certificación la URL sigue siendo obligatoria (casing `ApiGateway`, V1).
+      - Un marcador `<…>` sin reemplazar cuenta como variable faltante: probar el login
+        con el texto de la plantilla sería un intento fallido, y el usuario API se
+        bloquea con intentos fallidos (B4).
+      - **Estrenado el 2026-09-18/19 con la cuenta `cuenta-2`: P1–P9 ok**, sin hallazgos
+        nuevos del banco. Confirmaciones en 18, 24, 33 y 122 s desde la emisión del QR
+        (la primera corrida: 41–66 s). Informe en `02-hallazgos-produccion.md` §5.
+
 ### En espera (bloqueos externos)
 
 | Qué | Desde | Bloquea | Mientras tanto |
@@ -367,6 +406,11 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    P1–P9 ok**. Cuando ya no hagan falta, borrar `~/.manejoqr/emulador-prueba` y
    `~/.manejoqr/qrs`; conservar `~/.manejoqr/logs/`. La prueba se repite completa con cada
    cuenta de cobro nueva o banco nuevo (decisión 16).
+0bis. ~~Segunda cuenta de cobro~~ — **hecha el 2026-09-18/19, P1–P9 ok** (alias
+   `cuenta-2`; informe en `02-hallazgos-produccion.md` §5). Cuatro pagos reales
+   conciliados, cierre diario `yaRegistrados=4 huerfanos=0`, ningún QR cobrable suelto y
+   ningún hallazgo nuevo del banco. Cuando ya no hagan falta, borrar
+   `~/.manejoqr/emulador-cuenta-2` y `~/.manejoqr/qrs/cuenta-2`.
 1. Pedirle al oficial, si todavía no respondió el correo H, el usuario y la cuenta de
    pruebas (A4) y el catálogo de bancos (D9). Confirmar con el ejecutivo las comisiones
    (C9).

@@ -75,8 +75,8 @@ Fuente: `docs/Integraciones/baneco/01-preguntas-al-banco.md` (nivel 1).
       termina ese día, aunque el cobro ya haya vencido en nuestro reloj.
 - [x] Monto máximo por QR: el banco no limita la generación; el límite lo pone la
       entidad del **pagador** (C2).
-- [x] Comisiones al receptor: se negocian con el ejecutivo de negocios (C9) —
-      pendiente comercial del dueño.
+- [x] Comisiones al receptor: **no hay** (C9, cerrada por el dueño el 2026-09-17).
+      El monto acreditado es el del QR.
 - [x] QR tras el primer pago: `singleUse=true` lo agota. Un QR vencido no se puede
       pagar, pero `statusQR` no informa un estado "vencido" (C4).
 - [x] Datos del pagador: el abono individual lleva en la glosa nombre del pagador,

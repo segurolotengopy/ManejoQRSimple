@@ -114,17 +114,39 @@ describe('leerConfig()', () => {
   });
 
   it.each(['USERNAME', 'PASSWORD', 'AES_KEY', 'ACCOUNT_CREDIT'])(
-    'un marcador <…> sin reemplazar cuenta como faltante: %s',
+    'un marcador <…> sin reemplazar no arranca, y se distingue de una variable ausente: %s',
     (sufijo) => {
       // Intentar el login con el texto de la plantilla es un intento fallido, y
-      // el usuario API se bloquea con intentos fallidos (B4).
+      // el usuario API se bloquea con intentos fallidos (B4). El error dice
+      // "marcador" y no "falta": si dijera "falta" sobre una línea completada,
+      // el camino natural sería editar el valor de verdad y reintentar.
       const variable = `BANECO_CERT_${sufijo}`;
-      expect(leerConfig({ ...ENTORNO_CERT, [variable]: '<completar>' })).toEqual({
-        ok: false,
-        error: { tipo: 'FALTA_VARIABLE', variable },
-      });
+      const r = leerConfig({ ...ENTORNO_CERT, [variable]: '<completar>' });
+      expect(esExito(r)).toBe(false);
+      if (!esExito(r)) {
+        expect(r.error).toMatchObject({ tipo: 'VARIABLE_INVALIDA', variable });
+        expect(r.error.tipo === 'VARIABLE_INVALIDA' && r.error.motivo).toContain('falso positivo');
+      }
     },
   );
+
+  it('en producción, una URL declarada como marcador no se cae al valor por defecto', () => {
+    // El caso real: el banco avisa que movió el gateway y la URL se pega con
+    // los `<>` que le puso el correo. Arrancar contra la URL vieja parecería
+    // una falla del banco.
+    const r = leerConfig({
+      BANECO_ENV: 'prod',
+      BANECO_PROD_BASE_URL: '<https://nuevo.baneco.com.bo/apiGateway>',
+      BANECO_PROD_USERNAME: 'usuario',
+      BANECO_PROD_PASSWORD: 'password',
+      BANECO_PROD_AES_KEY: LLAVE_DE_PRUEBA,
+      BANECO_PROD_ACCOUNT_CREDIT: '1234567890',
+    });
+    expect(esExito(r)).toBe(false);
+    if (!esExito(r)) {
+      expect(r.error).toMatchObject({ tipo: 'VARIABLE_INVALIDA', variable: 'BANECO_PROD_BASE_URL' });
+    }
+  });
 
   it('en ambiente prod lee las variables BANECO_PROD_*', () => {
     const r = leerConfig({

@@ -79,8 +79,21 @@ export function leerConfig(
   const requerida = (sufijo: string): Resultado<string, ErrorConfig> => {
     const variable = `${prefijo}${sufijo}`;
     const valor = entorno[variable]?.trim();
-    if (valor === undefined || valor === '' || esMarcador(valor)) {
+    if (valor === undefined || valor === '') {
       return fallo({ tipo: 'FALTA_VARIABLE', variable });
+    }
+    if (esMarcador(valor)) {
+      // Error distinto del que falta a propósito: "falta" sobre una línea que
+      // el dueño sabe que completó lo empuja a editar el valor de verdad, y el
+      // reintento siguiente es un login fallido — justo lo que hay que evitar.
+      return fallo({
+        tipo: 'VARIABLE_INVALIDA',
+        variable,
+        motivo:
+          'parece un marcador <…> de la plantilla sin reemplazar. Si tu valor real ' +
+          'empieza con "<" y termina con ">", es un falso positivo: avisá antes de ' +
+          'cambiarlo, porque un login fallido acerca al bloqueo del usuario API (B4)',
+      });
     }
     return exito(valor);
   };
@@ -94,8 +107,14 @@ export function leerConfig(
   // En producción la URL la sabe el sistema: es del banco, no de cada cuenta.
   // En certificación sigue siendo obligatoria — la de desarrollo cambió de
   // mayúsculas entre documentos (verificación V1) y no se adivina.
+  // El valor por defecto es para la variable **ausente**, no para una declarada
+  // y descartada: una URL nueva pegada con los `<>` del correo se caería en
+  // silencio a la vieja, y el síntoma parecería una falla del banco.
   const leida = requerida('BASE_URL');
-  const baseUrl = !esExito(leida) && ambiente === 'prod' ? exito(URL_PRODUCCION) : leida;
+  const baseUrl =
+    !esExito(leida) && leida.error.tipo === 'FALTA_VARIABLE' && ambiente === 'prod'
+      ? exito(URL_PRODUCCION)
+      : leida;
   if (!esExito(baseUrl)) return baseUrl;
 
   // Rail de seguridad: en certificación no se le habla al host de producción.

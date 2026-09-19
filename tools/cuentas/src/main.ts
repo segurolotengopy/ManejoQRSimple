@@ -122,6 +122,11 @@ async function revisar(ruta: string, alias: string): Promise<number> {
     console.log(`  ${variable}`);
   }
   console.log('\nAbrilo con tu editor y reemplazá cada <…> por su valor.');
+  console.log(
+    '  Si alguna de esas ya la completaste y tu valor real empieza con "<" y termina\n' +
+      '  con ">", es un falso positivo: avisá en vez de cambiarlo, porque un login\n' +
+      '  fallido acerca al bloqueo del usuario API (pregunta B4).',
+  );
   return 2;
 }
 

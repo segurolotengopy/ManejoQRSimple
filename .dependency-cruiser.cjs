@@ -91,6 +91,16 @@ module.exports = {
       to: { path: '^packages/wa-bridge/' },
     },
     {
+      name: 'avisos-consumidor-solo-por-composicion',
+      severity: 'error',
+      comment:
+        'Solo composicion cablea el notificador de avisos. Que el dominio o el ' +
+        'satélite importaran este paquete ataría el aviso a HTTP y a su firma, ' +
+        'que es justo lo que el puerto NotificadorConsumidor evita (ADR-002).',
+      from: { pathNot: '^packages/(avisos-consumidor|composicion)/' },
+      to: { path: '^packages/avisos-consumidor/' },
+    },
+    {
       name: 'demo-web-sin-adaptadores',
       severity: 'error',
       comment:

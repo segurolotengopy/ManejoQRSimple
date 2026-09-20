@@ -27,6 +27,7 @@
  */
 
 import { anularEnProveedor, type QrAnulado } from '../cobro/anulacion.js';
+import { correspondeAvisar, encolarAviso } from '../avisos/aviso.js';
 import type { OrigenTransicion } from '../cobro/estados.js';
 import type { Centavos } from '../comun/dinero.js';
 import { qrEstaVencido, type Cobro, type QrEmitido } from '../cobro/cobro.js';
@@ -47,6 +48,7 @@ import {
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
 import type {
   AbonosSinConciliarStore,
+  AvisosStore,
   CobroRepository,
   ErrorPuerto,
   EvidenceStore,
@@ -66,19 +68,32 @@ import type {
 export type Dependencias = {
   readonly cobros: CobroRepository;
   readonly evidencia: EvidenceStore;
+  /**
+   * Bandeja de salida de los avisos a consumidores (docs/10 §4.6).
+   *
+   * Es **obligatoria**, no opcional, por la misma razón que el almacén de
+   * abonos sin conciliar en el cierre diario: un sistema que confirma cobros
+   * de consumidores sin tener dónde encolar el aviso los perdería todos, y
+   * nadie se enteraría. Quien no tenga consumidores igual la construye — en
+   * memoria alcanza, y nunca se llena.
+   */
+  readonly avisos: AvisosStore;
   readonly qr: QrProvider;
   readonly watcher: PaymentWatcher;
   readonly mensajeria: MessagingProvider;
   readonly politica: PoliticaConciliacion;
 };
 
-/** Lo mínimo para aplicar una transición: guardarla y dejar su evidencia. */
-export type DepsPersistencia = Pick<Dependencias, 'cobros' | 'evidencia'>;
+/**
+ * Lo mínimo para aplicar una transición: guardarla, dejar su evidencia y, si
+ * el cobro es de un consumidor y quedó confirmado, encolar su aviso.
+ */
+export type DepsPersistencia = Pick<Dependencias, 'cobros' | 'evidencia' | 'avisos'>;
 
 /** Lo que necesita verificar un pago contra el banco y conciliarlo. */
 export type DepsVerificacion = Pick<
   Dependencias,
-  'cobros' | 'evidencia' | 'watcher' | 'mensajeria' | 'politica'
+  'cobros' | 'evidencia' | 'avisos' | 'watcher' | 'mensajeria' | 'politica'
 >;
 
 /**
@@ -97,7 +112,7 @@ export type DepsCierre = DepsVerificacion & {
 };
 
 /** Lo que necesita emitir un QR y mandarlo al cliente. */
-export type DepsEmision = Pick<Dependencias, 'cobros' | 'evidencia' | 'qr' | 'mensajeria'>;
+export type DepsEmision = Pick<Dependencias, 'cobros' | 'evidencia' | 'avisos' | 'qr' | 'mensajeria'>;
 
 /** Renovar: emitir, después de mirar si el QR anterior llegó a pagarse. */
 export type DepsRenovacion = DepsEmision & Pick<Dependencias, 'watcher'>;
@@ -189,13 +204,32 @@ const esperaPago = (cobro: Cobro): boolean =>
  * transición. Si otro proceso lo cambió mientras tanto (el satélite lo
  * confirmó mientras el dueño lo anulaba), falla con `CONFLICTO` en vez de
  * pisarlo.
+ *
+ * **El aviso al consumidor se encola al final, y solo si el estado quedó
+ * guardado.** Ese orden es la regla: un aviso de un pago que no llegó a
+ * registrarse haría que el consumidor entregue lo que vendió por un cobro que
+ * no existe. Al revés —estado guardado y aviso perdido— el consumidor llega
+ * al mismo resultado preguntando por `estadoCobro`, que es justamente lo que
+ * el contrato le promete (docs/10 §1). Por eso encolar no puede hacer
+ * fracasar la transición: si falla, se informa en `avisoNoEncolado` y quien
+ * llama lo registra.
  */
 export async function aplicar(
   deps: DepsPersistencia,
   cobro: Cobro,
   evento: EventoCobro,
   ahora: Date,
-): Promise<Resultado<{ readonly cobro: Cobro; readonly evidencia: RegistroEvidencia }, ErrorCasoUso>> {
+): Promise<
+  Resultado<
+    {
+      readonly cobro: Cobro;
+      readonly evidencia: RegistroEvidencia;
+      /** La transición salió bien pero su aviso no llegó a la cola. */
+      readonly avisoNoEncolado: ErrorPuerto | null;
+    },
+    ErrorCasoUso
+  >
+> {
   const transicion = transicionar(cobro, evento, ahora);
   if (!esExito(transicion)) {
     return fallo(deTransicion(transicion.error));
@@ -211,12 +245,23 @@ export async function aplicar(
     return fallo(dePuerto(guardadoCobro.error));
   }
 
-  return exito(transicion.valor);
+  let avisoNoEncolado: ErrorPuerto | null = null;
+  const confirmado = transicion.valor.cobro;
+  if (correspondeAvisar(cobro, confirmado) && confirmado.consumidor !== null) {
+    const encolado = await deps.avisos.encolar(
+      encolarAviso(confirmado.id, confirmado.consumidor.consumidorId, ahora),
+    );
+    if (!esExito(encolado)) {
+      avisoNoEncolado = encolado.error;
+    }
+  }
+
+  return exito({ ...transicion.valor, avisoNoEncolado });
 }
 
 /** Pide el QR al proveedor y deja el cobro en `QR_ACTIVO`. */
 export async function emitirQr(
-  deps: Pick<DepsEmision, 'cobros' | 'evidencia' | 'qr'>,
+  deps: Pick<DepsEmision, 'cobros' | 'evidencia' | 'avisos' | 'qr'>,
   cobro: Cobro,
   venceEn: Date,
   ahora: Date,
@@ -286,7 +331,7 @@ async function compensarEmision(
 
 /** Manda el QR al cliente por WhatsApp y deja el cobro en `ENVIADO`. */
 export async function enviarQr(
-  deps: Pick<DepsEmision, 'cobros' | 'evidencia' | 'mensajeria'>,
+  deps: Pick<DepsEmision, 'cobros' | 'evidencia' | 'avisos' | 'mensajeria'>,
   cobro: Cobro,
   ahora: Date,
 ): Promise<Resultado<Cobro, ErrorCasoUso>> {

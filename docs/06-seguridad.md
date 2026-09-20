@@ -19,6 +19,8 @@
 | T13 | **Un consumidor marca como pagado un cobro que el banco nunca vio** | El contrato de docs/10 abre la creación de cobros a otro producto | No existe ninguna operación de confirmación en el contrato, y no puede escribirse: `CONFIRMADO` exige una `ConciliacionAprobada` que solo fabrica `conciliar()` desde la consulta autenticada (reglas #1 y BANECO-1). Un test recorre las rutas que no existen y exige 404. Es la regla #1 aplicada a un tercero, igual que T1 al pagador. |
 | T14 | **Un token de consumidor débil o filtrado** | Otro sistema guarda el token durante meses en su entorno | Mínimo 32 caracteres y un token por consumidor (`CONSUMIDOR_TOKEN_<ID>`), para rotar y revocar de a uno; un token corto o con el marcador de la plantilla **corta el arranque** de la API. Comparación con `timingSafeEqual` y sin cortar en la primera coincidencia, para no filtrar cuántos consumidores hay. Con el token robado se pueden crear y anular cobros, nunca confirmarlos ni ver los de otro, y un **cupo por consumidor y por hora** (`CONSUMIDOR_MAX_QRS_POR_HORA`) corta el bucle de emisión —cada QR queda pagable hasta la medianoche, así que cientos serían T10 a escala—. El cupo vive en memoria del proceso: alcanza para la API local de hoy, y al desplegarla hay que pasarlo a un contador compartido. Ningún token puede valer para dos identidades: la API no arranca si se repite. |
 
+| T15 | **Aviso de confirmación falsificado** | Un tercero que descubre la URL de aviso de un consumidor le manda un «te pagaron» inventado y le hace entregar lo que vendió | Es T9 en la dirección opuesta, y se resuelve igual: **HMAC-SHA256 sobre el cuerpo crudo** con un secreto por consumidor, comparado en tiempo constante, y la marca de tiempo **dentro** de lo firmado para que un aviso interceptado no se pueda reenviar. La URL tiene que ser https o la API no arranca: firmar no sirve si el canal no es privado. Y el contrato le dice al consumidor, en letra grande, que el aviso es un acelerador y `estadoCobro` la fuente de verdad (docs/10 §4.6). |
+
 ## 2. Gestión de secretos
 
 | Secreto | Dónde vive | Dónde JAMÁS |
@@ -33,6 +35,7 @@
 | Adjuntos originales del banco | `docs/Integraciones/baneco/privado-no-gh/` (git-ignored, D4) | GitHub, cualquier nube |
 | Token de la API local (`API_TOKEN_LOCAL` / `VITE_API_TOKEN`) | `~/.manejoqr/baneco-<cuenta>.env` y `demo-web/.env.local` | Repo; queda embebido en el bundle, así que publicar la consola exige Firebase Auth |
 | Tokens de consumidores (`CONSUMIDOR_TOKEN_<ID>`) | `~/.manejoqr/baneco-<cuenta>.env`, 600 — Claude Code no lo lee | Repo, código, fixtures, chat. Uno por consumidor: se rota y se revoca sin tocar a los demás |
+| Secretos de firma de los avisos (`CONSUMIDOR_AVISO_SECRETO_<ID>`) | `~/.manejoqr/baneco-<cuenta>.env`, 600 — Claude Code no lo lee | Repo, código, fixtures, chat. Uno por consumidor, distinto de su token: con el token se llama a la API, con el secreto se verifica lo que sale |
 
 `.env` nunca se versiona (`.gitignore`); `.env.example` lista todas las
 variables sin valores. Variable nueva ⇒ actualizar `.env.example` en el mismo PR.

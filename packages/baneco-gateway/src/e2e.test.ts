@@ -9,6 +9,7 @@
  */
 
 import {
+  AvisosEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
@@ -73,9 +74,12 @@ function armar(opciones: OpcionesTransporte = {}) {
   const cliente = new ClienteBaneco(config, transporte.enviar, tokens);
 
   const evidencia = new EvidenceStoreEnMemoria();
+
+  const avisos = new AvisosEnMemoria();
   const deps: Dependencias = {
     cobros: new CobroRepositoryEnMemoria(evidencia),
     evidencia,
+    avisos,
     qr: new QrProviderBaneco(config, cliente, () => T0),
     watcher: new PaymentWatcherBaneco(cliente),
     mensajeria: new MessagingProviderEnMemoria(),

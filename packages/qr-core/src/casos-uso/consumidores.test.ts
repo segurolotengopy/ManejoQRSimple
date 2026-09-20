@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { esExito } from '../comun/resultado.js';
 import {
+  AvisosEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   QrProviderEnMemoria,
@@ -34,11 +35,17 @@ class QrContado extends QrProviderEnMemoria {
   }
 }
 
-function armar(): { deps: DepsConsumidor; qr: QrContado; evidencia: EvidenceStoreEnMemoria } {
+function armar(): {
+  deps: DepsConsumidor;
+  qr: QrContado;
+  evidencia: EvidenceStoreEnMemoria;
+  avisos: AvisosEnMemoria;
+} {
   const evidencia = new EvidenceStoreEnMemoria();
   const cobros = new CobroRepositoryEnMemoria(evidencia);
+  const avisos = new AvisosEnMemoria();
   const qr = new QrContado(() => T0);
-  return { deps: { cobros, evidencia, qr }, qr, evidencia };
+  return { deps: { cobros, evidencia, avisos, qr }, qr, evidencia, avisos };
 }
 
 function solicitud(sobrescribir: Partial<SolicitudCobroConsumidor> = {}): SolicitudCobroConsumidor {

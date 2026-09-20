@@ -13,11 +13,14 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b"
   },
   "dependencies": {
+    "@mqs/avisos-consumidor": "*",
     "@mqs/baneco-gateway": "*",
     "@mqs/firestore-store": "*",
     "@mqs/qr-core": "*",

@@ -15,6 +15,7 @@ export default defineConfig({
       '@mqs/firestore-store': paquete('firestore-store'),
       '@mqs/composicion': paquete('composicion'),
       '@mqs/baneco-satelite': paquete('baneco-satelite'),
+      '@mqs/avisos-consumidor': paquete('avisos-consumidor'),
       '@mqs/yape-scraper': paquete('yape-scraper'),
       '@mqs/wa-bridge': paquete('wa-bridge'),
       '@mqs/functions': paquete('functions'),

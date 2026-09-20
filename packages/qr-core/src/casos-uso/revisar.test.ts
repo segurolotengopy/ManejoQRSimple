@@ -10,6 +10,7 @@ import {
   MessagingProviderEnMemoria,
   PaymentWatcherEnMemoria,
   QrProviderEnMemoria,
+  AvisosEnMemoria,
 } from '../ports/mocks.js';
 import type { AbonoSinConciliar } from '../revision/abono-sin-conciliar.js';
 import { POLITICA_REVISION_POR_DEFECTO } from '../revision/revision.js';
@@ -36,12 +37,14 @@ const ABONO_1 = `baneco:${REFERENCIA}:tx-1`;
 
 function armar() {
   const evidencia = new EvidenceStoreEnMemoria();
+  const avisos = new AvisosEnMemoria();
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
   const abonosSinConciliar = new AbonosSinConciliarEnMemoria();
   const deps: Dependencias & DepsRevision = {
     cobros,
     evidencia,
+    avisos,
     qr: new QrProviderEnMemoria(() => T0),
     watcher,
     mensajeria: new MessagingProviderEnMemoria(),

@@ -1,5 +1,6 @@
 import {
   AbonosSinConciliarEnMemoria,
+  AvisosEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
@@ -26,11 +27,13 @@ const AHORA = new Date('2026-08-28T12:00:00.000Z');
 
 function armar(watcherPropio?: PaymentWatcher) {
   const evidencia = new EvidenceStoreEnMemoria();
+  const avisos = new AvisosEnMemoria();
   const watcher = new PaymentWatcherEnMemoria();
   const abonosSinConciliar = new AbonosSinConciliarEnMemoria();
   const deps: DepsCierre = {
     cobros: new CobroRepositoryEnMemoria(evidencia),
     evidencia,
+    avisos,
     watcher: watcherPropio ?? watcher,
     mensajeria: new MessagingProviderEnMemoria(),
     politica: POLITICA_POR_DEFECTO,

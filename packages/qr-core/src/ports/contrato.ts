@@ -14,8 +14,10 @@ import type { Cobro } from '../cobro/cobro.js';
 import { centavos } from '../comun/dinero.js';
 import { esExito, type Resultado } from '../comun/resultado.js';
 import type { AbonoSinConciliar } from '../revision/abono-sin-conciliar.js';
+import { encolarAviso } from '../avisos/aviso.js';
 import type {
   AbonosSinConciliarStore,
+  AvisosStore,
   CobroRepository,
   ErrorPuerto,
   EvidenceStore,
@@ -329,6 +331,95 @@ export const CASOS_ABONOS_SIN_CONCILIAR: ReadonlyArray<CasoDeContrato<AbonosSinC
         'cerrar inexistente',
       );
       afirmar(r === null, 'lo desconocido es null');
+    },
+  },
+];
+
+
+export const CASOS_AVISOS: ReadonlyArray<CasoDeContrato<AvisosStore>> = [
+  {
+    nombre: 'encolar dos veces el mismo cobro deja un solo aviso',
+    ejecutar: async (store) => {
+      const aviso = encolarAviso('contrato-aviso-1', 'novuchat', INSTANTE_DE_CONTRATO);
+      const primero = exigirExito(await store.encolar(aviso), 'primer encolado');
+      const segundo = exigirExito(await store.encolar(aviso), 'segundo encolado');
+      afirmar(primero && !segundo, 'encolar informa si el aviso es nuevo');
+
+      const listos = exigirExito(
+        await store.listarParaEnviar(INSTANTE_DE_CONTRATO, 10),
+        'listar',
+      );
+      afirmar(
+        listos.filter((a) => a.cobroId === aviso.cobroId).length === 1,
+        'una confirmación reintentada no produce dos avisos al consumidor',
+      );
+    },
+  },
+  {
+    nombre: 'un aviso con su espera sin vencer no sale a entregar',
+    ejecutar: async (store) => {
+      const aviso = encolarAviso('contrato-aviso-espera', 'novuchat', INSTANTE_DE_CONTRATO);
+      exigirExito(await store.encolar(aviso), 'encolar');
+      exigirExito(
+        await store.registrarFallo(
+          aviso.cobroId,
+          'INDISPONIBLE',
+          new Date(INSTANTE_DE_CONTRATO.getTime() + 3_600_000),
+        ),
+        'registrar el fallo',
+      );
+
+      const enseguida = exigirExito(
+        await store.listarParaEnviar(INSTANTE_DE_CONTRATO, 10),
+        'listar enseguida',
+      );
+      afirmar(
+        !enseguida.some((a) => a.cobroId === aviso.cobroId),
+        'sin esto, un consumidor caído recibiría un intento por pasada',
+      );
+
+      const despues = exigirExito(
+        await store.listarParaEnviar(new Date(INSTANTE_DE_CONTRATO.getTime() + 3_600_001), 10),
+        'listar después',
+      );
+      const vuelto = despues.find((a) => a.cobroId === aviso.cobroId);
+      afirmar(vuelto !== undefined, 'pasada la espera, vuelve a la cola');
+      afirmar(vuelto?.intentos === 1, 'el intento fallido quedó contado');
+      afirmar(vuelto?.ultimoError === 'INDISPONIBLE', 'y con su motivo');
+    },
+  },
+  {
+    nombre: 'un aviso cerrado no vuelve a la cola ni se reabre',
+    ejecutar: async (store) => {
+      const aviso = encolarAviso('contrato-aviso-cerrado', 'novuchat', INSTANTE_DE_CONTRATO);
+      exigirExito(await store.encolar(aviso), 'encolar');
+      exigirExito(await store.cerrar(aviso.cobroId, 'ENTREGADO', INSTANTE_DE_CONTRATO), 'cerrar');
+
+      const listos = exigirExito(
+        await store.listarParaEnviar(new Date(INSTANTE_DE_CONTRATO.getTime() + 86_400_000), 10),
+        'listar',
+      );
+      afirmar(
+        !listos.some((a) => a.cobroId === aviso.cobroId),
+        'entregar dos veces el mismo aviso es cobrarle dos veces al cliente del consumidor',
+      );
+
+      // El satélite reinició y la confirmación se volvió a aplicar.
+      const denuevo = exigirExito(await store.encolar(aviso), 'encolar de nuevo');
+      afirmar(!denuevo, 'un aviso ya entregado no se reabre');
+    },
+  },
+  {
+    nombre: 'contar pendientes no cuenta los cerrados',
+    ejecutar: async (store) => {
+      const abierto = encolarAviso('contrato-aviso-abierto', 'novuchat', INSTANTE_DE_CONTRATO);
+      const cerrado = encolarAviso('contrato-aviso-ya-esta', 'novuchat', INSTANTE_DE_CONTRATO);
+      exigirExito(await store.encolar(abierto), 'encolar abierto');
+      exigirExito(await store.encolar(cerrado), 'encolar cerrado');
+      exigirExito(await store.cerrar(cerrado.cobroId, 'ENTREGADO', INSTANTE_DE_CONTRATO), 'cerrar');
+
+      const pendientes = exigirExito(await store.contarPendientes(), 'contar');
+      afirmar(pendientes >= 1, 'el abierto tiene que contarse');
     },
   },
 ];

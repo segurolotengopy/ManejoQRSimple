@@ -4,10 +4,12 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-19, sesión "contrato para consumidores" — **bloque 1
-del frente `Prompts/cobrador-contrato-para-consumidores.md`**: el cobro por QR se abre a
-otros productos con cuatro operaciones en `/api/v1/…` y **ninguna que confirme un pago**
-(`docs/10-contrato-consumidores.md`). **PR #38 mergeado** el 2026-09-20.
+**Última actualización:** 2026-09-20, sesión "contrato para consumidores" — **bloques 1
+y 2** del frente `Prompts/cobrador-contrato-para-consumidores.md`. El cobro por QR se
+abre a otros productos con cuatro operaciones en `/api/v1/…` y **ninguna que confirme un
+pago** (`docs/10-contrato-consumidores.md`), más el **aviso de confirmación firmado**,
+que es un acelerador y no la fuente de verdad. Bloque 1: **PR #38 mergeado**. Bloque 2:
+PR abierto.
 Antes, el mismo día: **PR #36 mergeado**, la prueba en producción admite **varias
 cuentas**, cada una con su alias, sus credenciales y sus datos, y la **segunda cuenta
 corrió P1–P9 ok** (`02-hallazgos-produccion.md` §5). Además se cerró **C9: no hay
@@ -147,6 +149,26 @@ espera la cuenta de pruebas, A4)
     datos personales (su referencia externa es opaca) ni recibe el envío al pagador,
     que es suyo. Detalle en `docs/10-contrato-consumidores.md`; la decisión de hacerlo
     una superficie de la API y no un paquete, en `docs/01-arquitectura.md` ADR-008.
+
+19. **El aviso de confirmación al consumidor (2026-09-20, ADR-009).** Cuando un cobro
+    de un consumidor queda `CONFIRMADO`, se le avisa por HTTP, **firmado con HMAC-SHA256
+    sobre el cuerpo crudo** y con la marca de tiempo dentro de la firma. Dos decisiones
+    que valen para cualquier cosa parecida que se agregue después:
+    - **Encolar dentro de la transición, entregar afuera.** Un consumidor caído no
+      puede demorar ni hacer fracasar un cobro.
+    - **El orden es al revés de lo intuitivo:** el aviso se encola *después* de que el
+      estado quedó guardado. Perder un aviso es tolerable —`estadoCobro` lleva al mismo
+      resultado, y el contrato lo dice— pero avisar un pago que no llegó a registrarse
+      haría que el consumidor entregue lo que vendió.
+    Es opcional por consumidor: sin URL y secreto configurados, no se manda nada y el
+    contrato funciona igual.
+20. **El texto EMV del QR no es una pregunta abierta (Andres, 2026-09-20).** Se había
+    anotado como límite a consultar al banco. No corresponde: **pagar un QR Simple no
+    depende del banco que lo generó** —es un protocolo interoperable, y está probado
+    pagando desde el BNB un QR de Baneco (P3)— y **generar el QR es la capa comercial
+    del banco originador**, el que tiene la cuenta destino. Ningún sistema le va a pedir
+    la cadena EMV a un consumidor para armar un QR. El contrato entrega la imagen y con
+    eso alcanza; `docs/10` §6 quedó reescrita.
 
 ## Estado actual
 
@@ -423,6 +445,25 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
           divergencia menos.
       - 880 tests (67 nuevos), typecheck, lint, `deps:check` y build en verde.
         **Sin ensayo contra el banco todavía** — ver "Próximo paso".
+- [ ] **2026-09-20 — Bloque 2: el aviso de confirmación (PR abierto, rama
+      `feat/aviso-de-confirmacion`).** Cuando un cobro de un consumidor queda
+      `CONFIRMADO`, se le avisa (ADR-009, decisión 19).
+      - Paquete nuevo **`@mqs/avisos-consumidor`**: arma el cuerpo, lo firma con
+        HMAC-SHA256 sobre el cuerpo crudo y lo entrega por HTTPS. Es el único que sabe
+        que el aviso va por HTTP; el dominio ve el puerto `NotificadorConsumidor`.
+      - Puerto y almacén `AvisosStore` (bandeja de salida, `avisosConsumidor/{cobroId}`
+        en Firestore) con sus casos de contrato compartidos. La clave es el `cobroId`:
+        un cobro avisa una vez, y reintentar la confirmación no genera otro aviso.
+      - `aplicar()` encola el aviso **después** de guardar el estado, y si la cola falla
+        el cobro igual queda confirmado: el aviso no puede hacer fracasar un pago.
+      - El satélite lo entrega en cada pasada, con espera creciente (30 s → 1 día) y
+        **sin tope de intentos**: un aviso no se abandona en silencio.
+      - Dos variables por consumidor, opcionales y las dos o ninguna:
+        `CONSUMIDOR_AVISO_URL_<ID>` (https obligatorio) y
+        `CONSUMIDOR_AVISO_SECRETO_<ID>` (≥ 32 caracteres). Mal configuradas, la API y el
+        satélite no arrancan.
+      - Amenaza T15 en `docs/06`: el aviso falsificado es T9 en la dirección opuesta.
+      - 929 tests (49 nuevos), typecheck, lint, `deps:check` y build en verde.
 
 ### En espera (bloqueos externos)
 
@@ -511,11 +552,13 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    3. Cuando lo pague, `npm run baneco:b0 -- --capturar-pago`.
    4. Pasarle a Claude Code los informes `02-hallazgos-*.md` y las fixtures. Si alguna
       corrida sale con código 4, no commitear nada sin revisarlo.
-3. ~~Revisar `.env.example`~~ — **hecho el 2026-09-19**, con autorización del dueño en
-   el chat: Claude Code no tiene permiso sobre `.env.*`, así que lo hizo un script que
-   solo informó qué cambió, nunca qué decía el archivo.
+3. ~~Revisar `.env.example`~~ — **hecho el 2026-09-19/20**, con autorización del dueño
+   en el chat: Claude Code no tiene permiso sobre `.env.*`, así que lo hizo un script
+   que solo informó qué cambió, nunca qué decía el archivo.
    `BANECO_POLL_INTERVAL_SECONDS` pasó de 180 a 30 y se documentó
-   `CONSUMIDOR_TOKEN_<ID>`.
+   `CONSUMIDOR_TOKEN_<ID>`. **Queda pendiente** sumar `CONSUMIDOR_AVISO_URL_<ID>` y
+   `CONSUMIDOR_AVISO_SECRETO_<ID>` del bloque 2: el script está listo y espera el «sí»
+   del dueño. La plantilla de `npm run prueba:cuenta` ya los documenta.
 4. Decidir la opción de WhatsAppModular en docs/04 §2.3.
 5. Comercial: al acercarse producción, pedir la llave de producción por un canal que no
    sea un adjunto de correo (B3). Las comisiones (C9) ya están respondidas: no hay.
@@ -542,9 +585,9 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    1. Bloque 1 — **mergeado** (PR #38, 2026-09-20). Falta su ensayo con un cobro real
       de monto mínimo pagado desde otro banco, que se corre en la próxima prueba en
       producción: es lo único del bloque que queda pendiente.
-   2. Bloque 2 — aviso de confirmación al consumidor: firmado, con marca de tiempo, con
-      reintentos y sin datos sensibles. **Acelerador, no fuente de verdad**: preguntar
-      por `estadoCobro` tiene que llegar al mismo resultado, y el contrato lo dice.
+   2. Bloque 2 — **hecho**, en el PR de `feat/aviso-de-confirmacion`. Falta probarlo de
+      punta a punta contra un consumidor real: hoy está cubierto por tests, sin ningún
+      destino configurado todavía.
    3. Bloque 3 — una cuenta de cobro por consumidor. Hoy cada cuenta es un **proceso**
       con su alias (decisión 16); falta que un consumidor solo use la suya y que los
       cobros queden atribuidos por cuenta para el cierre diario.

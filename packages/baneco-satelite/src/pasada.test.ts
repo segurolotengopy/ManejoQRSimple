@@ -1,4 +1,5 @@
 import {
+  AvisosEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   POLITICA_POR_DEFECTO,
@@ -75,6 +76,7 @@ class QrQueNoAnula extends QrProviderEnMemoria {
 
 function armar(watcherPropio?: PaymentWatcher, qr: QrProviderEnMemoria = new QrProviderEnMemoria(() => T0)) {
   const evidencia = new EvidenceStoreEnMemoria();
+  const avisos = new AvisosEnMemoria();
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
   const mensajeria = new MensajeriaNoConfigurada();
@@ -82,6 +84,7 @@ function armar(watcherPropio?: PaymentWatcher, qr: QrProviderEnMemoria = new QrP
   const deps: DepsVigilancia = {
     cobros,
     evidencia,
+    avisos,
     qr,
     watcher: watcherPropio ?? watcher,
     mensajeria,

@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CASOS_ABONOS_SIN_CONCILIAR,
+  CASOS_AVISOS,
   CASOS_COBRO_REPOSITORY,
   CASOS_EVIDENCE_STORE,
   CASOS_PAYMENT_WATCHER,
@@ -18,6 +19,7 @@ import {
 } from '../contrato.js';
 import {
   AbonosSinConciliarEnMemoria,
+  AvisosEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   PaymentWatcherEnMemoria,
@@ -53,6 +55,12 @@ describe('contrato de CobroRepository', () => {
 describe('contrato de AbonosSinConciliarStore', () => {
   it.each(CASOS_ABONOS_SIN_CONCILIAR)('$nombre', async ({ ejecutar }) => {
     await expect(ejecutar(new AbonosSinConciliarEnMemoria())).resolves.toBeUndefined();
+  });
+});
+
+describe('contrato de AvisosStore', () => {
+  it.each(CASOS_AVISOS)('$nombre', async ({ ejecutar }) => {
+    await expect(ejecutar(new AvisosEnMemoria())).resolves.toBeUndefined();
   });
 });
 

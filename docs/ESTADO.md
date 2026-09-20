@@ -9,7 +9,7 @@ y 2** del frente `Prompts/cobrador-contrato-para-consumidores.md`. El cobro por 
 abre a otros productos con cuatro operaciones en `/api/v1/…` y **ninguna que confirme un
 pago** (`docs/10-contrato-consumidores.md`), más el **aviso de confirmación firmado**,
 que es un acelerador y no la fuente de verdad. Bloque 1: **PR #38 mergeado**. Bloque 2:
-PR abierto.
+**PR #40 mergeado** (2026-09-20, con el OK del dueño en el chat).
 Antes, el mismo día: **PR #36 mergeado**, la prueba en producción admite **varias
 cuentas**, cada una con su alias, sus credenciales y sus datos, y la **segunda cuenta
 corrió P1–P9 ok** (`02-hallazgos-produccion.md` §5). Además se cerró **C9: no hay
@@ -445,8 +445,8 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
           divergencia menos.
       - 880 tests (67 nuevos), typecheck, lint, `deps:check` y build en verde.
         **Sin ensayo contra el banco todavía** — ver "Próximo paso".
-- [ ] **2026-09-20 — Bloque 2: el aviso de confirmación (PR abierto, rama
-      `feat/aviso-de-confirmacion`).** Cuando un cobro de un consumidor queda
+- [x] **2026-09-20 — Bloque 2: el aviso de confirmación (PR #40, mergeado el
+      2026-09-20 con el OK del dueño en el chat; CI en verde).** Cuando un cobro de un consumidor queda
       `CONFIRMADO`, se le avisa (ADR-009, decisión 19).
       - Paquete nuevo **`@mqs/avisos-consumidor`**: arma el cuerpo, lo firma con
         HMAC-SHA256 sobre el cuerpo crudo y lo entrega por HTTPS. Es el único que sabe
@@ -585,7 +585,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    1. Bloque 1 — **mergeado** (PR #38, 2026-09-20). Falta su ensayo con un cobro real
       de monto mínimo pagado desde otro banco, que se corre en la próxima prueba en
       producción: es lo único del bloque que queda pendiente.
-   2. Bloque 2 — **hecho**, en el PR de `feat/aviso-de-confirmacion`. Falta probarlo de
+   2. Bloque 2 — **mergeado** (PR #40, 2026-09-20). Falta probarlo de
       punta a punta contra un consumidor real: hoy está cubierto por tests, sin ningún
       destino configurado todavía.
    3. Bloque 3 — una cuenta de cobro por consumidor. Hoy cada cuenta es un **proceso**

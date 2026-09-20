@@ -49,6 +49,7 @@ import {
   cuerpoRenovar,
   cuerpoResolver,
 } from './esquemas.js';
+import type { CupoDeConsumidores } from './cupo-consumidor.js';
 import type { ModoPrueba } from '../modo-prueba.js';
 import type { RegistroEventos } from '../registro.js';
 import { creado, error, noEncontrado, ok, type Respuesta } from './tipos.js';
@@ -74,6 +75,11 @@ export type ContextoApi = {
   readonly prueba?: ModoPrueba;
   /** Logs de depuración para la pestaña Logs. */
   readonly registro?: RegistroEventos;
+  /**
+   * Cuántos QRs por hora puede pedir cada consumidor del contrato (docs/10).
+   * Sin esto, el contrato no tiene tope fuera de la prueba en producción.
+   */
+  readonly cupoConsumidores?: CupoDeConsumidores;
 };
 
 /** Vista pública de un cobro. Lo que la consola puede ver, y nada más. */
@@ -86,7 +92,11 @@ function aVista(cobro: Cobro): Record<string, unknown> {
     moneda: cobro.moneda,
     concepto: cobro.concepto,
     // Enmascarado: la consola no necesita el número completo para operar.
+    // `null` en los cobros de consumidor, que no tienen teléfono (docs/10).
     telefonoCliente: enmascararTelefono(cobro.telefonoCliente),
+    // Quién pidió el cobro, si lo pidió un consumidor. La referencia externa
+    // es opaca por contrato, así que mostrarla no filtra datos de nadie.
+    consumidor: cobro.consumidor,
     qrVersion: cobro.qrVersion,
     creadoEn: cobro.creadoEn.toISOString(),
     qrVigente:
@@ -165,7 +175,7 @@ function aVistaEvidencia(registro: RegistroEvidencia): Record<string, unknown> {
  * que no corresponde es el estado en que está el cobro. La consola necesita
  * distinguirlos para saber si reintentar o refrescar.
  */
-function comoHttp(err: ErrorCasoUso): Respuesta {
+export function comoHttp(err: ErrorCasoUso): Respuesta {
   switch (err.tipo) {
     case 'TRANSICION':
       return error(
@@ -201,6 +211,35 @@ function comoHttp(err: ErrorCasoUso): Respuesta {
       );
     case 'ABONO_INEXISTENTE':
       return noEncontrado();
+    case 'QR_SUELTO_EN_EL_PROVEEDOR':
+      // Quedó un QR pagable que ningún cobro mira. El pedido falló igual, así
+      // que hacia afuera es el error de su causa; lo que cambia es que esto
+      // tiene que quedar registrado y revisarse en el cierre del día.
+      return error(
+        502,
+        'QR_SUELTO_EN_EL_PROVEEDOR',
+        'No se pudo registrar el QR y el banco tampoco lo anuló: quedó un QR cobrable sin cobro. Revisalo en el cierre del día antes de emitir otro.',
+        { causa: err.causa.tipo },
+      );
+    case 'SIN_CANAL_DE_ENVIO':
+      return error(
+        409,
+        'SIN_CANAL_DE_ENVIO',
+        'Este cobro no tiene teléfono: lo pidió un consumidor, y el envío al pagador es suyo.',
+      );
+    case 'REFERENCIA_EXTERNA_EN_USO':
+      return error(
+        409,
+        'REFERENCIA_EXTERNA_EN_USO',
+        'Esa referencia externa ya identifica otro cobro. Usá una distinta.',
+      );
+    case 'IMPORTE_DISTINTO_CON_MISMA_REFERENCIA':
+      return error(
+        409,
+        'IMPORTE_DISTINTO_CON_MISMA_REFERENCIA',
+        'Ya existe un cobro con esa referencia externa y otro importe. Un reintento tiene que pedir lo mismo; un cobro nuevo, otra referencia.',
+        { registrado: aDecimalBob(err.registrado) },
+      );
     case 'MOTIVO_INSUFICIENTE':
       return error(
         400,
@@ -281,6 +320,8 @@ export async function crearCobro(ctx: ContextoApi, cuerpo: unknown): Promise<Res
     creadoEn: ahora,
     telefonoCliente: datos.data.telefonoCliente,
     concepto: datos.data.concepto,
+    // Lo creó el dueño desde la consola, no un consumidor (docs/10).
+    consumidor: null,
   };
 
   const emitido = await emitirQr(ctx.deps, cobro, new Date(ahora.getTime() + horas * HORA_MS), ahora);
@@ -472,7 +513,7 @@ export async function verQr(ctx: ContextoApi, id: string): Promise<Respuesta> {
     : ok({ png });
 }
 
-async function imagenDe(ctx: ContextoApi, cobro: Cobro): Promise<string | null> {
+export async function imagenDe(ctx: ContextoApi, cobro: Cobro): Promise<string | null> {
   const ref = cobro.qrVigente?.imagenRef ?? null;
   return ref === null || ctx.leerImagenQr === undefined ? null : ctx.leerImagenQr(ref);
 }
@@ -489,7 +530,7 @@ const HORAS_MAXIMAS_EN_PRUEBA = 24;
  * En la prueba, cuenta un pedido de QR al banco y lo rechaza si se acabó el
  * cupo. Fuera de la prueba no hace nada. Se cuenta el intento, salga o no.
  */
-function consumirCupo(ctx: ContextoApi): Respuesta | null {
+export function consumirCupo(ctx: ContextoApi): Respuesta | null {
   const prueba = ctx.prueba;
   if (prueba === undefined) {
     return null;
@@ -506,7 +547,7 @@ function consumirCupo(ctx: ContextoApi): Respuesta | null {
 }
 
 /** La vigencia pedida, topeada en la prueba. */
-function horasPermitidas(ctx: ContextoApi, pedidas: number | undefined): number {
+export function horasPermitidas(ctx: ContextoApi, pedidas: number | undefined): number {
   const horas = pedidas ?? ctx.horasDeVigenciaPorDefecto;
   return ctx.prueba === undefined ? horas : Math.min(horas, HORAS_MAXIMAS_EN_PRUEBA);
 }
@@ -571,6 +612,7 @@ export async function generarQrDePrueba(ctx: ContextoApi, cuerpo: unknown): Prom
     telefonoCliente: TELEFONO_DE_PRUEBA,
     // Es la nota que ve quien paga en su app: que diga que es una prueba.
     concepto: `PRUEBA ${String(prueba.corrida.intentos)} ManejoQRSimple`,
+    consumidor: null,
   };
 
   const emitido = await emitirQr(ctx.deps, cobro, new Date(ahora.getTime() + minutos * 60_000), ahora);

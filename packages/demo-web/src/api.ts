@@ -39,8 +39,13 @@ export type Cobro = {
   readonly monto: string;
   readonly moneda: string;
   readonly concepto: string;
-  /** Ya viene enmascarado desde la API (regla #9). */
-  readonly telefonoCliente: string;
+  /**
+   * Ya viene enmascarado desde la API (regla #9). `null` en los cobros que
+   * pidió un consumidor: ahí el envío al pagador es suyo (docs/10).
+   */
+  readonly telefonoCliente: string | null;
+  /** Quién pidió el cobro, si lo pidió un consumidor (docs/10). */
+  readonly consumidor: { readonly consumidorId: string; readonly referenciaExterna: string } | null;
   readonly qrVersion: number;
   readonly creadoEn: string;
   readonly qrVigente: QrVigente | null;

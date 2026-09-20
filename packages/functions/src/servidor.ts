@@ -77,9 +77,13 @@ async function atender(
     }
   }
 
+  const url = new URL(req.url ?? '/', 'http://localhost');
   const peticion: Peticion = {
     metodo,
-    ruta: new URL(req.url ?? '/', 'http://localhost').pathname,
+    ruta: url.pathname,
+    // Solo el primer valor de cada parámetro: `?limite=1&limite=999` no puede
+    // servir para colar el segundo donde se valida el primero.
+    consulta: Object.fromEntries([...url.searchParams.keys()].map((k) => [k, url.searchParams.get(k) ?? ''])),
     cuerpo,
     token: tokenDe(req.headers.authorization),
   };
@@ -105,9 +109,22 @@ async function atender(
   }
 }
 
-/** La ruta la elige quien pide: se recorta para que no infle el log. */
+/** Prefijo cuyo último segmento lleva un dato de quien llama, no un id nuestro. */
+const RUTA_CON_DATO_AJENO = '/api/v1/cobros/por-referencia/';
+
+/**
+ * La ruta para el log: recortada, y sin el dato que puso quien llama.
+ *
+ * El query string nunca se registra, pero `…/por-referencia/:referencia` lleva
+ * la referencia externa **en la ruta**. Es opaca por contrato, pero la elige
+ * el consumidor y bien puede armarla con el identificador de su cliente. El
+ * enmascarado de la bitácora no la cubre: tapa teléfonos con `+591` y corridas
+ * de nueve dígitos o más, y un celular boliviano sin prefijo son ocho. Así que
+ * el segmento no llega al disco.
+ */
 function recortarRuta(ruta: string): string {
-  return ruta.length > 200 ? `${ruta.slice(0, 200)}…` : ruta;
+  const anonima = ruta.startsWith(RUTA_CON_DATO_AJENO) ? `${RUTA_CON_DATO_AJENO}***` : ruta;
+  return anonima.length > 200 ? `${anonima.slice(0, 200)}…` : anonima;
 }
 
 /** ` CODIGO (tipo, responseCode N)` si la respuesta es un error de la API. */

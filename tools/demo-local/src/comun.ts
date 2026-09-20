@@ -36,8 +36,14 @@ export function bs(valorEnCentavos: number): Centavos {
   return r.valor;
 }
 
-/** Enmascara el teléfono para la salida por consola (regla #9). */
-export function telefonoParaMostrar(telefono: string): string {
+/**
+ * Enmascara el teléfono para la salida por consola (regla #9). Un cobro de
+ * consumidor no tiene teléfono (docs/10): se muestra como "sin teléfono".
+ */
+export function telefonoParaMostrar(telefono: string | null): string {
+  if (telefono === null) {
+    return 'sin teléfono';
+  }
   const digitos = telefono.replace(/\D/g, '');
   return digitos.length < 4 ? '***' : `+591 ${digitos.slice(3, 4)}** ***${digitos.slice(-2)}`;
 }

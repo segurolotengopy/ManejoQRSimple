@@ -35,6 +35,23 @@ export type QrEmitido = {
   readonly hashImagen: string | null;
 };
 
+/**
+ * Quién pidió el cobro, cuando lo pidió otro producto por el contrato de
+ * consumidores (docs/10) y no el dueño desde la consola.
+ *
+ * `referenciaExterna` es **opaca**: es el identificador que el consumidor usa
+ * en su propio sistema para reconocer este cobro. No lleva nombre, teléfono ni
+ * NIT de su cliente — el sistema de cobros no necesita saber de quién es el
+ * cobro, y lo que no se recibe no se puede filtrar (reglas #4 y #9).
+ *
+ * El par `(consumidorId, referenciaExterna)` es único: es lo que hace que dos
+ * pedidos iguales devuelvan el mismo cobro en vez de dos QRs.
+ */
+export type DatosConsumidor = {
+  readonly consumidorId: string;
+  readonly referenciaExterna: string;
+};
+
 export type Cobro = {
   readonly id: string;
   readonly proveedor: Proveedor;
@@ -47,15 +64,33 @@ export type Cobro = {
   readonly qrVigente: QrEmitido | null;
   readonly creadoEn: Date;
   /**
-   * Teléfono del cliente en formato E.164. Se guarda completo porque hace
-   * falta para enviarle el QR; en logs va siempre enmascarado (regla #9).
+   * Teléfono del cliente en formato E.164, o `null`.
+   *
+   * Se guarda completo cuando lo hay, porque hace falta para enviarle el QR;
+   * en logs va siempre enmascarado (regla #9). Es `null` en los cobros que
+   * pide un consumidor por el contrato de docs/10: ahí el envío al pagador es
+   * del consumidor por su propio canal, así que este proyecto no pide —ni
+   * guarda— el teléfono de un cliente que no es suyo. Un cobro sin teléfono
+   * **no se puede enviar**, y `enviarQr()` lo rechaza en vez de inventar un
+   * destinatario.
    */
-  readonly telefonoCliente: string;
+  readonly telefonoCliente: string | null;
   readonly concepto: string;
+  /** Presente solo si el cobro lo pidió un consumidor; `null` si lo creó el dueño. */
+  readonly consumidor: DatosConsumidor | null;
 };
 
-/** Enmascara un teléfono para logs y evidencia: `+59171234567` → `+591 7** ***67`. */
-export function enmascararTelefono(telefono: string): string {
+/**
+ * Enmascara un teléfono para logs y evidencia: `+59171234567` → `+591 7** ***67`.
+ *
+ * `null` entra y sale como `null`: un cobro de consumidor no tiene teléfono, y
+ * fabricar un `'***'` para ese caso haría parecer que hay un dato oculto donde
+ * no hay ninguno.
+ */
+export function enmascararTelefono(telefono: string | null): string | null {
+  if (telefono === null) {
+    return null;
+  }
   const digitos = telefono.replace(/\D/g, '');
   if (digitos.length < 4) {
     return '***';

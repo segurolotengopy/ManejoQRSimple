@@ -48,6 +48,7 @@ function cobroInicial(semilla: (typeof SEMILLA)[number]): Cobro {
     creadoEn: AHORA,
     telefonoCliente: '+59171234567',
     concepto: semilla.concepto,
+    consumidor: null,
   };
 }
 

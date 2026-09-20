@@ -30,7 +30,7 @@ import {
   type RegistroEvidencia,
   type Resultado,
 } from '@mqs/qr-core';
-import type { CollectionReference, Firestore } from 'firebase-admin/firestore';
+import { Timestamp, type CollectionReference, type Firestore } from 'firebase-admin/firestore';
 
 import {
   cobroADocumento,
@@ -109,56 +109,119 @@ export class CobroRepositoryFirestore implements CobroRepository {
   }
 
   /**
+   * Crea el cobro solo si no existe: `create()` de Firestore, que falla con
+   * `ALREADY_EXISTS` si el documento está.
+   *
+   * Es la reserva del contrato de consumidores (docs/10). `guardar(cobro,
+   * 'BORRADOR')` no sirve para eso: ahí un cobro inexistente cuenta como
+   * `BORRADOR`, así que dos pedidos simultáneos con el mismo id ganan los dos.
+   * Acá gana uno, y lo decide la base.
+   */
+  async crear(cobro: Cobro): Promise<Resultado<void, ErrorPuerto>> {
+    try {
+      const ref = this.cobros.doc(cobro.id);
+      await ref.create(cobroADocumento(cobro));
+      await this.agregarAlHistorial(ref, cobro);
+      return exito(undefined);
+    } catch (causa) {
+      if (esYaExiste(causa)) {
+        return fallo({
+          tipo: 'CONFLICTO',
+          mensaje: `El cobro ${cobro.id} ya existe`,
+          reintentable: false,
+          codigoProveedor: String(YA_EXISTE),
+        });
+      }
+      return fallo(comoErrorPuerto(causa, 'crear'));
+    }
+  }
+
+  /**
    * Guarda el estado del cobro y, si tiene QR vigente, lo agrega al historial.
    *
-   * El historial usa `create()`: reguardar el mismo cobro no pisa la versión ya
-   * escrita, y una versión que ya existía se ignora en silencio porque volver a
-   * guardar es normal (el mismo cobro se guarda en cada transición).
+   * Con `estadoEsperado`, las **dos** escrituras van en la misma transacción.
+   * No es prolijidad: escribir el historial después del commit deja un camino
+   * por el que el estado ya está guardado y `guardar()` devuelve error igual,
+   * y quien llama —`emitirQr`— concluye que el QR quedó huérfano y lo anula en
+   * el banco. El cobro terminaría `QR_ACTIVO` apuntando a un QR muerto, con el
+   * pagador sin poder pagar. Atómico, ese camino no existe.
+   *
+   * El historial sigue siendo append-only (regla #6): se lee antes de escribir
+   * y una versión que ya estaba no se pisa, porque volver a guardar el mismo
+   * cobro es normal (pasa en cada transición).
    */
   async guardar(cobro: Cobro, estadoEsperado?: EstadoCobro): Promise<Resultado<void, ErrorPuerto>> {
     try {
       const ref = this.cobros.doc(cobro.id);
       if (estadoEsperado === undefined) {
         await ref.set(cobroADocumento(cobro));
-      } else {
-        // Leer y escribir en una transacción: si otro proceso cambió el estado
-        // en el medio, Firestore reintenta la función y la condición lo ve.
-        const escrito = await this.db.runTransaction(async (tx) => {
-          const actual = await tx.get(ref);
-          const datos = actual.data() as { estado?: unknown } | undefined;
-          // Un cobro que todavía no existe está, a estos efectos, en BORRADOR.
-          const estadoActual = actual.exists ? datos?.estado : 'BORRADOR';
-          if (estadoActual !== estadoEsperado) {
-            return false;
-          }
-          tx.set(ref, cobroADocumento(cobro));
-          return true;
-        });
-        if (!escrito) {
-          return fallo({
-            tipo: 'CONFLICTO',
-            mensaje: `El cobro ${cobro.id} cambió de estado mientras se operaba`,
-            reintentable: false,
-            codigoProveedor: null,
-          });
-        }
+        await this.agregarAlHistorial(ref, cobro);
+        return exito(undefined);
       }
 
-      if (cobro.qrVigente !== null) {
-        const qrRef = ref
-          .collection(SUBCOLECCION_QRS)
-          .doc(String(cobro.qrVigente.qrVersion).padStart(4, '0'));
-        try {
-          await qrRef.create(qrADocumento(cobro.qrVigente));
-        } catch (causa) {
-          if (!esYaExiste(causa)) {
-            throw causa;
-          }
+      const qrRef = this.refDelHistorial(ref, cobro);
+      // Leer y escribir en una transacción: si otro proceso cambió el estado
+      // en el medio, Firestore reintenta la función y la condición lo ve.
+      const escrito = await this.db.runTransaction(async (tx) => {
+        const actual = await tx.get(ref);
+        // Todas las lecturas antes de cualquier escritura, como exige Firestore.
+        const historial = qrRef === null ? null : await tx.get(qrRef);
+        const datos = actual.data() as { estado?: unknown } | undefined;
+        // Un cobro que todavía no existe está, a estos efectos, en BORRADOR.
+        const estadoActual = actual.exists ? datos?.estado : 'BORRADOR';
+        if (estadoActual !== estadoEsperado) {
+          return false;
         }
+        tx.set(ref, cobroADocumento(cobro));
+        if (qrRef !== null && historial !== null && !historial.exists && cobro.qrVigente !== null) {
+          tx.set(qrRef, qrADocumento(cobro.qrVigente));
+        }
+        return true;
+      });
+      if (!escrito) {
+        return fallo({
+          tipo: 'CONFLICTO',
+          mensaje: `El cobro ${cobro.id} cambió de estado mientras se operaba`,
+          reintentable: false,
+          codigoProveedor: null,
+        });
       }
       return exito(undefined);
     } catch (causa) {
       return fallo(comoErrorPuerto(causa, 'guardar'));
+    }
+  }
+
+  /** Dónde va el QR vigente en el historial, o `null` si el cobro no tiene. */
+  private refDelHistorial(
+    ref: ReturnType<CollectionReference['doc']>,
+    cobro: Cobro,
+  ): ReturnType<CollectionReference['doc']> | null {
+    return cobro.qrVigente === null
+      ? null
+      : ref.collection(SUBCOLECCION_QRS).doc(String(cobro.qrVigente.qrVersion).padStart(4, '0'));
+  }
+
+  /**
+   * Agrega el QR vigente al historial append-only (regla #6).
+   *
+   * `create()`: una versión que ya existía se ignora en silencio, porque
+   * volver a guardar el mismo cobro es normal (pasa en cada transición).
+   */
+  private async agregarAlHistorial(
+    ref: ReturnType<CollectionReference['doc']>,
+    cobro: Cobro,
+  ): Promise<void> {
+    const qrRef = this.refDelHistorial(ref, cobro);
+    if (qrRef === null || cobro.qrVigente === null) {
+      return;
+    }
+    try {
+      await qrRef.create(qrADocumento(cobro.qrVigente));
+    } catch (causa) {
+      if (!esYaExiste(causa)) {
+        throw causa;
+      }
     }
   }
 
@@ -218,6 +281,27 @@ export class CobroRepositoryFirestore implements CobroRepository {
       return exito(cobros.valor[0] ?? null);
     } catch (causa) {
       return fallo(comoErrorPuerto(causa, 'buscarPorReferenciaQr'));
+    }
+  }
+
+  /** Los cobros de un consumidor creados en `[desde, hasta)`, del más nuevo al más viejo. */
+  async listarDeConsumidor(
+    consumidorId: string,
+    desde: Date,
+    hasta: Date,
+    limite: number,
+  ): Promise<Resultado<readonly Cobro[], ErrorPuerto>> {
+    try {
+      const snapshot = await this.cobros
+        .where('consumidor.consumidorId', '==', consumidorId)
+        .where('creadoEn', '>=', Timestamp.fromDate(desde))
+        .where('creadoEn', '<', Timestamp.fromDate(hasta))
+        .orderBy('creadoEn', 'desc')
+        .limit(limite)
+        .get();
+      return this.mapear(snapshot.docs);
+    } catch (causa) {
+      return fallo(comoErrorPuerto(causa, 'listarDeConsumidor'));
     }
   }
 

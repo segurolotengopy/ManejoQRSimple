@@ -27,7 +27,8 @@ import type { Metodo, Peticion } from './tipos.js';
 const AHORA = new Date('2026-08-28T12:00:00.000Z');
 const TOKEN = 'token-de-prueba-suficientemente-largo';
 
-const aceptaTodo: VerificadorDeToken = (t) => Promise.resolve(t === TOKEN ? 'dueño' : null);
+const aceptaTodo: VerificadorDeToken = (t) =>
+  Promise.resolve(t === TOKEN ? { tipo: 'dueño', id: 'dueño' } : null);
 
 function monto(valor: number): Centavos {
   const r = centavos(valor);
@@ -66,8 +67,9 @@ function pedir(
   ruta: string,
   cuerpo: unknown = null,
   token: string | null = TOKEN,
+  consulta: Readonly<Record<string, string>> = {},
 ): Peticion {
-  return { metodo, ruta, cuerpo, token };
+  return { metodo, ruta, consulta, cuerpo, token };
 }
 
 const COBRO_VALIDO = {

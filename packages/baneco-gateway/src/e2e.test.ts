@@ -95,6 +95,7 @@ const cobroInicial: Cobro = {
   creadoEn: T0,
   telefonoCliente: '+59171234567',
   concepto: 'Pago Factura de Prueba',
+  consumidor: null,
 };
 
 async function hastaEnviado(deps: Dependencias) {

@@ -48,6 +48,18 @@ const qrEmitidoDoc = z.object({
   hashImagen: z.string().nullable(),
 });
 
+/**
+ * Quién pidió el cobro, si lo pidió un consumidor (docs/10).
+ *
+ * `nullish` y no `nullable`: los cobros escritos antes de que existiera el
+ * contrato no tienen el campo, y un documento viejo no puede volverse
+ * ilegible por una función nueva.
+ */
+const consumidorDoc = z.object({
+  consumidorId: z.string().min(1),
+  referenciaExterna: z.string().min(1),
+});
+
 const cobroDoc = z.object({
   proveedor: z.enum(['baneco', 'yape']),
   estado: z.enum([
@@ -67,8 +79,24 @@ const cobroDoc = z.object({
   qrVersion: z.number().int().nonnegative(),
   qrVigente: qrEmitidoDoc.nullable(),
   creadoEn: marcaDeTiempo,
-  telefonoCliente: z.string().min(1),
+  // Nullish: un cobro de consumidor no tiene teléfono, y los documentos
+  // anteriores al contrato tampoco traían el campo como nulo.
+  telefonoCliente: z.string().min(1).nullish(),
   concepto: z.string(),
+  consumidor: consumidorDoc.nullish(),
+}).superRefine((d, ctx) => {
+  // Un cobro del dueño **tiene** teléfono: es lo que hace falta para mandarle
+  // el QR. Dejar que `nullish` lo vuelva `null` en silencio convertiría un
+  // documento corrupto en un cobro que simplemente no se puede enviar, y nadie
+  // se enteraría de por qué. Solo los cobros de consumidor lo tienen vacío, y
+  // ahí es a propósito (docs/10).
+  if ((d.consumidor === null || d.consumidor === undefined) && (d.telefonoCliente ?? null) === null) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'un cobro sin consumidor tiene que tener teléfono',
+      path: ['telefonoCliente'],
+    });
+  }
 });
 
 export function cobroADocumento(cobro: Cobro): Record<string, unknown> {
@@ -82,6 +110,17 @@ export function cobroADocumento(cobro: Cobro): Record<string, unknown> {
     creadoEn: Timestamp.fromDate(cobro.creadoEn),
     telefonoCliente: cobro.telefonoCliente,
     concepto: cobro.concepto,
+    // Siempre presente, aunque sea `null`, para que todos los documentos de la
+    // colección tengan la misma forma. (Con `null` el campo anidado
+    // `consumidor.consumidorId` no existe y el índice no lo toma, que es
+    // justamente lo que se quiere: los cobros del dueño no son de nadie.)
+    consumidor:
+      cobro.consumidor === null
+        ? null
+        : {
+            consumidorId: cobro.consumidor.consumidorId,
+            referenciaExterna: cobro.consumidor.referenciaExterna,
+          },
   };
 }
 
@@ -132,8 +171,15 @@ export function documentoACobro(
             hashImagen: d.qrVigente.hashImagen,
           },
     creadoEn: d.creadoEn.toDate(),
-    telefonoCliente: d.telefonoCliente,
+    telefonoCliente: d.telefonoCliente ?? null,
     concepto: d.concepto,
+    consumidor:
+      d.consumidor === null || d.consumidor === undefined
+        ? null
+        : {
+            consumidorId: d.consumidor.consumidorId,
+            referenciaExterna: d.consumidor.referenciaExterna,
+          },
   });
 }
 

@@ -48,6 +48,7 @@ function unCobro(sobrescribir: Partial<Cobro> = {}): Cobro {
     creadoEn: T0,
     telefonoCliente: '+59171234567',
     concepto: 'Cobro de integración',
+    consumidor: null,
     ...sobrescribir,
   };
 }

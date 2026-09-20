@@ -131,6 +131,22 @@ export class CobroRepositoryEnMemoria implements CobroRepository {
     return Promise.resolve(exito(this.cobros.get(id) ?? null));
   }
 
+  /** Solo si no existe. El `Map` hace atómico lo que en Firestore hace `create()`. */
+  crear(cobro: Cobro): Ok<void> {
+    if (this.cobros.has(cobro.id)) {
+      return Promise.resolve(
+        fallo({
+          tipo: 'CONFLICTO',
+          mensaje: `El cobro ${cobro.id} ya existe`,
+          reintentable: false,
+          codigoProveedor: null,
+        }),
+      );
+    }
+    this.cobros.set(cobro.id, cobro);
+    return Promise.resolve(exito(undefined));
+  }
+
   guardar(cobro: Cobro, estadoEsperado?: EstadoCobro): Ok<void> {
     if (estadoEsperado !== undefined) {
       // Un cobro que todavía no existe está, a estos efectos, en BORRADOR.
@@ -175,6 +191,19 @@ export class CobroRepositoryEnMemoria implements CobroRepository {
       (c) => c.qrVigente?.referenciaProveedor === referenciaProveedor,
     );
     return Promise.resolve(exito(cobro ?? null));
+  }
+
+  listarDeConsumidor(consumidorId: string, desde: Date, hasta: Date, limite: number): Ok<readonly Cobro[]> {
+    const suyos = [...this.cobros.values()]
+      .filter(
+        (c) =>
+          c.consumidor?.consumidorId === consumidorId &&
+          c.creadoEn.getTime() >= desde.getTime() &&
+          c.creadoEn.getTime() < hasta.getTime(),
+      )
+      .sort((a, b) => b.creadoEn.getTime() - a.creadoEn.getTime())
+      .slice(0, limite);
+    return Promise.resolve(exito(suyos));
   }
 
   async deteccionesAplicadas(cobroId: string): Ok<readonly string[]> {

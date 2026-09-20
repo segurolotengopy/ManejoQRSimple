@@ -25,7 +25,14 @@ import { aDecimalBob, esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
-import { verificadorDeTokenFijo } from './auth.js';
+import {
+  combinarVerificadores,
+  leerConsumidores,
+  verificadorDeConsumidores,
+  verificadorDeTokenFijo,
+  MINIMO_TOKEN_CONSUMIDOR,
+} from './auth.js';
+import { cupoDeConsumidores } from './api/cupo-consumidor.js';
 import { almacenEnDirectorio } from './imagenes.js';
 import { leerModoPrueba, reanudarCorrida, type ModoPrueba } from './modo-prueba.js';
 import { describirLlamada, RegistroEventos } from './registro.js';
@@ -44,9 +51,30 @@ function conectarFirestore(): ReturnType<typeof getFirestore> {
   return getFirestore(app);
 }
 
+type ErrorConsumidores = Extract<ReturnType<typeof leerConsumidores>, { ok: false }>['error'];
+
+/** Explica en la terminal por qué no arranca, sin mostrar ningún token. */
+function describirErrorDeConsumidores(error: ErrorConsumidores): string {
+  switch (error.tipo) {
+    case 'ID_INVALIDO':
+      return `${error.variable}: el identificador del consumidor solo admite letras, números y guiones (2 a 31 caracteres).`;
+    case 'TOKEN_CORTO':
+      return `El token del consumidor "${error.consumidorId}" tiene menos de ${String(MINIMO_TOKEN_CONSUMIDOR)} caracteres.`;
+    case 'TOKEN_SIN_LLENAR':
+      return `El token del consumidor "${error.consumidorId}" quedó con el marcador de la plantilla, sin llenar.`;
+    case 'ID_REPETIDO':
+      return `Hay dos variables que dan el mismo consumidor "${error.consumidorId}" (el guion bajo y el guion medio se equiparan).`;
+    case 'TOKEN_COMPARTIDO':
+      return (
+        `El token del consumidor "${error.consumidorId}" es el mismo que el de otra identidad ` +
+        '(el del dueño, o el de otro consumidor). Cada uno necesita el suyo: compartido, uno entraría como el otro.'
+      );
+  }
+}
+
 async function main(): Promise<number> {
-  const verificador = verificadorDeTokenFijo(process.env['API_TOKEN_LOCAL']);
-  if (verificador === null) {
+  const verificadorDueño = verificadorDeTokenFijo(process.env['API_TOKEN_LOCAL']);
+  if (verificadorDueño === null) {
     console.error(
       '✖ Falta API_TOKEN_LOCAL (mínimo 16 caracteres).\n' +
         '  La API no arranca sin autenticación: crea y anula cobros, y un endpoint\n' +
@@ -55,6 +83,24 @@ async function main(): Promise<number> {
     );
     return 1;
   }
+
+  // Consumidores del contrato (docs/10), uno por variable CONSUMIDOR_TOKEN_*.
+  // Sin ninguna configurada, `/api/v1/…` simplemente no le responde a nadie:
+  // el contrato existe pero no tiene quién lo use, que es el estado normal.
+  const consumidores = leerConsumidores(process.env);
+  if (!consumidores.ok) {
+    console.error(
+      `✖ Consumidores mal configurados: ${describirErrorDeConsumidores(consumidores.error)}\n` +
+        '  La API no arranca así: un consumidor con un token débil puede crear y anular cobros.\n' +
+        '  Generá uno con:  node -e "console.log(require(\'crypto\').randomBytes(24).toString(\'hex\'))"',
+    );
+    return 1;
+  }
+  const verificador = combinarVerificadores(
+    verificadorDueño,
+    verificadorDeConsumidores(consumidores.tokens),
+  );
+  const cupo = cupoDeConsumidores(process.env);
 
   // Producción solo en la prueba controlada, y con los datos en el emulador.
   const barrera = verificarProduccion(process.env);
@@ -140,6 +186,7 @@ async function main(): Promise<number> {
       ahora: () => new Date(),
       leerImagenQr: imagenes.leer,
       registro,
+      cupoConsumidores: cupo,
       ...(prueba === null ? {} : { prueba }),
     },
     verificador,
@@ -156,6 +203,11 @@ async function main(): Promise<number> {
     console.log(`  Origen permitido: ${origenPermitido}`);
     console.log(`  Logs: ${directorioLogs} (también en la pestaña Logs, aunque se reinicie)`);
     console.log('  Autenticación: token fijo (Authorization: Bearer …)');
+    console.log(
+      consumidores.tokens.size === 0
+        ? '  Consumidores (/api/v1): ninguno configurado (CONSUMIDOR_TOKEN_*)'
+        : `  Consumidores (/api/v1): ${[...consumidores.tokens.keys()].join(', ')} · hasta ${String(cupo.porHora)} QRs por hora cada uno`,
+    );
     if (prueba !== null) {
       console.log(
         prueba.produccion

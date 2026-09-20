@@ -95,6 +95,18 @@ export interface MessagingProvider {
 export interface CobroRepository {
   obtener(id: string): Promise<Resultado<Cobro | null, ErrorPuerto>>;
   /**
+   * Crea el cobro **solo si no existe**. Falla con `CONFLICTO` si ya existe,
+   * sin tocar lo guardado.
+   *
+   * Es distinto de `guardar(cobro, 'BORRADOR')`, y la diferencia importa: ahí
+   * un cobro inexistente cuenta como `BORRADOR`, así que dos pedidos
+   * simultáneos con el mismo id **ganan los dos**. Acá gana uno solo. Es la
+   * reserva que necesita el contrato de consumidores (docs/10): sin ella, un
+   * reintento del consumidor emitiría un segundo QR en el banco y le cobraría
+   * dos veces a su cliente (regla #7).
+   */
+  crear(cobro: Cobro): Promise<Resultado<void, ErrorPuerto>>;
+  /**
    * Guarda el cobro.
    *
    * Con `estadoEsperado`, solo escribe si el cobro guardado sigue en ese
@@ -139,6 +151,26 @@ export interface CobroRepository {
    * un pago de un cobro ya confirmado no es un huérfano — es el caso normal.
    */
   buscarPorReferenciaQr(referenciaProveedor: string): Promise<Resultado<Cobro | null, ErrorPuerto>>;
+
+  /**
+   * No hay un `buscarPorReferenciaExterna`, y es a propósito: el id del cobro
+   * de un consumidor **se deriva** de `(consumidorId, referenciaExterna)`, así
+   * que la respuesta exacta a esa pregunta es `obtener(idDeCobroDeConsumidor(…))`
+   * — una lectura por id, fuertemente consistente, sin índice y sin la
+   * posibilidad de que la consulta y la derivación discrepen.
+   */
+
+  /**
+   * Los cobros de un consumidor creados en `[desde, hasta)`, para que concilie
+   * contra su propio sistema. Es la pregunta del contrato de docs/10, y por
+   * eso lleva el consumidor adentro: no existe una variante sin filtrar.
+   */
+  listarDeConsumidor(
+    consumidorId: string,
+    desde: Date,
+    hasta: Date,
+    limite: number,
+  ): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
   /**
    * Claves de deduplicación ya aplicadas a un cobro (regla #7).
    *

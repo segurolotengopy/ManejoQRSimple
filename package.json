@@ -42,7 +42,7 @@
     "prueba:consola": "npm run build:app -w @mqs/demo-web && npm run preview -w @mqs/demo-web -- --port 5173 --strictPort"
   },
   "devDependencies": {
-    "@eslint/js": "^9.14.0",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.0.0",
     "@vitest/coverage-v8": "^4.1.10",
     "dependency-cruiser": "^18.2.0",

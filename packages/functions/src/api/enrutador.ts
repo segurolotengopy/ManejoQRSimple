@@ -10,6 +10,16 @@
  * en el demo local acepta un token fijo del entorno. El enrutador no sabe la
  * diferencia — y sobre todo, **no existe un modo "sin autenticación"** que
  * alguien pueda activar por accidente.
+ *
+ * Lo que sí sabe el enrutador es **quién** llama. Hay dos superficies
+ * separadas y no dos niveles de permiso de la misma:
+ *
+ * - `/api/…` es la consola del dueño.
+ * - `/api/v1/…` es el contrato para proyectos consumidores (docs/10).
+ *
+ * Ninguna identidad cruza a la otra, y el cruce responde 404 y no 403: un 403
+ * confirmaría que la ruta del otro lado existe. La separación se hace acá, una
+ * sola vez, en vez de que cada handler se acuerde de comprobarla.
  */
 
 import {
@@ -33,15 +43,24 @@ import {
   verRevision,
   type ContextoApi,
 } from './handlers.js';
-import { error, noAutorizado, noEncontrado, type Peticion, type Respuesta } from './tipos.js';
+import * as consumidores from './consumidores.js';
+import {
+  error,
+  noAutorizado,
+  noEncontrado,
+  type Identidad,
+  type Peticion,
+  type Respuesta,
+} from './tipos.js';
 
 /** Verifica el token del pedido. Devuelve `null` si no es válido. */
-export type VerificadorDeToken = (token: string) => Promise<string | null>;
+export type VerificadorDeToken = (token: string) => Promise<Identidad | null>;
 
 const PREFIJO = '/api/cobros';
 const REVISION = '/api/revision';
 const PRUEBAS = '/api/pruebas';
 const ABONOS = '/api/abonos';
+const CONSUMIDORES = '/api/v1/cobros';
 
 /**
  * La clave de un abono viene del banco (`baneco:{qrId}:{tx}`) y la consola la
@@ -63,7 +82,70 @@ export async function enrutar(
     return noAutorizado();
   }
 
-  return despachar(ctx, peticion);
+  const esRutaDeConsumidor = peticion.ruta === CONSUMIDORES || peticion.ruta.startsWith(`${CONSUMIDORES}/`);
+  if (identidad.tipo === 'consumidor') {
+    // Un token de consumidor no abre la consola del dueño. Ni una ruta de
+    // lectura: `GET /api/cobros` listaría los cobros de todos.
+    return esRutaDeConsumidor
+      ? despacharConsumidor(ctx, identidad.consumidorId, peticion)
+      : noEncontrado();
+  }
+  // Y el dueño no entra por el contrato: su consola tiene sus propias rutas, y
+  // un cobro de consumidor no es suyo para crearlo ni anularlo por ahí.
+  return esRutaDeConsumidor ? noEncontrado() : despachar(ctx, peticion);
+}
+
+/**
+ * Las cuatro operaciones del contrato (docs/10), más la imagen del QR.
+ *
+ * No hay ninguna que confirme un pago, y no es un olvido: es la asimetría que
+ * define el contrato (reglas #1 y BANECO-1).
+ */
+function despacharConsumidor(
+  ctx: ContextoApi,
+  consumidorId: string,
+  peticion: Peticion,
+): Promise<Respuesta> | Respuesta {
+  const { metodo, ruta, cuerpo, consulta } = peticion;
+
+  if (ruta === CONSUMIDORES) {
+    return metodo === 'GET'
+      ? consumidores.listarCobros(ctx, consumidorId, consulta)
+      : consumidores.crearCobro(ctx, consumidorId, cuerpo);
+  }
+
+  const resto = ruta.slice(CONSUMIDORES.length + 1);
+  const [primero, segundo, sobrante] = resto.split('/');
+  if (primero === undefined || primero === '' || sobrante !== undefined) {
+    return noEncontrado();
+  }
+
+  if (primero === 'por-referencia') {
+    if (metodo !== 'GET') {
+      return metodoNoPermitido();
+    }
+    if (segundo === undefined || segundo === '') {
+      return noEncontrado();
+    }
+    let referencia: string;
+    try {
+      referencia = decodeURIComponent(segundo);
+    } catch {
+      return noEncontrado();
+    }
+    return consumidores.verCobroPorReferencia(ctx, consumidorId, referencia);
+  }
+
+  if (segundo === undefined) {
+    return metodo === 'GET' ? consumidores.verCobro(ctx, consumidorId, primero) : metodoNoPermitido();
+  }
+  if (segundo === 'qr') {
+    return metodo === 'GET' ? consumidores.verQr(ctx, consumidorId, primero) : metodoNoPermitido();
+  }
+  if (segundo === 'anular') {
+    return metodo === 'POST' ? consumidores.anular(ctx, consumidorId, primero, cuerpo) : metodoNoPermitido();
+  }
+  return noEncontrado();
 }
 
 async function despachar(ctx: ContextoApi, peticion: Peticion): Promise<Respuesta> {

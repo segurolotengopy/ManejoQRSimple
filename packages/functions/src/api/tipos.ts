@@ -14,10 +14,25 @@
 
 export type Metodo = 'GET' | 'POST';
 
+/**
+ * Quién hizo el pedido, una vez verificado su token.
+ *
+ * Son dos mundos separados y no dos permisos del mismo: el dueño opera su
+ * consola, un consumidor opera el contrato de docs/10. Que sea una unión y no
+ * un `esConsumidor: boolean` es lo que hace que el enrutador tenga que decidir
+ * explícitamente en cada ruta, y que agregar una ruta nueva sin decidirlo no
+ * compile.
+ */
+export type Identidad =
+  | { readonly tipo: 'dueño'; readonly id: string }
+  | { readonly tipo: 'consumidor'; readonly consumidorId: string };
+
 export type Peticion = {
   readonly metodo: Metodo;
   /** Ruta sin query string, p. ej. `/api/cobros/abc`. */
   readonly ruta: string;
+  /** Parámetros del query string, ya decodificados. Vacío si no hubo. */
+  readonly consulta: Readonly<Record<string, string>>;
   /** Cuerpo ya parseado. `null` si no vino o no era JSON. */
   readonly cuerpo: unknown;
   /** Token del header `Authorization: Bearer …`, sin el prefijo. */

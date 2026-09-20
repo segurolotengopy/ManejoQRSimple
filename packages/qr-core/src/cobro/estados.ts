@@ -35,6 +35,12 @@ export function esTerminal(estado: EstadoCobro): estado is EstadoTerminal {
  *
  * `accion-manual` es el único origen que una persona puede producir, y queda
  * marcado como tal en la evidencia justamente para que sea auditable.
+ *
+ * `contrato-consumidor` existe por la misma razón: una anulación que pide otro
+ * producto por el contrato de docs/10 **no** es una acción del dueño, y
+ * firmarla como `accion-manual` le sacaría a la evidencia lo único que hace
+ * auditable ese registro — quién la hizo. El id del consumidor va en los datos
+ * del registro.
  */
 export const ORIGENES = [
   'sistema',
@@ -42,6 +48,7 @@ export const ORIGENES = [
   'scraper-yape',
   'webhook-whatsapp',
   'accion-manual',
+  'contrato-consumidor',
 ] as const;
 
 export type OrigenTransicion = (typeof ORIGENES)[number];

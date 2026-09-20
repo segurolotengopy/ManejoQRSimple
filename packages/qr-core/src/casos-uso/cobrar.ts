@@ -27,6 +27,8 @@
  */
 
 import { anularEnProveedor, type QrAnulado } from '../cobro/anulacion.js';
+import type { OrigenTransicion } from '../cobro/estados.js';
+import type { Centavos } from '../comun/dinero.js';
 import { qrEstaVencido, type Cobro, type QrEmitido } from '../cobro/cobro.js';
 import {
   tieneQrPagable,
@@ -126,6 +128,43 @@ export type ErrorCasoUso =
   | { readonly tipo: 'ABONO_DESACTUALIZADO'; readonly cobroId: string }
   /** Se quiso cerrar un abono sin conciliar que no existe. */
   | { readonly tipo: 'ABONO_INEXISTENTE'; readonly idDeduplicacion: string }
+  /**
+   * Se quiso mandar el QR de un cobro sin teléfono. Los cobros que pide un
+   * consumidor (docs/10) no lo tienen a propósito: el envío al pagador es del
+   * consumidor, por su propio canal.
+   */
+  | { readonly tipo: 'SIN_CANAL_DE_ENVIO'; readonly cobroId: string }
+  /**
+   * La referencia externa de un consumidor cayó sobre un cobro que no es suyo.
+   * Solo puede pasar por una colisión del hash del id: inverosímil, pero no se
+   * devuelve el cobro de otro por las dudas.
+   */
+  | { readonly tipo: 'REFERENCIA_EXTERNA_EN_USO'; readonly referenciaExterna: string }
+  /**
+   * Misma referencia externa, otro importe. No es un reintento: es un error
+   * del consumidor, y elegir uno de los dos importes sería cobrar de más o de
+   * menos sin que nadie lo decida.
+   */
+  | {
+      readonly tipo: 'IMPORTE_DISTINTO_CON_MISMA_REFERENCIA';
+      readonly referenciaExterna: string;
+      /** El importe que ya tenía el cobro registrado, para que el consumidor lo vea. */
+      readonly registrado: Centavos;
+    }
+  /**
+   * Lo peor que puede salir de emitir un QR: la transición falló **y** el
+   * banco tampoco lo anuló, así que quedó un QR vivo y pagable que ningún
+   * cobro mira (C4, amenaza T10). Es una variante propia y no un campo
+   * opcional para que ningún `switch` lo pueda ignorar sin que el compilador
+   * avise. Lo levanta el cierre diario como abono huérfano, pero antes tiene
+   * que quedar en el log.
+   */
+  | {
+      readonly tipo: 'QR_SUELTO_EN_EL_PROVEEDOR';
+      readonly referenciaProveedor: string;
+      /** El error que impidió adoptar el QR. Es el que explica la operación. */
+      readonly causa: ErrorCasoUso;
+    }
   /** Una decisión sobre plata sin un motivo que la explique. */
   | { readonly tipo: 'MOTIVO_INSUFICIENTE'; readonly minimo: number };
 
@@ -203,7 +242,46 @@ export async function emitirQr(
   }
 
   const resultado = await aplicar(deps, cobro, { tipo, qr: emitido.valor, origen: 'sistema' }, ahora);
-  return esExito(resultado) ? exito(resultado.valor.cobro) : resultado;
+  if (!esExito(resultado)) {
+    return compensarEmision(deps, cobro.id, emitido.valor.referenciaProveedor, resultado);
+  }
+  return exito(resultado.valor.cobro);
+}
+
+/**
+ * El QR se emitió en el banco y la transición falló. Hay que decidir si ese QR
+ * quedó huérfano —vivo y pagable hasta la medianoche, sin ningún cobro que lo
+ * mire (C4, amenaza T10)— o si en realidad el cobro sí lo adoptó.
+ *
+ * **Se relee antes de anular**, y esto no es una precaución teórica: un
+ * guardado puede fallar con el estado ya escrito. Pasa cuando el historial de
+ * QRs no se puede escribir después de una transacción que sí commiteó, y pasa
+ * cuando un commit aterriza y se pierde la respuesta, el cliente reintenta, lee
+ * el estado nuevo y devuelve `CONFLICTO`. Anular a ciegas en esos casos dejaría
+ * un cobro `QR_ACTIVO` apuntando a un QR muerto: el pagador no podría pagar y
+ * nadie se enteraría.
+ *
+ * Si el QR **no** quedó adoptado, se lo anula. El error que se devuelve sigue
+ * siendo el original —es el que explica por qué la operación no salió—, pero
+ * si además la anulación falla se lo marca con `compensacionFallida`, para que
+ * la capa que sí puede registrar deje constancia de que quedó un QR vivo suelto
+ * (principio 4 de docs/01: todo efecto externo, observable).
+ */
+async function compensarEmision(
+  deps: Pick<DepsEmision, 'cobros' | 'qr'>,
+  cobroId: string,
+  referenciaProveedor: string,
+  error: Extract<Resultado<never, ErrorCasoUso>, { ok: false }>,
+): Promise<Resultado<Cobro, ErrorCasoUso>> {
+  const guardado = await deps.cobros.obtener(cobroId);
+  if (esExito(guardado) && guardado.valor?.qrVigente?.referenciaProveedor === referenciaProveedor) {
+    // El cobro sí lo adoptó: el QR está vivo porque tiene que estarlo.
+    return error;
+  }
+  const anulado = await deps.qr.anular(referenciaProveedor);
+  return esExito(anulado)
+    ? error
+    : fallo({ tipo: 'QR_SUELTO_EN_EL_PROVEEDOR', referenciaProveedor, causa: error.error });
 }
 
 /** Manda el QR al cliente por WhatsApp y deja el cobro en `ENVIADO`. */
@@ -215,6 +293,12 @@ export async function enviarQr(
   const qr = cobro.qrVigente;
   if (qr === null) {
     return fallo({ tipo: 'SIN_QR_VIGENTE', cobroId: cobro.id });
+  }
+  if (cobro.telefonoCliente === null) {
+    // Un cobro de consumidor no trae teléfono (docs/10, decisión #5). Antes de
+    // llamar a la mensajería: pedirle que mande un QR sin destinatario sería
+    // pedirle que lo invente.
+    return fallo({ tipo: 'SIN_CANAL_DE_ENVIO', cobroId: cobro.id });
   }
 
   const enviado = await deps.mensajeria.enviarQr(cobro, qr);
@@ -266,6 +350,12 @@ export async function anular(
   cobro: Cobro,
   motivo: string,
   ahora: Date,
+  /**
+   * Quién la pide. Por defecto el dueño desde su consola; el contrato de
+   * docs/10 pasa `contrato-consumidor`, para que la evidencia no diga que la
+   * anulación la hizo una persona cuando la pidió otro sistema (regla #8).
+   */
+  origen: Extract<OrigenTransicion, 'accion-manual' | 'contrato-consumidor'> = 'accion-manual',
 ): Promise<Resultado<Cobro, ErrorCasoUso>> {
   const inadmisible = verificarAdmision(cobro, 'ANULADO');
   if (inadmisible !== null) {
@@ -305,7 +395,7 @@ export async function anular(
   const resultado = await aplicar(
     deps,
     cobro,
-    { tipo: 'ANULADO', motivo, anulacion, origen: 'accion-manual' },
+    { tipo: 'ANULADO', motivo, anulacion, origen },
     ahora,
   );
   return esExito(resultado) ? exito(resultado.valor.cobro) : resultado;
@@ -481,6 +571,12 @@ export async function vigilar(
  * No crea un cobro nuevo: incrementa `qrVersion` sobre el mismo (regla #6).
  * Antes mira si el QR vencido llegó a pagarse: renovar un cobro ya pagado le
  * pediría al cliente que pague dos veces.
+ *
+ * Si el cobro no tiene teléfono —los de consumidor no lo tienen, docs/10— la
+ * renovación termina en `QR_ACTIVO` y no se manda nada: el QR nuevo lo retira
+ * el consumidor y lo hace llegar por su canal. Devolver un error acá dejaría
+ * al cobro renovado igual, pero haría parecer fallida una renovación que salió
+ * bien.
  */
 export async function renovarYReenviar(
   deps: DepsRenovacion,
@@ -500,6 +596,9 @@ export async function renovarYReenviar(
 
   const renovado = await emitirQr(deps, cobro, venceEn, ahora);
   if (!esExito(renovado)) {
+    return renovado;
+  }
+  if (renovado.valor.telefonoCliente === null) {
     return renovado;
   }
   return enviarQr(deps, renovado.valor, ahora);

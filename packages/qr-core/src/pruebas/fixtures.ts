@@ -52,8 +52,18 @@ export function unCobro(sobrescribir: Partial<Cobro> = {}): Cobro {
     creadoEn: T0,
     telefonoCliente: '+59171234567',
     concepto: 'Servicio de prueba',
+    consumidor: null,
     ...sobrescribir,
   };
+}
+
+/** Cobro pedido por un consumidor: sin teléfono y con referencia externa (docs/10). */
+export function unCobroDeConsumidor(sobrescribir: Partial<Cobro> = {}): Cobro {
+  return unCobro({
+    telefonoCliente: null,
+    consumidor: { consumidorId: 'novuchat', referenciaExterna: 'ref-0001' },
+    ...sobrescribir,
+  });
 }
 
 /** Cobro en un estado dado, ya con QR emitido cuando el estado lo implica. */

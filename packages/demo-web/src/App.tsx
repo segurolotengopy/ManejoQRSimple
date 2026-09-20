@@ -35,6 +35,7 @@ import {
   accionesPosibles,
   describirEstado,
   fechaCorta,
+  clienteParaMostrar,
   montoParaMostrar,
   tonoDeEstado,
   vigenciaRestante,
@@ -315,7 +316,7 @@ function ListaCobros({
             <span className={`chip ${tonoDeEstado(c.estado)}`}>{c.estado}</span>
             <span className="monto">{montoParaMostrar(c)}</span>
             <span className="concepto">{c.concepto}</span>
-            <span className="tel">{c.telefonoCliente}</span>
+            <span className="tel">{clienteParaMostrar(c)}</span>
           </button>
         </li>
       ))}
@@ -427,7 +428,7 @@ function Detalle({
         <dt>Concepto</dt>
         <dd>{cobro.concepto}</dd>
         <dt>Cliente</dt>
-        <dd>{cobro.telefonoCliente}</dd>
+        <dd>{clienteParaMostrar(cobro)}</dd>
         <dt>Creado</dt>
         <dd>{fechaCorta(cobro.creadoEn)}</dd>
         {cobro.qrVigente !== null && (

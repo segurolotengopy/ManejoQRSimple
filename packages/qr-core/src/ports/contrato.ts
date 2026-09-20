@@ -167,6 +167,69 @@ export const CASOS_COBRO_REPOSITORY: ReadonlyArray<CasoDeContrato<CobroRepositor
     },
   },
   {
+    nombre: 'crear gana una sola vez: el segundo intento con el mismo id falla con CONFLICTO',
+    ejecutar: async (repo) => {
+      const cobro = { ...cobroDeContrato(), id: 'contrato-crear-una-vez', estado: 'BORRADOR' as const };
+      exigirExito(await repo.crear(cobro), 'primera creación');
+
+      const segunda = await repo.crear({ ...cobro, concepto: 'Otro concepto' });
+      afirmar(
+        !esExito(segunda) && segunda.error.tipo === 'CONFLICTO',
+        'sin esto, dos pedidos iguales emitirían dos QRs (regla #7)',
+      );
+      const guardado = exigirExito(await repo.obtener(cobro.id), 'releer');
+      afirmar(guardado?.concepto === cobro.concepto, 'el intento perdedor no pisa lo guardado');
+    },
+  },
+  {
+    nombre: 'listar los cobros de un consumidor respeta el rango y no incluye los de otros',
+    ejecutar: async (repo) => {
+      const base = { ...cobroDeContrato(), telefonoCliente: null };
+      const dia = 86_400_000;
+      const dentro = new Date(INSTANTE_DE_CONTRATO.getTime());
+      const fuera = new Date(INSTANTE_DE_CONTRATO.getTime() - 10 * dia);
+      exigirExito(
+        await repo.guardar({
+          ...base,
+          id: 'contrato-rango-dentro',
+          creadoEn: dentro,
+          consumidor: { consumidorId: 'consumidor-rango', referenciaExterna: 'r-dentro' },
+        }),
+        'guardar dentro',
+      );
+      exigirExito(
+        await repo.guardar({
+          ...base,
+          id: 'contrato-rango-fuera',
+          creadoEn: fuera,
+          consumidor: { consumidorId: 'consumidor-rango', referenciaExterna: 'r-fuera' },
+        }),
+        'guardar fuera',
+      );
+      exigirExito(
+        await repo.guardar({
+          ...base,
+          id: 'contrato-rango-ajeno',
+          creadoEn: dentro,
+          consumidor: { consumidorId: 'otro-consumidor', referenciaExterna: 'r-ajeno' },
+        }),
+        'guardar ajeno',
+      );
+
+      const listado = exigirExito(
+        await repo.listarDeConsumidor(
+          'consumidor-rango',
+          new Date(INSTANTE_DE_CONTRATO.getTime() - dia),
+          new Date(INSTANTE_DE_CONTRATO.getTime() + dia),
+          10,
+        ),
+        'listar',
+      );
+      afirmar(listado.length === 1, 'solo el que cae en el rango, y solo del consumidor que pregunta');
+      afirmar(listado[0]?.id === 'contrato-rango-dentro', 'y tiene que ser ese');
+    },
+  },
+  {
     nombre: 'listar por estado devuelve solo los cobros de ese estado',
     ejecutar: async (repo) => {
       const base = cobroDeContrato();
@@ -194,6 +257,7 @@ function cobroDeContrato(): Cobro {
     creadoEn: INSTANTE_DE_CONTRATO,
     telefonoCliente: '+59171234567',
     concepto: 'Caso de contrato',
+    consumidor: null,
   };
 }
 

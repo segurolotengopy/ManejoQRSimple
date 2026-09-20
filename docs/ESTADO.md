@@ -4,11 +4,14 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-19, cierre de la sesión "segunda cuenta de cobro"
-(**PR #36 mergeado**): la prueba en producción admite **varias cuentas**, cada una con su
-alias, sus credenciales y sus datos, y la **segunda cuenta corrió P1–P9 ok**
-(`02-hallazgos-produccion.md` §5). Además se cerró **C9: no hay comisión bancaria**
-(decisión 17).
+**Última actualización:** 2026-09-19, sesión "contrato para consumidores" — **bloque 1
+del frente `Prompts/cobrador-contrato-para-consumidores.md`**: el cobro por QR se abre a
+otros productos con cuatro operaciones en `/api/v1/…` y **ninguna que confirme un pago**
+(`docs/10-contrato-consumidores.md`). PR abierto, a la espera de autorización.
+Antes, el mismo día: **PR #36 mergeado**, la prueba en producción admite **varias
+cuentas**, cada una con su alias, sus credenciales y sus datos, y la **segunda cuenta
+corrió P1–P9 ok** (`02-hallazgos-produccion.md` §5). Además se cerró **C9: no hay
+comisión bancaria** (decisión 17).
 Antes: prueba con Baneco P1–P9 ok, hallazgos en
 `docs/Integraciones/baneco/02-hallazgos-produccion.md`; B0 tiene el modo pago asistido y
 espera la cuenta de pruebas, A4)
@@ -136,6 +139,14 @@ espera la cuenta de pruebas, A4)
     QR**, así que la conciliación por monto exacto no necesita tolerancia por comisión
     — que era justo el riesgo que C9 dejaba abierto. Si alguna vez el banco cobrara
     una, habría que revisar la conciliación antes de producción.
+
+18. **El cobro se abre a proyectos consumidores (2026-09-19, ADR-008).** Otro producto
+    —NovuChat es el primero— pide un cobro por `/api/v1/…` sin conocer nada del banco.
+    El contrato tiene **cuatro operaciones y ninguna confirma un pago**: esa ausencia
+    es el contrato, y es la regla #1 aplicada a un tercero. El consumidor tampoco manda
+    datos personales (su referencia externa es opaca) ni recibe el envío al pagador,
+    que es suyo. Detalle en `docs/10-contrato-consumidores.md`; la decisión de hacerlo
+    una superficie de la API y no un paquete, en `docs/01-arquitectura.md` ADR-008.
 
 ## Estado actual
 
@@ -353,6 +364,65 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       - **Estrenado el 2026-09-18/19 con la cuenta `cuenta-2`: P1–P9 ok**, sin hallazgos
         nuevos del banco. Confirmaciones en 18, 24, 33 y 122 s desde la emisión del QR
         (la primera corrida: 41–66 s). Informe en `02-hallazgos-produccion.md` §5.
+- [ ] **2026-09-19 — Contrato para proyectos consumidores, bloque 1 (PR abierto,
+      rama `feat/contrato-consumidores`).** Frente nuevo, con su prompt en
+      `Prompts/cobrador-contrato-para-consumidores.md` (lo escribió la sesión de
+      NovuChat y se trajo acá).
+      - `POST /api/v1/cobros`, `GET /api/v1/cobros/:id`,
+        `GET /api/v1/cobros/por-referencia/:ref`, `POST /api/v1/cobros/:id/anular`,
+        `GET /api/v1/cobros` (rango) y `GET /api/v1/cobros/:id/qr`.
+      - **Idempotencia por referencia externa**: el id del cobro se deriva de
+        `(consumidorId, referenciaExterna)` con SHA-256 y la creación es atómica
+        (`CobroRepository.crear`, `create()` de Firestore). Dos pedidos iguales
+        devuelven el mismo cobro y **un solo QR**; la misma referencia con otro importe
+        se rechaza.
+      - **`emitirQr()` ahora anula el QR que el cobro no llegó a adoptar** cuando la
+        transición falla. Corrige un caso real de la amenaza T10 que también existía en
+        la consola: el perdedor de una carrera dejaba un QR pagable hasta la medianoche
+        (C4) que ningún cobro miraba.
+      - Identidad tipada (`dueño | consumidor`): un token de consumidor no abre ninguna
+        ruta del dueño ni ve el cobro de otro; el cruce responde **404, no 403**.
+        Un token por consumidor en `CONSUMIDOR_TOKEN_<ID>`, mínimo 32 caracteres, y un
+        token corto o sin llenar **corta el arranque**.
+      - Los topes de la prueba en producción (monto y cupo de QRs) alcanzan también al
+        contrato: no es una puerta de atrás a la barrera T11.
+      - `Cobro` admite `telefonoCliente: null` y suma `consumidor`. Amenazas T12–T14 en
+        `docs/06-seguridad.md`.
+      - Pasó **dos revisiones antes de publicarse** (auditoría de seguridad y
+        revisión de código), y las dos encontraron cosas que se corrigieron:
+        - **Bloqueante:** el token de un consumidor igual al del dueño resolvía
+          como **dueño** y abría la consola entera. Los dos viven en el mismo
+          archivo y la plantilla los emite adyacentes, así que es un desliz de
+          una rotación. Ahora la API no arranca con tokens repetidos y
+          `combinarVerificadores` falla cerrado ante la ambigüedad.
+        - **Grave:** la anulación compensatoria de `emitirQr()` podía matar un
+          QR que el cobro **sí** había adoptado — hay caminos donde el guardado
+          falla con el estado ya escrito. Ahora relee antes de anular, y
+          `guardar()` escribe estado e historial en la **misma transacción**,
+          con lo que ese camino deja de existir.
+        - El separador del id era un byte nulo **crudo**: git veía como binario
+          el archivo más delicado del PR. Ahora va como `\u0000` y hay un
+          vector fijo que rompe el CI si la derivación cambia.
+        - Una anulación pedida por el contrato firmaba la evidencia como
+          `accion-manual`, igual que una del dueño. Origen nuevo
+          `contrato-consumidor`, y el motivo lleva el id del consumidor puesto
+          por el servidor.
+        - El contrato le devolvía al consumidor el detalle técnico del banco
+          (`generateQR`, su `responseCode`). Se descarta en esa superficie.
+        - La referencia externa viajaba en la ruta y llegaba a la bitácora en
+          disco; el enmascarado no cubre un celular sin prefijo (8 dígitos).
+          Ahora ese segmento se registra como `***`.
+        - **Cupo por consumidor y por hora** (`CONSUMIDOR_MAX_QRS_POR_HORA`, 60
+          por defecto): con un token filtrado, un bucle de emisión dejaba
+          cientos de QRs pagables hasta la medianoche (T10 a escala). Vive en
+          memoria del proceso — alcanza para la API local, y al desplegarla hay
+          que pasarlo a un contador compartido.
+        - Se quitó `buscarPorReferenciaExterna` del puerto: el id **se deriva**
+          de la referencia, así que `obtener()` es la respuesta exacta. Un
+          método, un índice y dos casos de contrato menos, y una fuente de
+          divergencia menos.
+      - 880 tests (67 nuevos), typecheck, lint, `deps:check` y build en verde.
+        **Sin ensayo contra el banco todavía** — ver "Próximo paso".
 
 ### En espera (bloqueos externos)
 
@@ -388,6 +458,11 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 - **Las alertas de revisión viven en la consola abierta.** Con la consola cerrada
   nadie avisa. El paso natural, cuando exista `wa-bridge`, es avisar al dueño por
   WhatsApp los casos críticos.
+
+- **El cupo de QRs por consumidor vive en memoria del proceso** (`api/cupo-consumidor.ts`).
+  Reiniciar la API lo pone en cero y, con más de una instancia, cada una tendría el
+  suyo. Hoy la API es un proceso local y alcanza; al desplegarla en serio hay que
+  pasarlo a un contador compartido.
 
 ### Notas de entorno (no obvias)
 
@@ -436,8 +511,11 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    3. Cuando lo pague, `npm run baneco:b0 -- --capturar-pago`.
    4. Pasarle a Claude Code los informes `02-hallazgos-*.md` y las fixtures. Si alguna
       corrida sale con código 4, no commitear nada sin revisarlo.
-3. Revisar `.env.example`: si documenta `BANECO_POLL_INTERVAL_SECONDS` con 180,
-   actualizarlo a 30 (Claude Code no tiene permiso de lectura sobre `.env.*`).
+3. ~~Revisar `.env.example`~~ — **hecho el 2026-09-19**, con autorización del dueño en
+   el chat: Claude Code no tiene permiso sobre `.env.*`, así que lo hizo un script que
+   solo informó qué cambió, nunca qué decía el archivo.
+   `BANECO_POLL_INTERVAL_SECONDS` pasó de 180 a 30 y se documentó
+   `CONSUMIDOR_TOKEN_<ID>`.
 4. Decidir la opción de WhatsAppModular en docs/04 §2.3.
 5. Comercial: al acercarse producción, pedir la llave de producción por un canal que no
    sea un adjunto de correo (B3). Las comisiones (C9) ya están respondidas: no hay.
@@ -460,6 +538,18 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    docs/06 T9–T11 y secretos, docs/07 Fase 3). Solo queda `.env.example`, del dueño.
 5. `wa-bridge`, cuando el dueño decida docs/04 §2.3; con él, aviso de casos
    críticos por WhatsApp.
+6. **Contrato para consumidores** (`Prompts/cobrador-contrato-para-consumidores.md`):
+   1. Bloque 1 — hecho, en el PR de `feat/contrato-consumidores`, **a la espera de la
+      autorización del dueño**. Falta su ensayo con un cobro real de monto mínimo
+      pagado desde otro banco, que se corre en la próxima prueba en producción.
+   2. Bloque 2 — aviso de confirmación al consumidor: firmado, con marca de tiempo, con
+      reintentos y sin datos sensibles. **Acelerador, no fuente de verdad**: preguntar
+      por `estadoCobro` tiene que llegar al mismo resultado, y el contrato lo dice.
+   3. Bloque 3 — una cuenta de cobro por consumidor. Hoy cada cuenta es un **proceso**
+      con su alias (decisión 16); falta que un consumidor solo use la suya y que los
+      cobros queden atribuidos por cuenta para el cierre diario.
+   4. Bloque 4 — pase a producción: cuenta de pruebas del banco (A4) y checklist del
+      estándar DevSecOps. Lo aprueba el dueño.
 
 **Riel Yape — diferido** (retomar cuando haya documentación completa, D1): capturas
 en `docs/consola-yape/`, verificación del Playwright MCP local y sesión de mapeo de

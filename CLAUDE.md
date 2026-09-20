@@ -29,6 +29,7 @@ de memoria si pasó tiempo desde la última lectura.
 | `docs/05-firebase-demo.md` | Proyecto Firebase ManejoQRSimple, Firestore, Functions, Hosting, emuladores y reglas de seguridad. |
 | `docs/06-seguridad.md` | Modelo de amenazas, gestión de secretos, checklist de seguridad. |
 | `docs/07-plan-fases.md` | Fases del proyecto y criterios de salida de cada una. |
+| `docs/10-contrato-consumidores.md` | Contrato para otros productos (`/api/v1/…`): crear un cobro, saber si se pagó y anularlo, sin conocer el banco. **Ninguna de sus operaciones confirma un pago, y esa ausencia es el contrato.** |
 | `docs/Integraciones/baneco/` | Integración con Banco Económico (**línea principal** desde 2026-08-27): análisis del módulo, preguntas al banco y sus respuestas, manual saneado. La espec. oficial "Api Market v1.3.0" gobierna y vive en `privado-no-gh/` (git-ignored). |
 | `docs/ESTADO.md` | Bitácora de avance. **Leerla al empezar y actualizarla al cerrar cada sesión.** |
 
@@ -117,6 +118,13 @@ El código debe hacerlas **imposibles de violar**, no solo evitarlas.
    confirmación: llega sin autenticar y cualquiera que conozca la URL puede
    falsificarlo. Solo la consulta saliente autenticada (`statusQR`, `paidQR`)
    transiciona un cobro. Mismo razonamiento que la regla #1 aplicada al comprobante.
+1ter. **Un proyecto consumidor tampoco confirma.** El contrato de
+   `docs/10-contrato-consumidores.md` le deja a otro producto crear un cobro,
+   consultarlo, anularlo y listar los suyos — **y nada más**. No hay ninguna
+   operación con la que diga que algo se pagó, y no se agrega ninguna: lo que
+   un consumidor afirme sobre un pago vale lo mismo que el comprobante del
+   pagador. Además, un consumidor solo ve y toca lo suyo: lo ajeno responde
+   404, nunca 403.
 2. **Credenciales bancarias: nunca.** Ni en el repo, ni en `.env`, ni en logs, ni
    en Firestore, ni en tests. El login en la consola lo hace el dueño a mano; el
    scraper solo reutiliza el `storageState` de Playwright, que vive **fuera del

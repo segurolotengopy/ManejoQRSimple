@@ -46,6 +46,7 @@ export {
   PROVEEDORES,
   ORIGENES_QR,
   type Cobro,
+  type DatosConsumidor,
   type OrigenQr,
   type Proveedor,
   type QrEmitido,
@@ -157,6 +158,19 @@ export {
   type ResultadoVigilancia,
   type ResumenConciliacionDiaria,
 } from './casos-uso/cobrar.js';
+
+// El contrato para proyectos consumidores (docs/10). No exporta —ni existe—
+// ninguna operación que confirme un pago: la asimetría es el contrato.
+export {
+  crearCobroDeConsumidor,
+  esDelConsumidor,
+  idDeCobroDeConsumidor,
+  pagoDeCobro,
+  type DepsConsumidor,
+  type PagoDeCobro,
+  type ResultadoCreacion,
+  type SolicitudCobroConsumidor,
+} from './casos-uso/consumidores.js';
 
 // Puertos y sus tests de contrato compartidos
 export type {

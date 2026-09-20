@@ -43,6 +43,22 @@ export const tonoDeEstado = (estado: EstadoCobro): string => TONO[estado];
 /** `"150.50"` → `"Bs 150.50"`. El monto ya viene como texto de la API. */
 export const montoParaMostrar = (cobro: Pick<Cobro, 'monto'>): string => `Bs ${cobro.monto}`;
 
+/**
+ * Quién es el cliente del cobro.
+ *
+ * Los cobros del dueño llevan el teléfono, ya enmascarado por la API. Los que
+ * pidió un consumidor no tienen teléfono (docs/10): ahí lo que identifica al
+ * cobro es el consumidor y su referencia externa, que es opaca.
+ */
+export function clienteParaMostrar(
+  cobro: Pick<Cobro, 'telefonoCliente' | 'consumidor'>,
+): string {
+  if (cobro.consumidor !== null) {
+    return `${cobro.consumidor.consumidorId} · ${cobro.consumidor.referenciaExterna}`;
+  }
+  return cobro.telefonoCliente ?? '—';
+}
+
 /** Fecha y hora locales, cortas. */
 export function fechaCorta(iso: string): string {
   const fecha = new Date(iso);

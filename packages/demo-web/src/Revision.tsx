@@ -28,7 +28,7 @@ import {
   textoUltimaRevision,
   tonoDeNivel,
 } from './alertas.js';
-import { fechaCorta, montoParaMostrar } from './formato.js';
+import { clienteParaMostrar, fechaCorta, montoParaMostrar } from './formato.js';
 
 export type EstadoAvisos = 'activos' | 'inactivos' | 'no-disponibles';
 
@@ -276,7 +276,7 @@ function Caso({
           {montoParaMostrar(cobro)} · {cobro.concepto}
         </dd>
         <dt>Cliente</dt>
-        <dd>{cobro.telefonoCliente}</dd>
+        <dd>{clienteParaMostrar(cobro)}</dd>
         <dt>Pago del banco</dt>
         <dd>
           {abono === null ? 'Ninguno reportado' : `Bs ${abono.monto} · ${fechaCorta(abono.ocurridoEn)}`}

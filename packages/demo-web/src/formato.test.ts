@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { EstadoCobro } from './api.js';
 import {
   accionesPosibles,
+  clienteParaMostrar,
   describirEstado,
   montoParaMostrar,
   tonoDeEstado,
@@ -86,5 +87,28 @@ describe('montoParaMostrar()', () => {
     // Sin pasar por Number: 150.50 se volvería "150.5".
     expect(montoParaMostrar({ monto: '150.50' })).toBe('Bs 150.50');
     expect(montoParaMostrar({ monto: '0.05' })).toBe('Bs 0.05');
+  });
+});
+
+describe('clienteParaMostrar()', () => {
+  it('el cobro del dueño muestra su teléfono enmascarado', () => {
+    expect(clienteParaMostrar({ telefonoCliente: '+591 7** ***67', consumidor: null })).toBe(
+      '+591 7** ***67',
+    );
+  });
+
+  it('el cobro de un consumidor muestra quién lo pidió y su referencia', () => {
+    // No tiene teléfono y no es un dato faltante: el envío al pagador es del
+    // consumidor (docs/10).
+    expect(
+      clienteParaMostrar({
+        telefonoCliente: null,
+        consumidor: { consumidorId: 'novuchat', referenciaExterna: 'plan-2026-09' },
+      }),
+    ).toBe('novuchat · plan-2026-09');
+  });
+
+  it('sin teléfono ni consumidor, un guion y no un "null"', () => {
+    expect(clienteParaMostrar({ telefonoCliente: null, consumidor: null })).toBe('—');
   });
 });

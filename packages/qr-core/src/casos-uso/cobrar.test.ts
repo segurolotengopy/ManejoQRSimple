@@ -12,7 +12,7 @@ import {
   QrProviderEnMemoria,
 } from '../ports/mocks.js';
 import type { ErrorPuerto, EvidenceStore, SolicitudQr } from '../ports/puertos.js';
-import { bs, enMinutos, T0, unCobro } from '../pruebas/fixtures.js';
+import { bs, enMinutos, T0, unCobro, unCobroDeConsumidor } from '../pruebas/fixtures.js';
 import {
   anular,
   conciliarDia,
@@ -709,5 +709,108 @@ describe('evidencia antes que estado', () => {
     // Y el cobro no quedó guardado en otro estado.
     const guardado = await cobros.obtener('cobro-1');
     expect(esExito(guardado) && guardado.valor).toBeNull();
+  });
+});
+
+describe('cobros sin teléfono (los del contrato de consumidores, docs/10)', () => {
+  it('no se pueden enviar: SIN_CANAL_DE_ENVIO, y sin llamar a la mensajería', async () => {
+    // El envío al pagador es del consumidor, por su canal. Pedirle a la
+    // mensajería que mande un QR sin destinatario sería pedirle que lo invente.
+    const { deps, mensajeria } = armar();
+    const emitido = await emitirQr(deps, unCobroDeConsumidor({ montoCentavos: bs(MONTO) }), VENCE, T0);
+    if (!esExito(emitido)) throw new Error('emitir debería funcionar');
+
+    const r = await enviarQr(deps, emitido.valor, T0);
+    expect(esExito(r)).toBe(false);
+    expect(!esExito(r) && r.error.tipo).toBe('SIN_CANAL_DE_ENVIO');
+    expect(mensajeria.enviados).toHaveLength(0);
+  });
+
+  it('renovar deja el QR nuevo listo y no manda nada', async () => {
+    // El dueño renueva desde su consola un cobro que pidió otro producto: la
+    // renovación tiene que salir bien igual, y el QR nuevo lo retira el
+    // consumidor. Devolver un error acá haría parecer fallida una renovación
+    // que funcionó.
+    const { deps, mensajeria, cobros } = armar();
+    const emitido = await emitirQr(deps, unCobroDeConsumidor({ montoCentavos: bs(MONTO) }), VENCE, T0);
+    if (!esExito(emitido)) throw new Error('emitir debería funcionar');
+
+    const vencido = await vigilar(deps, emitido.valor, TRAS_VENCER);
+    expect(esExito(vencido) && vencido.valor.tipo).toBe('VENCIDO');
+
+    const guardado = await cobros.obtener(emitido.valor.id);
+    if (!esExito(guardado) || guardado.valor === null) throw new Error('debería estar guardado');
+
+    const renovado = await renovarYReenviar(
+      deps,
+      guardado.valor,
+      enMinutos(72 * 60 + 60, TRAS_VENCER),
+      TRAS_VENCER,
+    );
+    expect(esExito(renovado)).toBe(true);
+    expect(esExito(renovado) && renovado.valor.estado).toBe('QR_ACTIVO');
+    expect(esExito(renovado) && renovado.valor.qrVersion).toBe(2);
+    expect(mensajeria.enviados).toHaveLength(0);
+  });
+});
+
+describe('la anulación compensatoria de emitirQr', () => {
+  it('no anula el QR si el cobro sí lo adoptó', async () => {
+    // Hay caminos en los que el guardado falla con el estado ya escrito (el
+    // historial que no se pudo escribir después del commit, un reintento que
+    // ve el estado nuevo). Anular a ciegas dejaría un cobro QR_ACTIVO
+    // apuntando a un QR muerto y al pagador sin poder pagar.
+    const qr = new QrContado(() => T0);
+    const { deps, cobros } = armar(qr);
+    const cobro = unCobro({ montoCentavos: bs(MONTO) });
+
+    // Guarda de verdad, pero informa un fallo: el caso que importa.
+    const cobrosMentirosos: typeof cobros = Object.create(cobros) as typeof cobros;
+    cobrosMentirosos.guardar = async (c, estadoEsperado) => {
+      await cobros.guardar(c, estadoEsperado);
+      return {
+        ok: false,
+        error: {
+          tipo: 'INDISPONIBLE',
+          mensaje: 'la respuesta del commit se perdió',
+          reintentable: true,
+          codigoProveedor: null,
+        },
+      };
+    };
+
+    const r = await emitirQr({ ...deps, cobros: cobrosMentirosos }, cobro, VENCE, T0);
+
+    expect(esExito(r)).toBe(false);
+    const guardado = await cobros.obtener(cobro.id);
+    const referencia =
+      esExito(guardado) && guardado.valor !== null ? guardado.valor.qrVigente?.referenciaProveedor : null;
+    expect(referencia).not.toBeNull();
+    expect(qr.estaAnulado(referencia ?? '')).toBe(false);
+  });
+
+  it('si el QR quedó suelto y el banco tampoco lo anula, lo dice', async () => {
+    // Es lo peor que puede pasar: un QR vivo que ningún cobro mira. Tiene que
+    // salir con su propio tipo de error para que quede registrado, no
+    // confundido con el fallo que lo originó.
+    const { deps } = armar(new QrQueNoAnula(() => T0));
+    const evidenciaRota: EvidenceStore = {
+      agregar: () =>
+        Promise.resolve({
+          ok: false,
+          error: { tipo: 'INDISPONIBLE', mensaje: 'sin evidencia', reintentable: true, codigoProveedor: null },
+        }),
+      listarDeCobro: () => Promise.resolve({ ok: true, valor: [] }),
+    };
+
+    const r = await emitirQr(
+      { ...deps, evidencia: evidenciaRota },
+      unCobro({ montoCentavos: bs(MONTO) }),
+      VENCE,
+      T0,
+    );
+
+    expect(esExito(r)).toBe(false);
+    expect(!esExito(r) && r.error.tipo).toBe('QR_SUELTO_EN_EL_PROVEEDOR');
   });
 });

@@ -187,6 +187,39 @@ Consecuencias:
 - Alternativa descartada: que cada consumidor hablara con Firestore por su cuenta.
   Habría multiplicado el conocimiento del esquema y roto la premisa de ADR-002.
 
+**ADR-008 — El contrato para consumidores es una superficie de la API, no un
+paquete nuevo (2026-09-19).**
+Contexto: el principio nº 1 de este documento decía que otros proyectos tienen
+que poder usar el cobro sin arrastrar el scraper ni el demo. Llegó el primer
+consumidor real (NovuChat) y hubo que decidir cómo se lo expone.
+Decisión: un **prefijo propio en la API HTTP** (`/api/v1/cobros`), con su
+identidad y sus handlers, sobre los mismos casos de uso del dominio. No un
+paquete nuevo ni un SDK: lo que un consumidor necesita es un contrato estable
+sobre la red, y un paquete lo ataría a nuestro runtime y a nuestro calendario
+de versiones.
+Consecuencias:
+- **La identidad es un tipo, no un permiso.** `Identidad` es
+  `{dueño} | {consumidor}`, y el enrutador decide por ella antes de mirar la
+  ruta. Agregar una ruta sin decidir de qué lado está no compila. Un cruce
+  responde 404 y no 403: un 403 confirmaría que la ruta del otro lado existe.
+- **La asimetría es estructural, no una omisión.** El contrato no tiene
+  operación de confirmación, y no puede tenerla sin una `ConciliacionAprobada`
+  (ADR-005, BANECO-1). Un test recorre las rutas que no existen y exige 404:
+  si alguna apareciera, el test la encuentra.
+- **La idempotencia se apoya en el id, no en una búsqueda.** El id del cobro de
+  un consumidor se deriva de `(consumidorId, referenciaExterna)` con SHA-256, y
+  la creación es atómica (`CobroRepository.crear`). Un "buscar y si no existe
+  crear" habría dejado una ventana por la que un reintento emite un segundo QR
+  y le cobra dos veces al cliente del consumidor (regla #7).
+- **Un cobro sin teléfono es un estado legítimo del dominio**, no un dato
+  faltante: el envío al pagador es del consumidor. `enviarQr()` lo rechaza en
+  vez de inventar un destinatario.
+- Alternativa descartada: reutilizar `/api/cobros` con un campo "consumidor" en
+  el cuerpo. Habría dejado a un token de consumidor a un descuido de distancia
+  de `POST /api/cobros/:id/resolver`, que confirma cobros.
+
+El contrato completo, con ejemplos, está en `10-contrato-consumidores.md`.
+
 ## 7. No-objetivos explícitos de la Fase 0–1
 
 - Multi-comerciante / multi-cuenta (el demo opera la billetera del dueño).

@@ -72,3 +72,54 @@ export const cuerpoComprobante = z.object({
 });
 
 export type CuerpoCrearCobro = z.infer<typeof cuerpoCrearCobro>;
+
+// --- Contrato para proyectos consumidores (docs/10)
+
+/**
+ * Referencia externa de un consumidor: **opaca**, corta y segura en una URL.
+ *
+ * El juego de caracteres es deliberadamente chico. No impide que un consumidor
+ * mande un dato personal —nada puede—, pero deja afuera de entrada los `@` de
+ * un correo y los espacios de un nombre, que es por donde se colaría sin
+ * querer (decisión #4 del contrato). Que sea segura en una URL importa porque
+ * `GET /api/v1/cobros/por-referencia/:referencia` la lleva en la ruta.
+ */
+export const referenciaExterna = z
+  .string()
+  .trim()
+  .regex(
+    /^[A-Za-z0-9:_.-]{1,120}$/,
+    'la referencia externa admite letras, números y : _ . - (hasta 120 caracteres)',
+  );
+
+export const cuerpoCrearCobroConsumidor = z.object({
+  referenciaExterna,
+  concepto: z.string().min(1).max(100),
+  /** Decimal con punto y hasta dos decimales: `"150.50"` (regla #5). */
+  monto: z.string().regex(/^\d+(\.\d{1,2})?$/, 'el monto debe ser un decimal con punto, p. ej. 150.50'),
+  horasDeVigencia: z.number().int().positive().max(24 * 365).optional(),
+});
+
+/** Anular: el motivo es opcional, pero si viene queda en la evidencia (regla #8). */
+export const cuerpoAnularConsumidor = z.object({
+  motivo: z.string().trim().min(1).max(200).optional(),
+});
+
+/**
+ * Rango de un listado. Las fechas van en ISO 8601 **con zona** (`Z` o `±hh:mm`).
+ *
+ * Exigir la zona evita la ambigüedad más cara de este dominio: el banco
+ * informa en hora de Bolivia (respuesta D7) y el consumidor puede estar en
+ * otra. Una fecha sin zona obligaría a adivinar cuál, y adivinar mal corre un
+ * cierre de día entero.
+ */
+export const consultaListado = z.object({
+  desde: z.iso.datetime({ offset: true }).optional(),
+  hasta: z.iso.datetime({ offset: true }).optional(),
+  limite: z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .transform((v) => Number(v))
+    .refine((v) => v >= 1 && v <= 100, 'el límite va de 1 a 100')
+    .optional(),
+});

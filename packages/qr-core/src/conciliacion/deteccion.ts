@@ -15,7 +15,22 @@ import type { Centavos } from '../comun/dinero.js';
 
 declare const marcaDeteccion: unique symbol;
 
-export type OrigenDeteccion = 'watcher-baneco' | 'scraper-yape';
+/**
+ * Los rieles por los que puede llegar una detección.
+ *
+ * Es un array y no solo una unión de tipos para que quien necesite
+ * **estrechar** un texto a `OrigenDeteccion` —leer un origen de la evidencia,
+ * por ejemplo— lo haga contra esta lista y no contra una copia a mano. Un riel
+ * nuevo acá alcanza a todos los que la usan.
+ */
+export const ORIGENES_DETECCION = ['watcher-baneco', 'scraper-yape'] as const;
+
+export type OrigenDeteccion = (typeof ORIGENES_DETECCION)[number];
+
+/** ¿Este texto es uno de los rieles conocidos? */
+export function esOrigenDeteccion(valor: unknown): valor is OrigenDeteccion {
+  return typeof valor === 'string' && (ORIGENES_DETECCION as readonly string[]).includes(valor);
+}
 
 export type DeteccionDePago = {
   readonly [marcaDeteccion]: 'deteccion-de-pago';

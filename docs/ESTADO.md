@@ -7,7 +7,7 @@
 **Última actualización:** 2026-09-19, sesión "contrato para consumidores" — **bloque 1
 del frente `Prompts/cobrador-contrato-para-consumidores.md`**: el cobro por QR se abre a
 otros productos con cuatro operaciones en `/api/v1/…` y **ninguna que confirme un pago**
-(`docs/10-contrato-consumidores.md`). PR abierto, a la espera de autorización.
+(`docs/10-contrato-consumidores.md`). **PR #38 mergeado** el 2026-09-20.
 Antes, el mismo día: **PR #36 mergeado**, la prueba en producción admite **varias
 cuentas**, cada una con su alias, sus credenciales y sus datos, y la **segunda cuenta
 corrió P1–P9 ok** (`02-hallazgos-produccion.md` §5). Además se cerró **C9: no hay
@@ -364,8 +364,8 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       - **Estrenado el 2026-09-18/19 con la cuenta `cuenta-2`: P1–P9 ok**, sin hallazgos
         nuevos del banco. Confirmaciones en 18, 24, 33 y 122 s desde la emisión del QR
         (la primera corrida: 41–66 s). Informe en `02-hallazgos-produccion.md` §5.
-- [ ] **2026-09-19 — Contrato para proyectos consumidores, bloque 1 (PR abierto,
-      rama `feat/contrato-consumidores`).** Frente nuevo, con su prompt en
+- [x] **2026-09-19/20 — Contrato para proyectos consumidores, bloque 1 (PR #38,
+      mergeado).** Frente nuevo, con su prompt en
       `Prompts/cobrador-contrato-para-consumidores.md` (lo escribió la sesión de
       NovuChat y se trajo acá).
       - `POST /api/v1/cobros`, `GET /api/v1/cobros/:id`,
@@ -539,9 +539,9 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 5. `wa-bridge`, cuando el dueño decida docs/04 §2.3; con él, aviso de casos
    críticos por WhatsApp.
 6. **Contrato para consumidores** (`Prompts/cobrador-contrato-para-consumidores.md`):
-   1. Bloque 1 — hecho, en el PR de `feat/contrato-consumidores`, **a la espera de la
-      autorización del dueño**. Falta su ensayo con un cobro real de monto mínimo
-      pagado desde otro banco, que se corre en la próxima prueba en producción.
+   1. Bloque 1 — **mergeado** (PR #38, 2026-09-20). Falta su ensayo con un cobro real
+      de monto mínimo pagado desde otro banco, que se corre en la próxima prueba en
+      producción: es lo único del bloque que queda pendiente.
    2. Bloque 2 — aviso de confirmación al consumidor: firmado, con marca de tiempo, con
       reintentos y sin datos sensibles. **Acelerador, no fuente de verdad**: preguntar
       por `estadoCobro` tiene que llegar al mismo resultado, y el contrato lo dice.

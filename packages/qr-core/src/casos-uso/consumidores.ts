@@ -32,7 +32,7 @@ import { esOrigenDeteccion, type OrigenDeteccion } from '../conciliacion/detecci
 import { emitirQr, type Dependencias, type ErrorCasoUso } from './cobrar.js';
 
 /** Lo que necesita el contrato: persistir, dejar evidencia y pedirle el QR al banco. */
-export type DepsConsumidor = Pick<Dependencias, 'cobros' | 'evidencia' | 'qr'>;
+export type DepsConsumidor = Pick<Dependencias, 'cobros' | 'evidencia' | 'avisos' | 'qr'>;
 
 /**
  * Id del cobro de un consumidor, derivado de su clave natural.

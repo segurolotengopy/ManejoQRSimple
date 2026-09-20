@@ -71,6 +71,7 @@ La máquina de estados completa, con los caminos de excepción (`EN_REVISION`,
 | `@mqs/yape-scraper` | Adaptador `PaymentWatcher` + (opcional, docs/03 §5) `QrProvider` sobre la consola Yape BCP con Playwright | Solo lectura. Único paquete con Playwright. Corre fuera de Firebase. |
 | `@mqs/wa-bridge` | Adaptador `MessagingProvider`: cliente HTTP de WhatsAppModular + receptor de webhooks de comprobantes | Único paquete que conoce WhatsAppModular. |
 | `@mqs/firestore-store` | Adaptadores `CobroRepository`, `EvidenceStore` y `AbonosSinConciliarStore` sobre Firestore (ADR-007) | Único paquete que conoce el SDK de Firebase. Recibe la conexión inyectada. |
+| `@mqs/avisos-consumidor` | Adaptador `NotificadorConsumidor`: arma, firma (HMAC-SHA256) y entrega por HTTP el aviso de confirmación a un proyecto consumidor (docs/10 §4.6) | Único paquete que sabe que el aviso viaja por HTTP y con qué firma. Lo cablea solo `composicion`. |
 | `@mqs/composicion` | Raíz de composición compartida: elige adaptadores por variable de entorno y arma los puertos | Sin reglas de negocio. La usan los procesos, nunca el dominio. |
 | `@mqs/baneco-satelite` | Proceso satélite que verifica los pagos contra Baneco y los concilia (ADR-006) | Raíz de composición: cablea puertos y repite. Sin reglas de negocio. Corre fuera de Firebase. |
 | `@mqs/functions` | Cloud Functions: API HTTP del demo, triggers de Firestore, endpoint del webhook de wa-bridge | Orquesta; no contiene reglas de negocio. |
@@ -219,6 +220,42 @@ Consecuencias:
   de `POST /api/cobros/:id/resolver`, que confirma cobros.
 
 El contrato completo, con ejemplos, está en `10-contrato-consumidores.md`.
+
+**ADR-009 — El aviso de confirmación es una bandeja de salida, y nunca bloquea
+un cobro (2026-09-20).**
+Contexto: el bloque 2 del contrato pide avisarle al consumidor cuando su cobro
+queda confirmado. La tentación es hacer el POST dentro de la confirmación.
+Decisión: **encolar dentro de la transición, entregar fuera**. `aplicar()`
+encola el aviso en `AvisosStore` en cuanto el estado `CONFIRMADO` quedó
+guardado; el satélite lo entrega en una pasada posterior, con reintentos.
+Consecuencias:
+- **Un consumidor caído no puede demorar ni hacer fracasar un cobro.** Si el
+  POST viviera dentro de `verificarPago()`, un servidor que no responde
+  bloquearía la conciliación de un pago que el banco ya reportó.
+- **El orden importa y es al revés de lo intuitivo:** el aviso se encola
+  *después* de que el estado quedó escrito, nunca antes. Un aviso de un pago
+  que no llegó a registrarse haría que el consumidor entregue lo que vendió.
+  Al revés —estado guardado y aviso perdido— el consumidor llega al mismo
+  resultado por `estadoCobro`, que es lo que el contrato le promete. Por eso
+  encolar tampoco puede hacer fracasar la transición: si falla, se informa y
+  se registra.
+- **Entrega "al menos una vez", con contenido fresco.** El aviso se arma
+  leyendo el cobro y su evidencia *al enviarlo*, no de una copia guardada al
+  encolar: una copia sería un segundo lugar donde desincronizarse, y podría
+  anunciar un pago que después resultó otra cosa. Si el cobro ya no sostiene
+  el aviso, no se entrega.
+- **`idEvento` estable y firma obligatoria.** El consumidor deduplica por
+  `idEvento`; la firma HMAC sobre el cuerpo crudo, con marca de tiempo
+  adentro, es lo que impide que cualquiera que conozca su URL le invente un
+  "te pagaron" (amenaza T15). Es el mismo esquema que docs/06 T5 exige para el
+  webhook entrante, en la dirección opuesta.
+- **Sin tope de intentos.** La espera crece hasta una vez por día y ahí se
+  queda. Abandonar un aviso sería perderlo sin que nadie se entere; reintentar
+  a diario no cuesta nada.
+- Alternativa descartada: derivar los avisos pendientes barriendo los cobros
+  confirmados. No hay dónde anotar "ya avisado" sin inventar un estado igual,
+  y el barrido crecería con el historial.
+
 
 ## 7. No-objetivos explícitos de la Fase 0–1
 

@@ -159,6 +159,27 @@ export {
   type ResumenConciliacionDiaria,
 } from './casos-uso/cobrar.js';
 
+// El aviso de confirmación al consumidor (docs/10 §4.6). Acelerador, nunca
+// fuente de verdad: perder un aviso es tolerable, inventarlo no.
+export {
+  correspondeAvisar,
+  encolarAviso,
+  esperaDelReintento,
+  horasEsperando,
+  proximoIntento,
+  DESENLACES_AVISO,
+  type AvisoDeConfirmacion,
+  type AvisoPendiente,
+  type DesenlaceAviso,
+} from './avisos/aviso.js';
+export {
+  describirAvisos,
+  entregarAvisos,
+  LIMITE_AVISOS_POR_PASADA,
+  type DepsAviso,
+  type ResumenAvisos,
+} from './casos-uso/avisar.js';
+
 // El contrato para proyectos consumidores (docs/10). No exporta —ni existe—
 // ninguna operación que confirme un pago: la asimetría es el contrato.
 export {
@@ -175,10 +196,12 @@ export {
 // Puertos y sus tests de contrato compartidos
 export type {
   AbonosSinConciliarStore,
+  AvisosStore,
   CobroRepository,
   ErrorPuerto,
   EvidenceStore,
   MessagingProvider,
+  NotificadorConsumidor,
   PaymentWatcher,
   QrProvider,
   ReferenciaMensaje,
@@ -186,6 +209,7 @@ export type {
 } from './ports/puertos.js';
 export {
   CASOS_ABONOS_SIN_CONCILIAR,
+  CASOS_AVISOS,
   CASOS_COBRO_REPOSITORY,
   CASOS_EVIDENCE_STORE,
   CASOS_PAYMENT_WATCHER,
@@ -195,9 +219,12 @@ export {
 } from './ports/contrato.js';
 export {
   AbonosSinConciliarEnMemoria,
+  AvisosEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
+  NotificadorEnMemoria,
+  NotificadorSinDestinos,
   PaymentWatcherEnMemoria,
   QrProviderEnMemoria,
   type MensajeEnviado,

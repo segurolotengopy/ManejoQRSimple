@@ -1,5 +1,6 @@
 import {
   AbonosSinConciliarEnMemoria,
+  AvisosEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
@@ -38,6 +39,7 @@ function monto(valor: number): Centavos {
 
 function armar() {
   const evidencia = new EvidenceStoreEnMemoria();
+  const avisos = new AvisosEnMemoria();
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
   const mensajeria = new MessagingProviderEnMemoria();
@@ -48,6 +50,7 @@ function armar() {
     deps: {
       cobros,
       evidencia,
+      avisos,
       // El mismo reloj que la API: con el real, el QR se emite después de
       // la fecha fija en que vence.
       qr: new QrProviderEnMemoria(() => AHORA),

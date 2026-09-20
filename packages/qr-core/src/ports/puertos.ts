@@ -18,6 +18,7 @@ import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
 import type { AbonoSinConciliar, ResolucionAbono } from '../revision/abono-sin-conciliar.js';
+import type { AvisoDeConfirmacion, AvisoPendiente, DesenlaceAviso } from '../avisos/aviso.js';
 
 /**
  * Falla de un adaptador. Deliberadamente opaca: el dominio no interpreta
@@ -191,6 +192,58 @@ export interface CobroRepository {
 export interface EvidenceStore {
   agregar(registro: RegistroEvidencia): Promise<Resultado<void, ErrorPuerto>>;
   listarDeCobro(cobroId: string): Promise<Resultado<readonly RegistroEvidencia[], ErrorPuerto>>;
+}
+
+/**
+ * Cola de avisos de confirmación a consumidores (docs/10 §4.6).
+ *
+ * Es una **bandeja de salida**, no un registro de lo que pasó: la verdad del
+ * cobro está en el cobro y su evidencia. Acá solo vive qué falta entregar y
+ * cuándo reintentarlo.
+ */
+export interface AvisosStore {
+  /**
+   * Encola un aviso. **Idempotente** por `cobroId`: si ya está, encolado o
+   * cerrado, no hace nada. Un cobro confirmado avisa una vez, y reintentar la
+   * confirmación no genera un segundo aviso.
+   *
+   * Devuelve `true` si lo encoló ahora.
+   */
+  encolar(aviso: AvisoPendiente): Promise<Resultado<boolean, ErrorPuerto>>;
+
+  /** Los pendientes cuyo próximo intento ya venció, del más viejo primero. */
+  listarParaEnviar(ahora: Date, limite: number): Promise<Resultado<readonly AvisoPendiente[], ErrorPuerto>>;
+
+  /** Cierra un aviso con su desenlace. Un aviso cerrado no se reabre. */
+  cerrar(
+    cobroId: string,
+    desenlace: DesenlaceAviso,
+    cerradoEn: Date,
+  ): Promise<Resultado<void, ErrorPuerto>>;
+
+  /** Anota el intento fallido y cuándo toca el siguiente. */
+  registrarFallo(
+    cobroId: string,
+    error: string,
+    proximoIntentoEn: Date,
+  ): Promise<Resultado<void, ErrorPuerto>>;
+
+  /** Cuántos siguen sin entregarse. Para la línea de log del satélite. */
+  contarPendientes(): Promise<Resultado<number, ErrorPuerto>>;
+}
+
+/**
+ * Entrega un aviso al consumidor: firma, hace el pedido y reporta.
+ *
+ * El dominio no sabe si es HTTP, con qué firma ni contra qué URL. Sí sabe que
+ * hay consumidores **sin destino configurado** —que es el caso normal de quien
+ * prefiere consultar por `estadoCobro`— y por eso ese desenlace es parte del
+ * contrato del puerto y no un error.
+ */
+export interface NotificadorConsumidor {
+  entregar(
+    aviso: AvisoDeConfirmacion,
+  ): Promise<Resultado<'ENTREGADO' | 'SIN_DESTINO', ErrorPuerto>>;
 }
 
 /**

@@ -17,12 +17,15 @@ import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
 import type { AbonoSinConciliar, ResolucionAbono } from '../revision/abono-sin-conciliar.js';
+import type { AvisoDeConfirmacion, AvisoPendiente, DesenlaceAviso } from '../avisos/aviso.js';
 import type {
   AbonosSinConciliarStore,
+  AvisosStore,
   CobroRepository,
   ErrorPuerto,
   EvidenceStore,
   MessagingProvider,
+  NotificadorConsumidor,
   PaymentWatcher,
   QrProvider,
   ReferenciaMensaje,
@@ -290,4 +293,80 @@ export class AbonosSinConciliarEnMemoria implements AbonosSinConciliarStore {
 
 function claveDia(fecha: Date): string {
   return fecha.toISOString().slice(0, 10);
+}
+
+/**
+ * Bandeja de salida de avisos en memoria.
+ *
+ * Como la real: la clave es el `cobroId`, así que encolar dos veces el mismo
+ * cobro no produce dos avisos, y un aviso cerrado no se reabre.
+ */
+export class AvisosEnMemoria implements AvisosStore {
+  private readonly avisos = new Map<string, AvisoPendiente>();
+
+  encolar(aviso: AvisoPendiente): Ok<boolean> {
+    if (this.avisos.has(aviso.cobroId)) {
+      return Promise.resolve(exito(false));
+    }
+    this.avisos.set(aviso.cobroId, aviso);
+    return Promise.resolve(exito(true));
+  }
+
+  listarParaEnviar(ahora: Date, limite: number): Ok<readonly AvisoPendiente[]> {
+    const listos = [...this.avisos.values()]
+      .filter((a) => a.cerradoEn === null && a.proximoIntentoEn.getTime() <= ahora.getTime())
+      .sort((a, b) => a.encoladoEn.getTime() - b.encoladoEn.getTime())
+      .slice(0, limite);
+    return Promise.resolve(exito(listos));
+  }
+
+  cerrar(cobroId: string, desenlace: DesenlaceAviso, cerradoEn: Date): Ok<void> {
+    const actual = this.avisos.get(cobroId);
+    if (actual !== undefined && actual.cerradoEn === null) {
+      this.avisos.set(cobroId, { ...actual, cerradoEn, desenlace });
+    }
+    return Promise.resolve(exito(undefined));
+  }
+
+  registrarFallo(cobroId: string, error: string, proximoIntentoEn: Date): Ok<void> {
+    const actual = this.avisos.get(cobroId);
+    if (actual !== undefined && actual.cerradoEn === null) {
+      this.avisos.set(cobroId, {
+        ...actual,
+        intentos: actual.intentos + 1,
+        ultimoError: error,
+        proximoIntentoEn,
+      });
+    }
+    return Promise.resolve(exito(undefined));
+  }
+
+  contarPendientes(): Ok<number> {
+    return Promise.resolve(exito([...this.avisos.values()].filter((a) => a.cerradoEn === null).length));
+  }
+
+  /** Para los tests: cómo quedó un aviso. */
+  ver(cobroId: string): AvisoPendiente | undefined {
+    return this.avisos.get(cobroId);
+  }
+}
+
+/** Notificador que no entrega nada: ningún consumidor tiene destino configurado. */
+export class NotificadorSinDestinos implements NotificadorConsumidor {
+  readonly intentos: AvisoDeConfirmacion[] = [];
+
+  entregar(aviso: AvisoDeConfirmacion): Ok<'ENTREGADO' | 'SIN_DESTINO'> {
+    this.intentos.push(aviso);
+    return Promise.resolve(exito('SIN_DESTINO'));
+  }
+}
+
+/** Notificador que entrega todo y guarda lo entregado, para los tests. */
+export class NotificadorEnMemoria implements NotificadorConsumidor {
+  readonly entregados: AvisoDeConfirmacion[] = [];
+
+  entregar(aviso: AvisoDeConfirmacion): Ok<'ENTREGADO' | 'SIN_DESTINO'> {
+    this.entregados.push(aviso);
+    return Promise.resolve(exito('ENTREGADO'));
+  }
 }

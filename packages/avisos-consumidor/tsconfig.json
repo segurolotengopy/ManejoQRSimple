@@ -6,10 +6,5 @@
   },
   "include": ["src/**/*"],
   "exclude": ["src/**/*.test.ts", "dist"],
-  "references": [
-    { "path": "../qr-core" },
-    { "path": "../avisos-consumidor" },
-    { "path": "../baneco-gateway" },
-    { "path": "../firestore-store" }
-  ]
+  "references": [{ "path": "../qr-core" }]
 }

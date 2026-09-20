@@ -15,6 +15,7 @@
       "@mqs/firestore-store": ["packages/firestore-store/src/index.ts"],
       "@mqs/composicion": ["packages/composicion/src/index.ts"],
       "@mqs/baneco-satelite": ["packages/baneco-satelite/src/index.ts"],
+      "@mqs/avisos-consumidor": ["packages/avisos-consumidor/src/index.ts"],
       "@mqs/yape-scraper": ["packages/yape-scraper/src/index.ts"],
       "@mqs/wa-bridge": ["packages/wa-bridge/src/index.ts"],
       "@mqs/functions": ["packages/functions/src/index.ts"]

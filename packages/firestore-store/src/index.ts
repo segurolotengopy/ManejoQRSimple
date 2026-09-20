@@ -26,6 +26,7 @@ export {
   AbonosSinConciliarFirestore,
   COLECCION_ABONOS_SIN_CONCILIAR,
 } from './abonos-sin-conciliar.js';
+export { AvisosFirestore, COLECCION_AVISOS } from './avisos.js';
 export {
   explicarMarca,
   fijarCuentaDePrueba,

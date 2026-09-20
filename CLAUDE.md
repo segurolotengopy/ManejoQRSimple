@@ -86,6 +86,9 @@ packages/yape-scraper/    Adaptador Playwright de la consola Yape BCP.
 packages/firestore-store/ Adaptadores CobroRepository y EvidenceStore sobre
                           Firestore. Único paquete que conoce el SDK de
                           Firebase; recibe la conexión inyectada (ADR-007).
+packages/avisos-consumidor/ Adaptador NotificadorConsumidor: firma (HMAC) y
+                          entrega el aviso de confirmación al consumidor
+                          (docs/10 §4.6). Único que sabe que va por HTTP.
 packages/composicion/     Raíz de composición compartida: elige los adaptadores
                           por QR_PROVIDER / PAYMENT_WATCHER y arma los puertos.
 packages/baneco-satelite/ Proceso que verifica los pagos contra Baneco y los
@@ -101,7 +104,9 @@ docs/                     Documentación (ver docs/00-INDICE.md)
 a otro adaptador. Nada fuera de `yape-scraper` importa Playwright ni conoce la
 consola del banco. Nada fuera de `baneco-gateway` conoce la API de Baneco. Nada
 fuera de `wa-bridge` llama a WhatsAppModular. Nada fuera de `firestore-store`
-importa el SDK de Firebase. Se valida en CI (`npm run deps:check`).
+importa el SDK de Firebase. Nada fuera de `avisos-consumidor` sabe que el aviso
+al consumidor viaja por HTTP ni con qué firma. Se valida en CI
+(`npm run deps:check`).
 
 ---
 
@@ -124,7 +129,10 @@ El código debe hacerlas **imposibles de violar**, no solo evitarlas.
    operación con la que diga que algo se pagó, y no se agrega ninguna: lo que
    un consumidor afirme sobre un pago vale lo mismo que el comprobante del
    pagador. Además, un consumidor solo ve y toca lo suyo: lo ajeno responde
-   404, nunca 403.
+   404, nunca 403. El **aviso de confirmación** que le mandamos (docs/10 §4.6)
+   es un acelerador y va firmado, pero tampoco es la fuente de verdad: si se
+   pierde, `estadoCobro` lleva al mismo resultado, y por eso perder un aviso
+   es tolerable y avisar un pago que no se registró no lo es.
 2. **Credenciales bancarias: nunca.** Ni en el repo, ni en `.env`, ni en logs, ni
    en Firestore, ni en tests. El login en la consola lo hace el dueño a mano; el
    scraper solo reutiliza el `storageState` de Playwright, que vive **fuera del
@@ -204,7 +212,8 @@ BORRADOR → QR_ACTIVO → ENVIADO
 Las integraciones externas viven detrás de interfaces en `packages/qr-core/src/ports/`:
 
 `QrProvider` · `PaymentWatcher` · `MessagingProvider` · `CobroRepository` · `EvidenceStore` ·
-`AbonosSinConciliarStore` (pagos del cierre diario que no atan a ningún cobro)
+`AbonosSinConciliarStore` (pagos del cierre diario que no atan a ningún cobro) ·
+`AvisosStore` y `NotificadorConsumidor` (el aviso de confirmación al consumidor, docs/10 §4.6)
 
 - `QrProvider`: obtención/renovación del QR de cobro. Demo: carga asistida del QR
   generado por el dueño en Yape (ver docs/03 §5). Futuro: API oficial del banco.

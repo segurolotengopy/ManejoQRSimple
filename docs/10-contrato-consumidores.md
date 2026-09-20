@@ -23,9 +23,11 @@ el tipo `ConciliacionAprobada`, que solo fabrica `conciliar()`; no hay forma de
 escribir una confirmación por otra vía sin que el compilador la rechace.
 
 Consecuencia práctica para quien consume: **el estado que devuelve
-`estadoCobro` es la fuente de verdad**. Cuando exista el aviso de confirmación
-(bloque 2), será un acelerador: llega antes, pero se puede perder, y preguntar
-por `estadoCobro` tiene que llevar siempre al mismo resultado.
+`estadoCobro` es la fuente de verdad**. El aviso de confirmación (§4.6) es un
+acelerador: llega antes, pero se puede perder, y preguntar por `estadoCobro`
+tiene que llevar siempre al mismo resultado. Si construís tu lógica sobre el
+aviso y no sobre el estado, el día que un aviso se pierda vas a tener un cobro
+pagado que tu sistema no registró.
 
 ## 2. Qué no hace este proyecto por el consumidor
 
@@ -267,6 +269,103 @@ segunda llamada. Este endpoint sirve para volver a pedirla.
 banco igual, pero no se pudo archivar el PNG. El `estado` del cobro sigue
 siendo la verdad; la imagen, no.
 
+### 4.6 El aviso de confirmación — `POST` a tu URL
+
+Cuando un cobro tuyo llega a `CONFIRMADO`, te avisamos. **Es un acelerador, no
+la fuente de verdad**: llega antes que tu próxima consulta, pero se puede
+perder, repetir o llegar tarde. `estadoCobro` siempre gana.
+
+Es **opcional**. Sin configurarlo, el contrato funciona igual y consultás.
+
+#### Cómo se configura
+
+Dos variables en el entorno de este sistema, que nos pasás vos:
+
+```
+CONSUMIDOR_AVISO_URL_<ID>      https://tu-sistema/avisos/cobros
+CONSUMIDOR_AVISO_SECRETO_<ID>  <32 caracteres o más, al azar>
+```
+
+Las dos o ninguna, y la URL tiene que ser **https**. Una URL sin secreto
+mandaría avisos sin firmar, que es peor que no mandarlos: no podrías
+distinguirlos de los que te invente cualquiera que descubra tu URL.
+
+#### Qué recibís
+
+```
+POST /tu-url
+Content-Type: application/json; charset=utf-8
+X-MQS-Firma: t=1790000000,v1=9f2a…
+```
+
+```json
+{
+  "evento": "cobro.confirmado",
+  "idEvento": "cons-9f2a…",
+  "cobro": {
+    "id": "cons-9f2a…",
+    "referenciaExterna": "plan-2026-09-cliente-4471",
+    "estado": "CONFIRMADO",
+    "monto": "150.50",
+    "moneda": "BOB",
+    "confirmadoEn": "2026-09-20T14:04:02.000Z",
+    "ocurridoEn": "2026-09-20T14:03:52.000Z",
+    "riel": "api-baneco"
+  }
+}
+```
+
+Los mismos campos que `estadoCobro`, y por la misma razón: nada del pagador,
+ningún identificador del banco.
+
+#### Verificá la firma. Siempre.
+
+`X-MQS-Firma` trae `t=<segundos unix>,v1=<hmac hexadecimal>`. El HMAC es
+**SHA-256 sobre `<t>.<cuerpo crudo>`** con tu secreto.
+
+```js
+const [t, v1] = cabecera.split(',').map((p) => p.slice(p.indexOf('=') + 1));
+const esperada = crypto.createHmac('sha256', SECRETO).update(`${t}.${cuerpoCrudo}`).digest('hex');
+// Comparación en tiempo constante, nunca con ===
+const valida = crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(esperada));
+```
+
+Tres cosas que importan:
+
+1. **Sobre el cuerpo crudo**, antes de parsearlo. Si serializás el JSON de
+   nuevo, los bytes cambian y la firma no cierra.
+2. **Comparación en tiempo constante.** Un `===` corta en la primera
+   diferencia y deja adivinar la firma correcta carácter por carácter.
+3. **Mirá `t`.** Descartá lo que tenga más de unos minutos: sin eso, quien
+   intercepte un aviso válido puede reenviarlo cuando quiera.
+
+#### Contestá rápido, y deduplicá
+
+- **Cualquier 2xx** cuenta como entregado. Cualquier otra cosa —o no
+  contestar en 10 segundos— cuenta como fallo.
+- **`idEvento` es estable entre reentregas.** Es la clave con la que tenés que
+  deduplicar: un reintento trae el mismo `idEvento`, y procesarlo dos veces
+  sería entregar dos veces lo que vendiste.
+- **Contestá y después procesá.** Si tardás, cortamos y reintentamos; vas a
+  recibirlo de nuevo.
+
+#### Reintentos
+
+Espera creciente: 30 s, 1 min, 5 min, 15 min, 1 h, 6 h y después **una vez por
+día, sin límite de intentos**. Un aviso no se abandona en silencio: si
+estuviste caído una semana, lo recibís cuando volvés.
+
+Un 4xx también se reintenta. Un 404 puede ser un despliegue a medio camino, y
+darlo por perdido sería perder el aviso para siempre.
+
+#### Cuándo NO te llega
+
+- Tu cobro no llegó a `CONFIRMADO`. Un cobro en `EN_REVISION` no avisa: lo está
+  mirando una persona.
+- El cobro dejó de estar confirmado entre que se encoló el aviso y que se iba a
+  entregar. No se manda un aviso que el estado ya no sostiene.
+- No configuraste URL y secreto.
+
 ## 5. Estados que puede ver un consumidor
 
 Son los del dominio (`CLAUDE.md`, "Máquina de estados del cobro"):
@@ -289,15 +388,23 @@ son de los cobros que el dueño manda por WhatsApp desde su consola.
 conciliar, y existe como estado aparte justamente para que nadie la confunda
 con una confirmación.
 
-## 6. Lo que el banco no da, y por eso el contrato no lo da
+## 6. Por qué el contrato entrega la imagen del QR y no su texto
 
-**El texto del QR.** `generateQR` de Banco Económico devuelve `qrId` y una
-imagen PNG, no la cadena EMV del QR. Sacar el texto exigiría decodificar el
-PNG, y este proyecto no inventa lo que el proveedor no entrega (regla #12
-aplicada al banco). El contrato entrega la imagen.
+`generateQR` de Banco Económico devuelve `qrId` y una **imagen PNG**, no la
+cadena EMV. El contrato entrega la imagen, y eso alcanza:
 
-Queda como pregunta abierta al banco: si `generateQR` puede devolver también el
-texto del QR, el contrato sumaría un campo `qr.texto` sin cambiar nada más.
+- **Pagar un QR Simple no depende del banco que lo generó.** Es un protocolo
+  interoperable: la app de cualquier banco boliviano lee el QR y paga. Está
+  comprobado con plata real — en la prueba en producción, un QR emitido por
+  Banco Económico se pagó desde el **BNB** y concilió igual
+  (`Integraciones/baneco/02-hallazgos-produccion.md`, P3).
+- **Generar el QR es la capa comercial del banco originador**, el que tiene la
+  cuenta destino. Ningún sistema le va a pedir a un consumidor la cadena EMV
+  para armar un QR: quien arma el QR es el banco, y lo que el consumidor
+  necesita es mostrarlo.
+
+Así que no hay una pregunta pendiente acá, ni un campo `qr.texto` esperando al
+banco: el contrato entrega lo que hace falta para cobrar.
 
 ## 7. Errores, en general
 
@@ -326,9 +433,6 @@ en su consola, y contarlo acá ataría el contrato al proveedor de hoy.
 
 ## 8. Lo que este contrato no tiene (todavía)
 
-- **Aviso de confirmación** (bloque 2): hoy hay que preguntar por
-  `estadoCobro`. Cuando exista el aviso, seguirá siendo un acelerador y no la
-  fuente de verdad.
 - **Renovar un QR vencido desde el contrato**: hoy la renovación la hace el
   dueño desde su consola. Un consumidor que quiera volver a cobrar usa una
   referencia externa nueva.

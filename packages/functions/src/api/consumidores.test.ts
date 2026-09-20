@@ -10,6 +10,7 @@
 
 import {
   AbonosSinConciliarEnMemoria,
+  AvisosEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
@@ -54,6 +55,7 @@ function monto(valor: number): Centavos {
 
 function armar() {
   const evidencia = new EvidenceStoreEnMemoria();
+  const avisos = new AvisosEnMemoria();
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
   const ctx: ContextoApi = {
@@ -61,6 +63,7 @@ function armar() {
     deps: {
       cobros,
       evidencia,
+      avisos,
       qr: new QrProviderEnMemoria(() => AHORA),
       watcher,
       mensajeria: new MessagingProviderEnMemoria(),

@@ -32,7 +32,7 @@ import {
   verificarProduccion,
   type NivelLog,
 } from '@mqs/composicion';
-import { esExito } from '@mqs/qr-core';
+import { describirAvisos, entregarAvisos, esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 
@@ -225,6 +225,27 @@ async function main(): Promise<number> {
       }
       for (const clave of fueraDeVentana(ahora, cerrados)) {
         cerrados.delete(clave);
+      }
+
+      // Avisos de confirmación a los consumidores (docs/10 §4.6). Va después
+      // del cierre y no antes: primero se establece qué se confirmó, después
+      // se cuenta. Y va acá y no dentro de la confirmación misma para que un
+      // consumidor caído no pueda demorar ni hacer fracasar un cobro.
+      const avisados = await entregarAvisos(
+        { ...puertos.valor.deps, notificador: puertos.valor.notificador },
+        new Date(),
+      );
+      if (!esExito(avisados)) {
+        registrar('error', `  ! no se pudieron entregar los avisos (${avisados.error.tipo}); se reintenta.`);
+      } else if (avisados.valor.intentados > 0) {
+        const lineaAvisos = describirAvisos(avisados.valor);
+        console.log(`${new Date().toISOString()} avisos: ${lineaAvisos}`);
+        bitacora.escribir('info', 'satelite', `avisos: ${lineaAvisos}`);
+        for (const id of avisados.valor.inconsistentes) {
+          // Se encoló un aviso y el cobro ya no lo sostiene. No se entrega
+          // nada, y no se deja pasar en silencio.
+          registrar('error', `  ! aviso ${id} cerrado sin entregar: el cobro no está confirmado.`);
+        }
       }
 
       const sinEnviar = mensajeria.drenar();

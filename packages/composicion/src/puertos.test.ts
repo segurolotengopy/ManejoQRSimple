@@ -27,7 +27,7 @@ describe('selección por variable de entorno', () => {
       // La mensajería NO cae en mock por defecto: fingir que el mensaje salió
       // sería peor que fallar. Solo el demo la pide explícitamente.
       expect(r.valor.resumen).toBe(
-        'qr=mock watcher=mock mensajeria=no-configurada persistencia=memoria',
+        'qr=mock watcher=mock mensajeria=no-configurada persistencia=memoria avisos=sin-destinos',
       );
     }
   });

@@ -29,13 +29,20 @@ import {
   type LlamadaAlBanco,
 } from '@mqs/baneco-gateway';
 import {
+  NotificadorHttp,
+  describirErrorDestino,
+  leerDestinos,
+} from '@mqs/avisos-consumidor';
+import {
   AbonosSinConciliarFirestore,
+  AvisosFirestore,
   CobroRepositoryFirestore,
   EvidenceStoreFirestore,
   PaymentWatcherAbonosFirestore,
 } from '@mqs/firestore-store';
 import {
   AbonosSinConciliarEnMemoria,
+  AvisosEnMemoria,
   CobroRepositoryEnMemoria,
   EvidenceStoreEnMemoria,
   MessagingProviderEnMemoria,
@@ -46,10 +53,12 @@ import {
   exito,
   fallo,
   type AbonosSinConciliarStore,
+  type AvisosStore,
   type CobroRepository,
   type Dependencias,
   type EvidenceStore,
   type MessagingProvider,
+  type NotificadorConsumidor,
   type PaymentWatcher,
   type QrProvider,
   type Resultado,
@@ -71,7 +80,13 @@ export type ErrorComposicion =
   | { readonly tipo: 'MODO_INVALIDO'; readonly variable: string }
   | { readonly tipo: 'MODO_NO_IMPLEMENTADO'; readonly variable: string; readonly modo: Modo }
   | { readonly tipo: 'MODO_NECESITA_FIRESTORE'; readonly variable: string; readonly modo: Modo }
-  | { readonly tipo: 'CONFIG_BANECO'; readonly detalle: string };
+  | { readonly tipo: 'CONFIG_BANECO'; readonly detalle: string }
+  /**
+   * Un consumidor con el aviso a medio configurar (docs/10 §4.6). Lleva el
+   * texto ya armado por el adaptador, que nombra al consumidor y nunca su
+   * URL ni su secreto.
+   */
+  | { readonly tipo: 'DESTINO_DE_AVISO'; readonly detalle: string };
 
 export type OpcionesComposicion = {
   readonly env: Readonly<Record<string, string | undefined>>;
@@ -106,6 +121,11 @@ export type PuertosArmados = {
    * cobros, para que los dos procesos vean lo mismo.
    */
   readonly abonosSinConciliar: AbonosSinConciliarStore;
+  /**
+   * Quién entrega los avisos de confirmación a los consumidores. Lo usa el
+   * satélite; la API solo los encola (por `deps.avisos`).
+   */
+  readonly notificador: NotificadorConsumidor;
   /** Qué quedó conectado detrás de cada puerto, para poder loguearlo. */
   readonly resumen: string;
 };
@@ -172,12 +192,25 @@ export function construirPuertos(
   const abonosSinConciliar: AbonosSinConciliarStore = enFirestore
     ? new AbonosSinConciliarFirestore(opciones.db)
     : new AbonosSinConciliarEnMemoria();
+  const avisos: AvisosStore = enFirestore
+    ? new AvisosFirestore(opciones.db)
+    : new AvisosEnMemoria();
+
+  // Los destinos de los avisos se leen aunque no haya ninguno configurado: un
+  // consumidor a medio configurar tiene que cortar el arranque, no descubrirse
+  // el día que haya un pago que avisar.
+  const destinos = leerDestinos(opciones.env);
+  if (!destinos.ok) {
+    return fallo({ tipo: 'DESTINO_DE_AVISO', detalle: describirErrorDestino(destinos.error) });
+  }
 
   return exito({
     abonosSinConciliar,
+    notificador: new NotificadorHttp(destinos.destinos),
     deps: {
       cobros,
       evidencia,
+      avisos,
       qr: qr.valor,
       watcher: watcher.valor,
       mensajeria,
@@ -186,7 +219,8 @@ export function construirPuertos(
     resumen:
       `qr=${modoQr.valor} watcher=${modoWatcher.valor} ` +
       `mensajeria=${mensajeriaEnMock ? 'mock' : 'no-configurada'} ` +
-      `persistencia=${enFirestore ? 'firestore' : 'memoria'}`,
+      `persistencia=${enFirestore ? 'firestore' : 'memoria'} ` +
+      `avisos=${destinos.destinos.size === 0 ? 'sin-destinos' : [...destinos.destinos.keys()].join('+')}`,
   });
 }
 
@@ -264,5 +298,7 @@ export function describirError(error: ErrorComposicion): string {
       return `${error.variable}=${error.modo} necesita una conexión a Firestore (levantá el emulador o configurá el proyecto).`;
     case 'CONFIG_BANECO':
       return `La configuración de Baneco es inválida (${error.detalle}). Revisá el bloque BANECO_* del .env.`;
+    case 'DESTINO_DE_AVISO':
+      return `Aviso a consumidores mal configurado: ${error.detalle}`;
   }
 }

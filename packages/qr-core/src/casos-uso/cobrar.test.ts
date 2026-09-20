@@ -10,6 +10,7 @@ import {
   MessagingProviderEnMemoria,
   PaymentWatcherEnMemoria,
   QrProviderEnMemoria,
+  AvisosEnMemoria,
 } from '../ports/mocks.js';
 import type { ErrorPuerto, EvidenceStore, SolicitudQr } from '../ports/puertos.js';
 import { bs, enMinutos, T0, unCobro, unCobroDeConsumidor } from '../pruebas/fixtures.js';
@@ -63,6 +64,7 @@ class QrQueNoAnula extends QrContado {
 // en una fecha fija del pasado, y la máquina de estados lo rechaza.
 function armar(qr: QrContado = new QrContado(() => T0)) {
   const evidencia = new EvidenceStoreEnMemoria();
+  const avisos = new AvisosEnMemoria();
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
   const mensajeria = new MessagingProviderEnMemoria();
@@ -72,6 +74,7 @@ function armar(qr: QrContado = new QrContado(() => T0)) {
   const deps: Dependencias & DepsCierre = {
     cobros,
     evidencia,
+    avisos,
     qr,
     watcher,
     mensajeria,

@@ -42,6 +42,7 @@ se referencian desde ahí con la sintaxis `@docs/archivo.md` cuando hacen falta.
 | 07  | [`07-plan-fases.md`](07-plan-fases.md) | Fases 0–3 con criterios de salida; de demo local a API oficial |
 | 08  | [`08-agentes.md`](08-agentes.md) | Subagentes de Claude Code por etapa, con su justificación |
 | 09  | [`09-revision-manual.md`](09-revision-manual.md) | Cobros en revisión: alertas, rutina diaria y qué hacer con cada caso |
+| 10  | [`10-contrato-consumidores.md`](10-contrato-consumidores.md) | Contrato para otros productos: crear un cobro, saber si se pagó y anularlo, sin conocer el banco |
 | —   | [`ESTADO.md`](ESTADO.md) | **Bitácora de avance. Leer al empezar, actualizar al cerrar cada sesión.** |
 
 ## Carpetas auxiliares

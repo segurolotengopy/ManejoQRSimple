@@ -1,7 +1,8 @@
 # 02 — Hallazgos de la prueba controlada en producción
 
 **Corridas:** la primera cuenta (alias `prod`) el 2026-09-13 (P1–P8) y el 2026-09-14 (P9,
-y P6–P7 repetidas); la **segunda cuenta** (alias `cuenta-2`) el 2026-09-18/19, en §5.
+y P6–P7 repetidas); la **segunda cuenta** (alias `cuenta-2`) el 2026-09-18/19, en §5. El
+**ensayo del contrato para consumidores** (bloques 1 y 2), el 2026-09-20, en §6.
 Banco Económico, API de producción, QRs de **Bs 1**, datos en el emulador local.
 Procedimiento: [`03-prueba-en-produccion.md`](./03-prueba-en-produccion.md). Se repite
 completo con cada cuenta de cobro nueva o banco nuevo (ESTADO, decisión 16).
@@ -135,7 +136,44 @@ primeros mejoran los 41–66 s de la primera corrida; el de 122 s es tiempo de l
 Sin hallazgos nuevos del banco: el catálogo de §4 no cambió. Los `responseCode` crudos de
 esta corrida quedaron en la bitácora (`~/.manejoqr/logs/`, pestaña Logs).
 
-## 6. Lo que queda abierto
+## 6. Ensayo del contrato para consumidores — 2026-09-20
+
+**Qué se ensayó:** los bloques 1 y 2 del contrato (`docs/10-contrato-consumidores.md`)
+contra el banco real, sobre la cuenta `prod`. No es una corrida P1–P9: es el ensayo que
+faltaba para dar los dos bloques por probados, con un cobro real de monto mínimo pagado
+desde una cuenta propia (ESTADO, decisión 21).
+
+**Montaje.** Los cuatro procesos de la prueba controlada, más un **receptor local** que
+hace de consumidor: https en `localhost:8443` con certificado autofirmado, confiado por el
+satélite con `NODE_EXTRA_CA_CERTS`. El consumidor de ensayo (`ensayo`) recibió token,
+URL de aviso y secreto generados al azar por un script, guardados en el archivo de
+credenciales de la cuenta, fuera del repo. El receptor verifica la firma como debe hacerlo
+un consumidor de verdad: HMAC-SHA256 sobre el cuerpo crudo, comparación en tiempo
+constante y marca de tiempo dentro de la ventana.
+
+| # | Qué | Resultado |
+|---|---|---|
+| C1 | `crearCobro` por el contrato, sin tocar la consola | `201`, cobro en `QR_ACTIVO` con QR real de Bs 1 del banco |
+| C2 | Pago real desde una cuenta propia | `CONFIRMADO` **1 s** después del pago (`ocurridoEn` 00:34:05, `confirmadoEn` 00:34:06); 11 min 29 s después de emitido el QR, que es el tiempo de la persona |
+| C3 | Aviso al consumidor | Entregado en el **primer intento**, 769 ms después de la confirmación |
+| C4 | Firma y frescura del aviso | Válida, marca de tiempo con 0 s de antigüedad |
+| C5 | Contenido del aviso | Solo id, referencia externa, estado, monto, moneda, horas y riel: **ningún dato de quien pagó** |
+| C6 | Un cobro avisa una vez | `intentados=1 entregados=1 pendientes=0`; el reintento de `crearCobro` no generó otro aviso |
+| C7 | `estadoCobro` coincide con el aviso | Mismo estado, mismo monto, misma hora de confirmación |
+| C8 | `crearCobro` repetido con la misma referencia | `200` con el mismo cobro y el mismo QR: ningún cargo nuevo al banco |
+| C9 | `anularCobro` sobre el cobro pagado | `409 PAGADO_NO_SE_ANULA` |
+| C10 | `listarCobros` | `200`, el cobro del ensayo con su estado |
+
+**Lo que confirma.** El consumidor llega al mismo resultado por el aviso y por la
+consulta, que es la regla del bloque 2. La conciliación la hizo el satélite contra el
+banco: el aviso salió **después** de que el estado quedó guardado, no antes.
+
+**Detalle del riel:** el aviso llegó con `riel: "api-baneco"`, el nombre público, no el
+interno del dominio.
+
+**Gasto:** Bs 1, sin comisión (C9).
+
+## 7. Lo que queda abierto
 
 - **Fixtures reales:** las de `baneco-gateway` siguen derivadas de la especificación. Los
   logs no guardan cuerpos a propósito. El banco no tiene cuenta de pruebas (A4, cerrada

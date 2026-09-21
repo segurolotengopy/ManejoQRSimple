@@ -10,6 +10,11 @@ npm run baneco:b0
 
 Requiere `.env` con el bloque `BANECO_CERT_*` cargado (`BANECO_ENV=cert`).
 
+> **Alcance real (2026-09-20):** el banco no tiene cuenta de abono de pruebas (A4), así
+> que en certificación B0 solo verifica el login y el cifrado. Generar y pagar QRs se
+> verifica en la prueba controlada en producción
+> (`docs/Integraciones/baneco/03-prueba-en-produccion.md`).
+
 ## Qué produce
 
 | Salida | Qué es |

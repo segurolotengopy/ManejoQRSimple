@@ -41,7 +41,8 @@ Se bifurca por proveedor (análisis Baneco §8.2):
 
 - **Baneco — ya en curso.** La API oficial llegó antes que el scraping: el riel
   Baneco no pasa por el scraper. Hitos (análisis Baneco §8.3): B0 validación de
-  contrato en certificación (escrito, espera la cuenta de pruebas A4); B1
+  contrato en certificación (escrito; sin cuenta de pruebas del banco solo cubre login
+  y cifrado, A4 cerrada el 2026-09-20); B1
   adaptador contra fixtures (hecho); B2 flujo E2E (cubierto por la prueba
   controlada en producción, docs/Integraciones/baneco/03, porque el banco no
   simula pagos); B3 webhook (diferido, D3); B4 pase a producción.

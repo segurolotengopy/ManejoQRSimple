@@ -138,9 +138,9 @@ esta corrida quedaron en la bitácora (`~/.manejoqr/logs/`, pestaña Logs).
 ## 6. Lo que queda abierto
 
 - **Fixtures reales:** las de `baneco-gateway` siguen derivadas de la especificación. Los
-  logs no guardan cuerpos a propósito, así que las respuestas reales saneadas llegarán con
-  el modo pago asistido del B0 en certificación (`tools/baneco-b0`, espera la cuenta de
-  pruebas A4).
+  logs no guardan cuerpos a propósito. El banco no tiene cuenta de pruebas (A4, cerrada
+  el 2026-09-20), así que las respuestas reales saneadas tienen que salir de esta prueba en
+  producción, con una captura saneada que todavía no existe.
 - ~~**Comisiones (C9)**~~ — cerrada el 2026-09-17: **no hay comisión bancaria** por cobro
   QR Simple. Coincide con lo observado en las dos corridas, donde los pagos conciliaron
   por el monto exacto del QR.

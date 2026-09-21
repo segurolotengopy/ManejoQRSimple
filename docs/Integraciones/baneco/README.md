@@ -45,8 +45,9 @@ parámetros ni endpoints distintos a los documentados.**
 `02-hallazgos-certificacion.md` con un veredicto por cada punto de la tabla de abajo y
 por cada pregunta que se pueda contestar empíricamente. Se corre con
 `npm run baneco:b0`. Las credenciales de certificación del PDF son **de uso compartido**
-(respuesta A3) y sirven; falta la **cuenta de abono de pruebas** que el banco envía con
-un usuario de pruebas (A4). Sin ella B0 autentica pero no puede generar QRs.
+(respuesta A3) y sirven. **El banco no tiene cuenta de abono de pruebas** (A4, cerrada el
+2026-09-20), así que B0 solo verifica el login y el cifrado. Lo que depende de generar y
+pagar QRs se verifica en la prueba controlada en producción (`03-prueba-en-produccion.md`).
 
 El camino de pago no se puede simular (A2): para capturar un `statusQR` pagado real hay
 que mandarle al banco la imagen de un QR vigente por correo y que lo paguen ellos.

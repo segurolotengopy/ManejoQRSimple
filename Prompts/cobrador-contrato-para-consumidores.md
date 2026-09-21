@@ -84,8 +84,9 @@ Falta que **un consumidor solo vea y use la suya**, y que los cobros queden
 atribuidos por cuenta para el cierre diario.
 
 ### Bloque 4 — El pase a producción (1 jornada + espera del banco)
-Lo que falta según el estado del proyecto: la cuenta de pruebas del banco, y
-el checklist de pase a producción del estándar DevSecOps. Anotar C9 como
+Lo que falta según el estado del proyecto: el checklist de pase a producción del
+estándar DevSecOps. El banco no tiene cuenta de pruebas (2026-09-20): los ensayos se
+hacen en producción, pagando QRs de monto mínimo desde una cuenta propia. Anotar C9 como
 respondida. El pase lo aprueba Andres.
 
 ### Lo que NO se construye

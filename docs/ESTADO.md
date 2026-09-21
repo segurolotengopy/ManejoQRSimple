@@ -4,7 +4,7 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-20, sesión "contrato para consumidores" — **bloques 1
+**Última actualización:** 2026-09-20, sesión "contrato para consumidores" (cerró sin cuenta de pruebas del banco: decisión 21) — **bloques 1
 y 2** del frente `Prompts/cobrador-contrato-para-consumidores.md`. El cobro por QR se
 abre a otros productos con cuatro operaciones en `/api/v1/…` y **ninguna que confirme un
 pago** (`docs/10-contrato-consumidores.md`), más el **aviso de confirmación firmado**,
@@ -15,8 +15,8 @@ cuentas**, cada una con su alias, sus credenciales y sus datos, y la **segunda c
 corrió P1–P9 ok** (`02-hallazgos-produccion.md` §5). Además se cerró **C9: no hay
 comisión bancaria** (decisión 17).
 Antes: prueba con Baneco P1–P9 ok, hallazgos en
-`docs/Integraciones/baneco/02-hallazgos-produccion.md`; B0 tiene el modo pago asistido y
-espera la cuenta de pruebas, A4)
+`docs/Integraciones/baneco/02-hallazgos-produccion.md`; el banco no tiene cuenta de pruebas,
+así que B0 queda limitado al login y los ensayos se hacen en producción: decisión 21)
 
 ---
 
@@ -169,6 +169,23 @@ espera la cuenta de pruebas, A4)
     del banco originador**, el que tiene la cuenta destino. Ningún sistema le va a pedir
     la cadena EMV a un consumidor para armar un QR. El contrato entrega la imagen y con
     eso alcanza; `docs/10` §6 quedó reescrita.
+21. **El banco no tiene cuenta de pruebas (Andres, 2026-09-20).** Baneco no entrega una
+    cuenta de abono para certificación, así que **A4 queda cerrada sin cuenta** y no
+    bloquea nada. Como la integración ya opera en producción, los ensayos se hacen
+    ahí con **pagos internos de monto mínimo**, que es el procedimiento de la decisión
+    16. Consecuencias:
+    - El B0 en certificación (`tools/baneco-b0`) queda **sin uso para generar ni pagar
+      QRs**: solo sirve para el login y el cifrado. No se borra.
+    - Los ensayos pendientes de los bloques 1 y 2 del contrato se corren en la próxima
+      prueba en producción, pagando el QR con monto mínimo desde una cuenta propia.
+      Tiene que ser **el pago del QR**, no una transferencia suelta a la cuenta: una
+      transferencia sin QR no aparece en `statusQR` y a lo sumo termina como abono sin
+      conciliar en el cierre diario.
+    - Las **fixtures reales** de `baneco-gateway` ya no pueden venir de certificación.
+      Tienen que salir de la prueba en producción, y hoy los logs no guardan cuerpos a
+      propósito: hace falta una captura saneada en ese modo (pendiente de Claude Code).
+    - El bloque 4 (pase a producción) ya no espera al banco: queda el checklist del
+      estándar DevSecOps y la aprobación del dueño.
 
 ## Estado actual
 
@@ -344,7 +361,7 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
         la libera.
       - Barrera por host exacto de certificación y https.
 
-      No se corrió contra el banco: espera la cuenta de pruebas (A4).
+      No se corrió contra el banco: esperaba la cuenta de pruebas (A4), que el banco no tiene (decisión 21).
 - [x] **2026-09-14 — Logs persistentes (PR #33, mergeado).** Pedido del dueño
       durante la prueba en producción: un `responseCode` o la línea del cierre diario se
       perdían al reiniciar la API o al cerrar la terminal del satélite.
@@ -470,9 +487,9 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 | Qué | Desde | Bloquea | Mientras tanto |
 |---|---|---|---|
 | ~~Contraseña del usuario API de producción (pedido H1)~~ | 2026-09-12 | — | **Resuelto el 2026-09-13:** el dueño la obtuvo y la prueba en producción corrió P1–P9 ok. |
-| Cuenta de abono de pruebas de Baneco (A4) | 2026-09-11 | Que B0 genere QRs (sin ella solo prueba el login) | El login y el cifrado se pueden probar ya con las credenciales compartidas del PDF. |
+| ~~Cuenta de abono de pruebas de Baneco (A4)~~ | 2026-09-11 | — | **Cerrada el 2026-09-20:** el banco no tiene cuenta de pruebas (decisión 21). Se ensaya en producción con montos mínimos. |
 | Catálogo de bancos (D9) | 2026-09-12 | Nada (deseable) | El banco dijo adjuntarlo y no llegó: pedirlo de nuevo. |
-| Pago manual de un QR de prueba por el banco (A2) | — | Capturar un `statusQR` pagado y un `paidQR` reales → fixtures reales | El modo "pago asistido" de B0 ya existe (PR #30); falta la cuenta de pruebas (A4) para correrlo. |
+| ~~Pago manual de un QR de prueba por el banco (A2)~~ | — | — | **Reemplazado el 2026-09-20** por pagos propios de monto mínimo en producción (decisión 21). Las fixtures reales salen de ahí. |
 | IPs del webhook (D1) | 2026-08-27 | Solo el Hito B3 (webhook) | Se opera sin webhook. |
 | Decisión del dueño sobre WhatsAppModular (docs/04 §2.3) | 2026-08-27 | `wa-bridge` — **sin él ningún cobro real pasa de `QR_ACTIVO`** | Demo con `MESSAGING_PROVIDER=mock`. |
 | Capturas de la consola Yape BCP | — | Riel Yape (diferido, D1) | Sin impacto en Baneco. |
@@ -536,22 +553,17 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    conciliados, cierre diario `yaRegistrados=4 huerfanos=0`, ningún QR cobrable suelto y
    ningún hallazgo nuevo del banco. Cuando ya no hagan falta, borrar
    `~/.manejoqr/emulador-cuenta-2` y `~/.manejoqr/qrs/cuenta-2`.
-1. Pedirle al oficial, si todavía no respondió el correo H, el usuario y la cuenta de
-   pruebas (A4) y el catálogo de bancos (D9). ~~Confirmar las comisiones (C9)~~ —
+1. Pedirle al oficial el catálogo de bancos (D9). ~~La cuenta de pruebas (A4)~~ — no
+   existe (decisión 21). ~~Confirmar las comisiones (C9)~~ —
    respondida (decisión 17).
 
 **Dueño — lo demás:**
 
 1. ~~Autorizar #21, #24 y #25~~ — mergeados el 2026-09-12.
-2. Cuando el banco responda el correo H: cargar el usuario y la cuenta de pruebas (A4)
-   como `BANECO_CERT_*` en el `.env` local, nunca en el repo, y el catálogo de bancos
-   (D9) en `privado-no-gh/`. Si interesa, pedir los manuales de **Bec QR Connect** (G2).
-   Con la cuenta de pruebas, correr el B0 (guía: `tools/baneco-b0/README.md`):
-   1. `npm run baneco:b0` (sondeo completo).
-   2. `npm run baneco:b0 -- --pago-asistido` y mandar la imagen del QR al oficial.
-   3. Cuando lo pague, `npm run baneco:b0 -- --capturar-pago`.
-   4. Pasarle a Claude Code los informes `02-hallazgos-*.md` y las fixtures. Si alguna
-      corrida sale con código 4, no commitear nada sin revisarlo.
+2. Cuando llegue el catálogo de bancos (D9), guardarlo en `privado-no-gh/`. Si
+   interesa, pedir los manuales de **Bec QR Connect** (G2). ~~Correr el B0 con la
+   cuenta de pruebas~~ — sin cuenta de pruebas, el B0 no genera ni paga QRs
+   (decisión 21).
 3. ~~Revisar `.env.example`~~ — **hecho el 2026-09-19/20**, con autorización del dueño
    en el chat: Claude Code no tiene permiso sobre `.env.*`, así que lo hizo un script
    que solo informó qué cambió, nunca qué decía el archivo.
@@ -570,12 +582,12 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 1. ~~Documentar la prueba en producción y ajustar el adaptador~~ — hecho
    (`02-hallazgos-produccion.md`; `cancelQR` 403 → consulta de `statusQR`). Quedan las
-   fixtures reales saneadas, que llegan con el B0 en certificación (los logs no guardan
-   cuerpos, a propósito).
-2. **Hito B0**, con el informe y las fixtures que produzca el dueño: documentar los
-   hallazgos, reemplazar las fixtures derivadas de la espec. y ajustar el adaptador a
-   los `responseCode` observados (doble anulación, riesgo B2; anular un QR pagado). El
-   modo pago asistido ya está (PR #30).
+   fixtures reales saneadas. Sin cuenta de pruebas (decisión 21) tienen que salir de la
+   prueba en producción, y los logs no guardan cuerpos a propósito: falta una captura
+   saneada en ese modo, con la misma barrera anti-secretos del B0.
+2. ~~**Hito B0** en certificación~~ — sin cuenta de pruebas (decisión 21) se reemplaza
+   por la captura saneada del punto 1. Con ella: reemplazar las fixtures derivadas de la
+   espec. y ajustar el adaptador a los `responseCode` observados (anular un QR pagado).
 3. ~~Persistir los abonos huérfanos y sin corroborar~~ — hecho en el PR #27.
 4. ~~Barrido documental pendiente de §8.2~~ — hecho (docs/02 §5, docs/05 §1 y §5,
    docs/06 T9–T11 y secretos, docs/07 Fase 3). Solo queda `.env.example`, del dueño.
@@ -591,8 +603,10 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    3. Bloque 3 — una cuenta de cobro por consumidor. Hoy cada cuenta es un **proceso**
       con su alias (decisión 16); falta que un consumidor solo use la suya y que los
       cobros queden atribuidos por cuenta para el cierre diario.
-   4. Bloque 4 — pase a producción: cuenta de pruebas del banco (A4) y checklist del
-      estándar DevSecOps. Lo aprueba el dueño.
+   4. Bloque 4 — pase a producción: checklist del estándar DevSecOps. Ya no espera
+      una cuenta de pruebas, que el banco no tiene (decisión 21). Lo aprueba el dueño.
+   Los ensayos de los bloques 1 y 2 se corren en la próxima prueba en producción,
+   **pagando el QR** con monto mínimo desde una cuenta propia (decisión 21).
 
 **Riel Yape — diferido** (retomar cuando haya documentación completa, D1): capturas
 en `docs/consola-yape/`, verificación del Playwright MCP local y sesión de mapeo de

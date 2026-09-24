@@ -4,7 +4,9 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-20, sesión "contrato para consumidores" (cerró sin cuenta de pruebas del banco: decisión 21) — **bloques 1
+**Última actualización:** 2026-09-20, sesión "contrato para consumidores" (bloques 1 y 2
+**mergeados y ensayados contra el banco real**; el banco no tiene cuenta de pruebas:
+decisión 21) — **bloques 1
 y 2** del frente `Prompts/cobrador-contrato-para-consumidores.md`. El cobro por QR se
 abre a otros productos con cuatro operaciones en `/api/v1/…` y **ninguna que confirme un
 pago** (`docs/10-contrato-consumidores.md`), más el **aviso de confirmación firmado**,
@@ -462,6 +464,11 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
           divergencia menos.
       - 880 tests (67 nuevos), typecheck, lint, `deps:check` y build en verde.
         **Sin ensayo contra el banco todavía** — ver "Próximo paso".
+- [x] **2026-09-20 — Ensayo de los bloques 1 y 2 contra el banco real.** Cobro creado
+      por el contrato, QR de Bs 1 pagado desde una cuenta propia, confirmado 1 s después
+      del pago, y el aviso entregado al primer intento a un receptor local que verifica
+      la firma como un consumidor de verdad. Diez comprobaciones, todas ok:
+      `02-hallazgos-produccion.md` §6. Con esto los dos bloques quedan cerrados.
 - [x] **2026-09-20 — Bloque 2: el aviso de confirmación (PR #40, mergeado el
       2026-09-20 con el OK del dueño en el chat; CI en verde).** Cuando un cobro de un consumidor queda
       `CONFIRMADO`, se le avisa (ADR-009, decisión 19).
@@ -564,7 +571,9 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
    interesa, pedir los manuales de **Bec QR Connect** (G2). ~~Correr el B0 con la
    cuenta de pruebas~~ — sin cuenta de pruebas, el B0 no genera ni paga QRs
    (decisión 21).
-3. ~~Revisar `.env.example`~~ — **hecho el 2026-09-19/20**, con autorización del dueño
+3. ~~Revisar `.env.example`~~ — **completo el 2026-09-20**: las variables del aviso
+   (`CONSUMIDOR_AVISO_URL_<ID>` y `CONSUMIDOR_AVISO_SECRETO_<ID>`) quedaron documentadas
+   en el PR #44, con el mismo método de script. Antes, el 2026-09-19/20, con autorización del dueño
    en el chat: Claude Code no tiene permiso sobre `.env.*`, así que lo hizo un script
    que solo informó qué cambió, nunca qué decía el archivo.
    `BANECO_POLL_INTERVAL_SECONDS` pasó de 180 a 30 y se documentó
@@ -594,19 +603,21 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 5. `wa-bridge`, cuando el dueño decida docs/04 §2.3; con él, aviso de casos
    críticos por WhatsApp.
 6. **Contrato para consumidores** (`Prompts/cobrador-contrato-para-consumidores.md`):
-   1. Bloque 1 — **mergeado** (PR #38, 2026-09-20). Falta su ensayo con un cobro real
-      de monto mínimo pagado desde otro banco, que se corre en la próxima prueba en
-      producción: es lo único del bloque que queda pendiente.
-   2. Bloque 2 — **mergeado** (PR #40, 2026-09-20). Falta probarlo de
-      punta a punta contra un consumidor real: hoy está cubierto por tests, sin ningún
-      destino configurado todavía.
+   1. Bloque 1 — **mergeado** (PR #38) y **ensayado contra el banco real** el
+      2026-09-20: cobro creado por el contrato, QR de Bs 1 pagado desde una cuenta
+      propia, `crearCobro` idempotente, `anularCobro` sobre pagado `409` y
+      `listarCobros` ok (`02-hallazgos-produccion.md` §6). **Cerrado.**
+   2. Bloque 2 — **mergeado** (PR #40) y **ensayado de punta a punta** el 2026-09-20
+      contra un receptor local que hace de consumidor: el aviso llegó al primer intento,
+      769 ms después de la confirmación, con firma válida, marca de tiempo fresca y sin
+      datos de quien pagó; un solo aviso por cobro (§6). **Cerrado.**
    3. Bloque 3 — una cuenta de cobro por consumidor. Hoy cada cuenta es un **proceso**
       con su alias (decisión 16); falta que un consumidor solo use la suya y que los
       cobros queden atribuidos por cuenta para el cierre diario.
    4. Bloque 4 — pase a producción: checklist del estándar DevSecOps. Ya no espera
       una cuenta de pruebas, que el banco no tiene (decisión 21). Lo aprueba el dueño.
-   Los ensayos de los bloques 1 y 2 se corren en la próxima prueba en producción,
-   **pagando el QR** con monto mínimo desde una cuenta propia (decisión 21).
+   Los ensayos de los bloques 1 y 2 **se corrieron el 2026-09-20** (§6 del informe de
+   producción): quedan cerrados. Sigue abierto el bloque 3.
 
 **Riel Yape — diferido** (retomar cuando haya documentación completa, D1): capturas
 en `docs/consola-yape/`, verificación del Playwright MCP local y sesión de mapeo de

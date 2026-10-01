@@ -28,7 +28,8 @@ import {
   describirLlamada,
   explicarMarca,
   fijarCuentaDePrueba,
-  leerCuentaDePrueba,
+  leerCuentaDeCobro,
+  prepararDatosDeLaCuenta,
   verificarProduccion,
   type NivelLog,
 } from '@mqs/composicion';
@@ -94,20 +95,37 @@ async function main(): Promise<number> {
   const mensajeria = new MensajeriaNoConfigurada();
   const db = conectarFirestore();
 
-  // En la prueba controlada, los datos son de una cuenta de cobro concreta: el
-  // satélite no mira los QRs de una cuenta con las credenciales de otra.
-  const cuenta = leerCuentaDePrueba(process.env);
+  // Los datos son de una cuenta de cobro concreta: el satélite no mira los QRs
+  // de una cuenta con las credenciales de otra, y cada cobro lleva la suya.
+  const cuenta = leerCuentaDeCobro(process.env);
   if (cuenta === null) {
     console.error('✖ CUENTA solo admite minúsculas, números y guiones (hasta 24 caracteres).');
     return 1;
   }
   // `db === null` acá es el satélite en memoria, que solo sirve para ensayar el
   // bucle: contra producción la barrera ya lo rechazó (`verificarProduccion`).
-  if (process.env['MODO_PRUEBA_PRODUCCION'] === '1' && db !== null) {
-    const problema = explicarMarca(await fijarCuentaDePrueba(db, cuenta, new Date()));
-    if (problema !== null) {
-      console.error(`✖ ${problema}`);
+  const modoPrueba = process.env['MODO_PRUEBA_PRODUCCION'] === '1';
+  if (db !== null) {
+    if (modoPrueba) {
+      const problema = explicarMarca(await fijarCuentaDePrueba(db, cuenta, new Date()));
+      if (problema !== null) {
+        console.error(`✖ ${problema}`);
+        return 1;
+      }
+    }
+    // Siempre, con o sin modo prueba: un cobro pendiente sin cuenta queda fuera
+    // de la consulta por cuenta y el satélite dejaría de vigilar un QR pagable.
+    const preparada = await prepararDatosDeLaCuenta({ db, cuenta, modoPrueba });
+    if (!esExito(preparada)) {
+      console.error(`✖ ${preparada.error.mensaje}`);
       return 1;
+    }
+    if (preparada.valor.cobros + preparada.valor.abonos > 0) {
+      registrar(
+        'info',
+        `  Atribución de cuenta: ${String(preparada.valor.cobros)} cobro(s) y ${String(preparada.valor.abonos)} ` +
+          `abono(s) anteriores quedaron en la cuenta «${cuenta}».`,
+      );
     }
   }
 
@@ -134,12 +152,9 @@ async function main(): Promise<number> {
   const unaSola = process.argv.includes('--una');
   const intervalo = intervaloSegundos();
 
-  const enPrueba = process.env['MODO_PRUEBA_PRODUCCION'] === '1';
   console.log('▶ Satélite Baneco');
   console.log(`  Adaptadores: ${puertos.valor.resumen}`);
-  if (enPrueba) {
-    console.log(`  Cuenta de cobro: ${cuenta}`);
-  }
+  console.log(`  Cuenta de cobro: ${cuenta}`);
   console.log(unaSola ? '  Modo: una sola pasada.' : `  Intervalo: ${String(intervalo)} s.`);
   console.log('  Verifica, concilia y anula en el banco los QRs que vencen; no emite ni renueva.');
   console.log('  Cierra los días anteriores contra el reporte paidQR del banco.');
@@ -147,7 +162,7 @@ async function main(): Promise<number> {
   bitacora.escribir(
     'info',
     'satelite',
-    `Satélite iniciado · ${puertos.valor.resumen}${enPrueba ? ` · cuenta ${cuenta}` : ''}${unaSola ? ' · una pasada' : ''}`,
+    `Satélite iniciado · ${puertos.valor.resumen}· cuenta ${cuenta}${unaSola ? ' · una pasada' : ''}`,
   );
 
   // En un objeto y no en un `let`: el manejador de señal lo muta desde una
@@ -174,7 +189,7 @@ async function main(): Promise<number> {
   });
 
   do {
-    const resultado = await unaPasada(puertos.valor.deps, new Date());
+    const resultado = await unaPasada(puertos.valor.deps, cuenta, new Date());
 
     if ('errorFatal' in resultado) {
       // No se pudo listar los cobros pendientes: no hay forma de saber cuáles
@@ -194,9 +209,9 @@ async function main(): Promise<number> {
       }
       const ahora = new Date();
       const depsCierre = { ...puertos.valor.deps, abonosSinConciliar: puertos.valor.abonosSinConciliar };
-      for (const cierre of await cerrarDiasPendientes(depsCierre, ahora, cerrados)) {
+      for (const cierre of await cerrarDiasPendientes(depsCierre, cuenta, ahora, cerrados)) {
         if (cierre.tipo === 'CERRADO') {
-          const lineaCierre = describirCierre(cierre.clave, cierre.resumen);
+          const lineaCierre = describirCierre(cierre.clave, cuenta, cierre.resumen);
           console.log(`${ahora.toISOString()} ${lineaCierre}`);
           bitacora.escribir('info', 'satelite', lineaCierre);
           for (const id of cierre.resumen.nuevosParaRevisar) {
@@ -204,6 +219,9 @@ async function main(): Promise<number> {
             // Ya quedó guardada; el aviso es para quien mira la terminal, y
             // solo por lo nuevo: un abono ya visto (o ya cerrado) no se repite.
             registrar('aviso', `  ! abono nuevo para revisar (pestaña Revisión): ${id}`);
+          }
+          for (const id of cierre.resumen.deOtraCuenta) {
+            registrar('aviso', `  ! abono ${id}: su QR es de un cobro de otra cuenta; queda para revisión.`);
           }
           for (const { idDeduplicacion, error } of cierre.resumen.conError) {
             registrar('error', `  ! abono ${idDeduplicacion} sin procesar (${error.tipo}); se reintenta.`);

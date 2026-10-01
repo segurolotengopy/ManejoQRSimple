@@ -22,6 +22,8 @@
  * sola vez, en vez de que cada handler se acuerde de comprobarla.
  */
 
+import type { PropietarioConsumidor } from '@mqs/qr-core';
+
 import {
   anular,
   buscarAbono,
@@ -86,9 +88,19 @@ export async function enrutar(
   if (identidad.tipo === 'consumidor') {
     // Un token de consumidor no abre la consola del dueño. Ni una ruta de
     // lectura: `GET /api/cobros` listaría los cobros de todos.
-    return esRutaDeConsumidor
-      ? despacharConsumidor(ctx, identidad.consumidorId, peticion)
-      : noEncontrado();
+    if (!esRutaDeConsumidor) {
+      return noEncontrado();
+    }
+    // Segunda barrera: `leerConsumidores` ya impide arrancar con un consumidor
+    // de otra cuenta. Si una identidad llega igual con otra, no se atiende.
+    if (identidad.cuentaCobro !== ctx.cuentaCobro) {
+      return noAutorizado();
+    }
+    return despacharConsumidor(
+      ctx,
+      { consumidorId: identidad.consumidorId, cuentaCobro: identidad.cuentaCobro },
+      peticion,
+    );
   }
   // Y el dueño no entra por el contrato: su consola tiene sus propias rutas, y
   // un cobro de consumidor no es suyo para crearlo ni anularlo por ahí.
@@ -103,15 +115,15 @@ export async function enrutar(
  */
 function despacharConsumidor(
   ctx: ContextoApi,
-  consumidorId: string,
+  propietario: PropietarioConsumidor,
   peticion: Peticion,
 ): Promise<Respuesta> | Respuesta {
   const { metodo, ruta, cuerpo, consulta } = peticion;
 
   if (ruta === CONSUMIDORES) {
     return metodo === 'GET'
-      ? consumidores.listarCobros(ctx, consumidorId, consulta)
-      : consumidores.crearCobro(ctx, consumidorId, cuerpo);
+      ? consumidores.listarCobros(ctx, propietario, consulta)
+      : consumidores.crearCobro(ctx, propietario, cuerpo);
   }
 
   const resto = ruta.slice(CONSUMIDORES.length + 1);
@@ -133,17 +145,17 @@ function despacharConsumidor(
     } catch {
       return noEncontrado();
     }
-    return consumidores.verCobroPorReferencia(ctx, consumidorId, referencia);
+    return consumidores.verCobroPorReferencia(ctx, propietario, referencia);
   }
 
   if (segundo === undefined) {
-    return metodo === 'GET' ? consumidores.verCobro(ctx, consumidorId, primero) : metodoNoPermitido();
+    return metodo === 'GET' ? consumidores.verCobro(ctx, propietario, primero) : metodoNoPermitido();
   }
   if (segundo === 'qr') {
-    return metodo === 'GET' ? consumidores.verQr(ctx, consumidorId, primero) : metodoNoPermitido();
+    return metodo === 'GET' ? consumidores.verQr(ctx, propietario, primero) : metodoNoPermitido();
   }
   if (segundo === 'anular') {
-    return metodo === 'POST' ? consumidores.anular(ctx, consumidorId, primero, cuerpo) : metodoNoPermitido();
+    return metodo === 'POST' ? consumidores.anular(ctx, propietario, primero, cuerpo) : metodoNoPermitido();
   }
   return noEncontrado();
 }

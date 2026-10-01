@@ -91,6 +91,7 @@ function armar(opciones: OpcionesTransporte = {}) {
 const cobroInicial: Cobro = {
   id: 'cobro-e2e-1',
   proveedor: 'baneco',
+  cuentaCobro: 'cuenta-a',
   estado: 'BORRADOR',
   montoCentavos: bs(MONTO_DEL_ABONO),
   moneda: 'BOB',

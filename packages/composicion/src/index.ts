@@ -27,6 +27,8 @@ export {
   esAliasDeCuenta,
   leerCuentaDeCobro,
   leerCuentaDePrueba,
+  prepararDatosDeLaCuenta,
+  type ErrorPreparacionDeCuenta,
   ALIAS_DE_CUENTA,
   CUENTA_POR_DEFECTO,
 } from './cuenta.js';

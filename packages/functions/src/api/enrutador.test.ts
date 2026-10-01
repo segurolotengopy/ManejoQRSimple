@@ -27,6 +27,8 @@ import type { Metodo, Peticion } from './tipos.js';
 
 const AHORA = new Date('2026-08-28T12:00:00.000Z');
 const TOKEN = 'token-de-prueba-suficientemente-largo';
+/** La cuenta de cobro de este proceso en las pruebas. */
+const CUENTA = 'cuenta-a';
 
 const aceptaTodo: VerificadorDeToken = (t) =>
   Promise.resolve(t === TOKEN ? { tipo: 'dueño', id: 'dueño' } : null);
@@ -46,6 +48,7 @@ function armar() {
   const abonosSinConciliar = new AbonosSinConciliarEnMemoria();
 
   const ctx: ContextoApi = {
+    cuentaCobro: CUENTA,
     abonosSinConciliar,
     deps: {
       cobros,
@@ -86,6 +89,41 @@ async function crear(ctx: ContextoApi): Promise<{ id: string; cuerpo: Record<str
   const cuerpo = r.cuerpo as Record<string, unknown>;
   return { id: String(cuerpo['id']), cuerpo };
 }
+
+describe('la cuenta del consumidor en el enrutador', () => {
+  const deOtraCuenta: VerificadorDeToken = () =>
+    Promise.resolve({ tipo: 'consumidor', consumidorId: 'novuchat', cuentaCobro: 'cuenta-b' });
+  const deEstaCuenta: VerificadorDeToken = () =>
+    Promise.resolve({ tipo: 'consumidor', consumidorId: 'novuchat', cuentaCobro: CUENTA });
+
+  it('una identidad de otra cuenta que la del proceso es 401, aunque el token sea válido', async () => {
+    // Segunda barrera: `leerConsumidores` ya impide arrancar así.
+    const { ctx } = armar();
+    for (const [metodo, ruta] of [
+      ['GET', '/api/v1/cobros'],
+      ['POST', '/api/v1/cobros'],
+      ['GET', '/api/v1/cobros/por-referencia/x'],
+    ] as const) {
+      const r = await enrutar(ctx, deOtraCuenta, pedir(metodo, ruta, COBRO_VALIDO));
+      expect([ruta, r.status]).toEqual([ruta, 401]);
+    }
+  });
+
+  it('la misma identidad con la cuenta del proceso sí se atiende', async () => {
+    const { ctx } = armar();
+    const r = await enrutar(ctx, deEstaCuenta, pedir('GET', '/api/v1/cobros'));
+    expect(r.status).toBe(200);
+  });
+});
+
+describe('la cuenta de los cobros del dueño', () => {
+  it('el cobro de la consola nace en la cuenta del proceso', async () => {
+    const { ctx } = armar();
+    const { id } = await crear(ctx);
+    const guardado = await ctx.deps.cobros.obtener(id);
+    expect(esExito(guardado) && guardado.valor?.cuentaCobro).toBe(CUENTA);
+  });
+});
 
 describe('autenticación', () => {
   const rutas: readonly (readonly [Metodo, string])[] = [
@@ -485,6 +523,21 @@ describe('prueba controlada en producción', () => {
     expect((cuerpoDe(r)['resultados'] as { resultado: string }[])[0]?.resultado).toBe('ANULADO');
   });
 
+  it('cerrar la prueba no anula los cobros de otra cuenta', async () => {
+    const { ctx } = conPrueba();
+    const propio = await qrDePrueba(ctx);
+    const base = await ctx.deps.cobros.obtener(propio);
+    if (!esExito(base) || base.valor === null) throw new Error('debería existir');
+    const ajeno = { ...base.valor, id: 'cobro-de-otra-cuenta', cuentaCobro: 'cuenta-b' };
+    await ctx.deps.cobros.guardar(ajeno);
+
+    const r = await enrutar(ctx, aceptaTodo, pedir('POST', '/api/pruebas/cerrar', {}));
+
+    expect((cuerpoDe(r)['resultados'] as { id: string }[]).map((x) => x.id)).toEqual([propio]);
+    const despues = await ctx.deps.cobros.obtener(ajeno.id);
+    expect(esExito(despues) && despues.valor).toEqual(ajeno);
+  });
+
   it('el sondeo de anulación solo va sobre QRs que nadie va a pagar', async () => {
     const { ctx } = conPrueba();
     const id = await qrDePrueba(ctx);
@@ -646,6 +699,7 @@ describe('abonos sin conciliar por la API', () => {
       montoCentavos: monto(500),
       ocurridoEn: new Date(AHORA.getTime() - 20 * 3_600_000),
       origen: 'watcher-baneco',
+      cuentaCobro: CUENTA,
       registradoEn: new Date(AHORA.getTime() - 5 * 3_600_000),
       resolucion: null,
     });
@@ -662,6 +716,7 @@ describe('abonos sin conciliar por la API', () => {
         idDeduplicacion: ID,
         motivo: 'HUERFANO',
         cobroId: null,
+        cuentaCobro: CUENTA,
         cobroEstado: null,
         yaRegistradoEnElCobro: false,
         monto: '5.00',

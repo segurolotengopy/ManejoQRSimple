@@ -80,12 +80,13 @@ export function cerroCompleto(resultado: ResultadoCierre): boolean {
 /** Cierra, en orden, los días de la ventana que falten. */
 export async function cerrarDiasPendientes(
   deps: DepsCierre,
+  cuentaCobro: string,
   ahora: Date,
   cerrados: ReadonlySet<string>,
 ): Promise<readonly ResultadoCierre[]> {
   const resultados: ResultadoCierre[] = [];
   for (const { clave, fecha } of diasACerrar(ahora, cerrados)) {
-    const resultado = await conciliarDia(deps, fecha, ahora);
+    const resultado = await conciliarDia(deps, cuentaCobro, fecha, ahora);
     resultados.push(
       esExito(resultado)
         ? { tipo: 'CERRADO', clave, resumen: resultado.valor }
@@ -101,9 +102,13 @@ export async function cerrarDiasPendientes(
  * datos del pagador (reglas #4 y #9). Esos abonos ya quedaron guardados para
  * la pestaña Revisión: el log es un eco, no el único registro.
  */
-export function describirCierre(clave: string, resumen: ResumenConciliacionDiaria): string {
+export function describirCierre(
+  clave: string,
+  cuentaCobro: string,
+  resumen: ResumenConciliacionDiaria,
+): string {
   const partes = [
-    `cierre ${clave}:`,
+    `cierre ${clave} cuenta=${cuentaCobro}:`,
     `abonos=${String(resumen.abonosLeidos)}`,
     `confirmados=${String(resumen.confirmados.length)}`,
     `enRevision=${String(resumen.enRevision.length)}`,
@@ -111,7 +116,11 @@ export function describirCierre(clave: string, resumen: ResumenConciliacionDiari
     `sinCorroborar=${String(resumen.sinCorroborar.length)}`,
     `huerfanos=${String(resumen.huerfanos.length)}`,
   ];
-  if (resumen.huerfanos.length + resumen.sinCorroborar.length > 0) {
+  if (resumen.deOtraCuenta.length > 0) {
+    // Pagos cuyo QR es de un cobro de otra cuenta: no se verificaron acá.
+    partes.push(`deOtraCuenta=${String(resumen.deOtraCuenta.length)}`);
+  }
+  if (resumen.huerfanos.length + resumen.sinCorroborar.length + resumen.deOtraCuenta.length > 0) {
     // Un cierre repetido vuelve a contarlos; "nuevos" dice cuántos son novedad.
     partes.push(`nuevosParaRevisar=${String(resumen.nuevosParaRevisar.length)}`);
   }

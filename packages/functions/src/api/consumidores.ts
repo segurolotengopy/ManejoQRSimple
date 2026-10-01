@@ -10,8 +10,8 @@
  *
  * Dos invariantes que esta capa hace cumplir en **todas** las rutas:
  *
- * 1. **Un consumidor solo ve y toca lo suyo.** Un cobro de otro consumidor —o
- *    del dueño— responde 404, no 403: un 403 confirmaría que ese cobro existe.
+ * 1. **Un consumidor solo ve y toca lo suyo.** Un cobro de otro consumidor, de
+ *    otra cuenta de cobro —o del dueño— responde 404, no 403: un 403 confirmaría que ese cobro existe.
  * 2. **Los topes de la prueba en producción valen acá también.** Todo QR que
  *    se le pide al banco consume cupo, venga de la consola o del contrato; si
  *    no, el contrato sería una puerta de atrás a la barrera T11.
@@ -29,6 +29,7 @@ import {
   type Cobro,
   type OrigenDeteccion,
   type PagoDeCobro,
+  type PropietarioConsumidor,
 } from '@mqs/qr-core';
 
 import {
@@ -118,15 +119,15 @@ function aVistaConsumidor(cobro: Cobro, pago: PagoDeCobro | null): Record<string
 const ID_DE_CONSUMIDOR = /^cons-[0-9a-f]{64}$/;
 
 /**
- * El cobro de **este** consumidor, o la respuesta de error.
+ * El cobro de **este** consumidor en **su** cuenta, o la respuesta de error.
  *
- * Un cobro que existe pero es de otro devuelve `noEncontrado()`, igual que uno
- * que no existe: la diferencia entre "no existe" y "no es tuyo" es
- * información, y no es suya.
+ * Un cobro que existe pero es de otro consumidor o de otra cuenta devuelve
+ * `noEncontrado()`, igual que uno que no existe: la diferencia entre "no
+ * existe" y "no es tuyo" es información, y no es suya.
  */
 async function suCobro(
   ctx: ContextoApi,
-  consumidorId: string,
+  propietario: PropietarioConsumidor,
   id: string,
 ): Promise<Cobro | Respuesta> {
   if (!ID_DE_CONSUMIDOR.test(id)) {
@@ -137,7 +138,7 @@ async function suCobro(
     return comoHttpParaConsumidor({ tipo: 'PUERTO', error: encontrado.error });
   }
   const cobro = encontrado.valor;
-  if (cobro === null || !esDelConsumidor(cobro, consumidorId)) {
+  if (cobro === null || !esDelConsumidor(cobro, propietario)) {
     return noEncontrado();
   }
   return cobro;
@@ -183,7 +184,7 @@ async function pagoDe(ctx: ContextoApi, cobro: Cobro): Promise<PagoDeCobro | nul
  */
 export async function crearCobro(
   ctx: ContextoApi,
-  consumidorId: string,
+  propietario: PropietarioConsumidor,
   cuerpo: unknown,
 ): Promise<Respuesta> {
   const datos = cuerpoCrearCobroConsumidor.safeParse(cuerpo);
@@ -209,7 +210,7 @@ export async function crearCobro(
   // Tope por consumidor y por hora. Cada QR emitido queda pagable hasta la
   // medianoche (C4): un bucle con un token filtrado dejaría cientos vivos que
   // no se alcanzan a anular (T10 a escala).
-  if (ctx.cupoConsumidores !== undefined && !ctx.cupoConsumidores.consumir(consumidorId, ahora)) {
+  if (ctx.cupoConsumidores !== undefined && !ctx.cupoConsumidores.consumir(propietario.consumidorId, ahora)) {
     return error(
       429,
       'CUPO_POR_HORA_AGOTADO',
@@ -231,7 +232,10 @@ export async function crearCobro(
   const resultado = await crearCobroDeConsumidor(
     ctx.deps,
     {
-      consumidorId,
+      consumidorId: propietario.consumidorId,
+      // La cuenta sale de la identidad autenticada, jamás del cuerpo: el
+      // esquema no la lee y cualquier `cuenta` que mande el consumidor se descarta.
+      cuentaCobro: propietario.cuentaCobro,
       referenciaExterna: datos.data.referenciaExterna,
       montoCentavos: monto.valor,
       concepto: datos.data.concepto,
@@ -263,10 +267,10 @@ export async function crearCobro(
 /** `GET /api/v1/cobros/:id` — estado del cobro y, si está pagado, cuándo y por qué riel. */
 export async function verCobro(
   ctx: ContextoApi,
-  consumidorId: string,
+  propietario: PropietarioConsumidor,
   id: string,
 ): Promise<Respuesta> {
-  const cobro = await suCobro(ctx, consumidorId, id);
+  const cobro = await suCobro(ctx, propietario, id);
   if (esRespuesta(cobro)) return cobro;
   return ok({ cobro: aVistaConsumidor(cobro, await pagoDe(ctx, cobro)) });
 }
@@ -282,14 +286,14 @@ export async function verCobro(
  */
 export async function verCobroPorReferencia(
   ctx: ContextoApi,
-  consumidorId: string,
+  propietario: PropietarioConsumidor,
   referencia: string,
 ): Promise<Respuesta> {
   const validada = esquemaReferencia.safeParse(referencia);
   if (!validada.success) {
     return noEncontrado();
   }
-  const cobro = await suCobro(ctx, consumidorId, idDeCobroDeConsumidor(consumidorId, validada.data));
+  const cobro = await suCobro(ctx, propietario, idDeCobroDeConsumidor(propietario.consumidorId, validada.data));
   if (esRespuesta(cobro)) return cobro;
   return ok({ cobro: aVistaConsumidor(cobro, await pagoDe(ctx, cobro)) });
 }
@@ -297,10 +301,10 @@ export async function verCobroPorReferencia(
 /** `GET /api/v1/cobros/:id/qr` — la imagen PNG del QR vigente, en base64. */
 export async function verQr(
   ctx: ContextoApi,
-  consumidorId: string,
+  propietario: PropietarioConsumidor,
   id: string,
 ): Promise<Respuesta> {
-  const cobro = await suCobro(ctx, consumidorId, id);
+  const cobro = await suCobro(ctx, propietario, id);
   if (esRespuesta(cobro)) return cobro;
 
   const png = await imagenDe(ctx, cobro);
@@ -329,7 +333,7 @@ export async function verQr(
  */
 export async function anular(
   ctx: ContextoApi,
-  consumidorId: string,
+  propietario: PropietarioConsumidor,
   id: string,
   cuerpo: unknown,
 ): Promise<Respuesta> {
@@ -338,7 +342,7 @@ export async function anular(
     return error(400, 'CUERPO_INVALIDO', datos.error.issues[0]?.message ?? 'cuerpo inválido');
   }
 
-  const cobro = await suCobro(ctx, consumidorId, id);
+  const cobro = await suCobro(ctx, propietario, id);
   if (esRespuesta(cobro)) return cobro;
 
   if (cobro.estado === 'ANULADO') {
@@ -358,7 +362,7 @@ export async function anular(
   // prefijo lo pone el servidor. Junto con el origen `contrato-consumidor`, es
   // lo que deja la evidencia auditable (regla #8) — si no, una anulación en
   // lote de un tercero queda firmada igual que una del dueño en su consola.
-  const motivo = `consumidor:${consumidorId} · ${datos.data.motivo ?? 'sin motivo declarado'}`;
+  const motivo = `consumidor:${propietario.consumidorId} · ${datos.data.motivo ?? 'sin motivo declarado'}`;
   const anulado = await anularCobro(ctx.deps, cobro, motivo, ctx.ahora(), 'contrato-consumidor');
   if (esExito(anulado)) {
     return ok({ resultado: 'ANULADO', cobro: aVistaConsumidor(anulado.valor, null) });
@@ -390,7 +394,7 @@ export async function anular(
  */
 export async function listarCobros(
   ctx: ContextoApi,
-  consumidorId: string,
+  propietario: PropietarioConsumidor,
   consulta: Readonly<Record<string, string>>,
 ): Promise<Respuesta> {
   const datos = consultaListado.safeParse(consulta);
@@ -421,7 +425,7 @@ export async function listarCobros(
   }
 
   const limite = datos.data.limite ?? LIMITE_POR_DEFECTO;
-  const cobros = await ctx.deps.cobros.listarDeConsumidor(consumidorId, desde, hasta, limite);
+  const cobros = await ctx.deps.cobros.listarDeConsumidor(propietario, desde, hasta, limite);
   if (!esExito(cobros)) {
     return comoHttpParaConsumidor({ tipo: 'PUERTO', error: cobros.error });
   }

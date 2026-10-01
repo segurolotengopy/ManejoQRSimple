@@ -10,7 +10,7 @@
  * Cumple lo que `docs/05 §5` prometía: datos sintéticos para el entorno local.
  */
 
-import { construirPuertos, describirError } from '@mqs/composicion';
+import { construirPuertos, describirError, leerCuentaDeCobro } from '@mqs/composicion';
 import {
   MessagingProviderEnMemoria,
   aDecimalBob,
@@ -36,10 +36,11 @@ const SEMILLA: readonly { readonly id: string; readonly monto: number; readonly 
   { id: 'demo-004', monto: 8_900, concepto: 'Reparación de notebook', horasDeVigencia: 1 / 60 },
 ];
 
-function cobroInicial(semilla: (typeof SEMILLA)[number]): Cobro {
+function cobroInicial(semilla: (typeof SEMILLA)[number], cuentaCobro: string): Cobro {
   return {
     id: semilla.id,
     proveedor: 'baneco',
+    cuentaCobro,
     estado: 'BORRADOR',
     montoCentavos: bs(semilla.monto),
     moneda: 'BOB',
@@ -53,6 +54,13 @@ function cobroInicial(semilla: (typeof SEMILLA)[number]): Cobro {
 }
 
 async function main(): Promise<number> {
+  // Los cobros del demo llevan la cuenta del proceso, la misma con la que la
+  // API y el satélite del demo los van a buscar.
+  const cuenta = leerCuentaDeCobro(process.env);
+  if (cuenta === null) {
+    console.error('✖ CUENTA solo admite minúsculas, números y guiones (hasta 24 caracteres).');
+    return 1;
+  }
   const db = conectarAlEmulador();
 
   // Persistencia real (emulador) + QR de mock: no hace falta el banco.
@@ -81,7 +89,7 @@ async function main(): Promise<number> {
   for (const semilla of SEMILLA) {
     const venceEn = new Date(AHORA.getTime() + semilla.horasDeVigencia * HORA);
 
-    const emitido = await emitirQr(deps, cobroInicial(semilla), venceEn, AHORA);
+    const emitido = await emitirQr(deps, cobroInicial(semilla, cuenta), venceEn, AHORA);
     if (!esExito(emitido)) {
       const yaExiste = emitido.error.tipo === 'PUERTO' && emitido.error.error.tipo === 'CONFLICTO';
       console.error(

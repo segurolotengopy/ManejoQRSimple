@@ -22,8 +22,11 @@ import {
   exito,
   fallo,
   registrarDeteccion,
+  idDeCobroDeConsumidor,
   type Centavos,
+  type Cobro,
   type QrProvider,
+  type SolicitudQr,
 } from '@mqs/qr-core';
 import { describe, expect, it } from 'vitest';
 
@@ -36,14 +39,20 @@ import type { ContextoApi } from './handlers.js';
 import type { Metodo, Peticion } from './tipos.js';
 
 const AHORA = new Date('2026-08-28T12:00:00.000Z');
+/** La cuenta de cobro de este proceso, y la de los consumidores de estas pruebas. */
+const CUENTA = 'cuenta-a';
 const TOKEN_DUEÑO = 'token-de-prueba-del-dueño-local';
 const TOKEN_A = 'token-de-prueba-del-consumidor-a';
 const TOKEN_B = 'token-de-prueba-del-consumidor-b';
 
 const verificador: VerificadorDeToken = (t) => {
   if (t === TOKEN_DUEÑO) return Promise.resolve({ tipo: 'dueño', id: 'dueño' });
-  if (t === TOKEN_A) return Promise.resolve({ tipo: 'consumidor', consumidorId: 'novuchat' });
-  if (t === TOKEN_B) return Promise.resolve({ tipo: 'consumidor', consumidorId: 'otra-app' });
+  if (t === TOKEN_A) {
+    return Promise.resolve({ tipo: 'consumidor', consumidorId: 'novuchat', cuentaCobro: CUENTA });
+  }
+  if (t === TOKEN_B) {
+    return Promise.resolve({ tipo: 'consumidor', consumidorId: 'otra-app', cuentaCobro: CUENTA });
+  }
   return Promise.resolve(null);
 };
 
@@ -53,18 +62,19 @@ function monto(valor: number): Centavos {
   return r.valor;
 }
 
-function armar() {
+function armar(qr: QrProvider = new QrProviderEnMemoria(() => AHORA)) {
   const evidencia = new EvidenceStoreEnMemoria();
   const avisos = new AvisosEnMemoria();
   const cobros = new CobroRepositoryEnMemoria(evidencia);
   const watcher = new PaymentWatcherEnMemoria();
   const ctx: ContextoApi = {
+    cuentaCobro: CUENTA,
     abonosSinConciliar: new AbonosSinConciliarEnMemoria(),
     deps: {
       cobros,
       evidencia,
       avisos,
-      qr: new QrProviderEnMemoria(() => AHORA),
+      qr,
       watcher,
       mensajeria: new MessagingProviderEnMemoria(),
       politica: POLITICA_POR_DEFECTO,
@@ -199,6 +209,125 @@ describe('POST /api/v1/cobros', () => {
     const { ctx } = armar();
     const r = await crear(ctx, TOKEN_A, cuerpo);
     expect(r.status).toBe(400);
+  });
+});
+
+/**
+ * Un cobro del mismo consumidor y de la misma referencia, pero de **otra
+ * cuenta**: es lo que existiría si dos cuentas compartieran una base. El id es
+ * el que derivaría el contrato, así que el consumidor lo encontraría por id y
+ * por referencia si el filtro por cuenta no existiera.
+ */
+function cobroDeOtraCuenta(): Cobro {
+  return {
+    id: idDeCobroDeConsumidor('novuchat', COBRO.referenciaExterna),
+    proveedor: 'baneco',
+    cuentaCobro: 'cuenta-b',
+    estado: 'QR_ACTIVO',
+    montoCentavos: monto(15_050),
+    moneda: 'BOB',
+    qrVersion: 1,
+    qrVigente: {
+      qrVersion: 1,
+      referenciaProveedor: 'qr-de-la-cuenta-b',
+      emitidoEn: AHORA,
+      venceEn: new Date(AHORA.getTime() + 72 * 3_600_000),
+      origen: 'api-baneco',
+      imagenRef: 'img-de-la-cuenta-b',
+      hashImagen: null,
+    },
+    creadoEn: AHORA,
+    telefonoCliente: null,
+    concepto: 'Plan mensual',
+    consumidor: { consumidorId: 'novuchat', referenciaExterna: COBRO.referenciaExterna },
+  };
+}
+
+class QrContandoAnulaciones extends QrProviderEnMemoria {
+  anulaciones: string[] = [];
+  emisiones = 0;
+  override emitir(solicitud: SolicitudQr): ReturnType<QrProviderEnMemoria['emitir']> {
+    this.emisiones += 1;
+    return super.emitir(solicitud);
+  }
+  override anular(referencia: string): ReturnType<QrProviderEnMemoria['anular']> {
+    this.anulaciones.push(referencia);
+    return super.anular(referencia);
+  }
+}
+
+describe('la cuenta de cobro del consumidor', () => {
+  it('la cuenta sale de la identidad: un cuerpo con otra cuenta se descarta', async () => {
+    const { ctx, cobros } = armar();
+    const r = await crear(ctx, TOKEN_A, { ...COBRO, cuentaCobro: 'cuenta-b', cuenta: 'cuenta-b' });
+
+    expect(r.status).toBe(201);
+    const guardado = await cobros.obtener(String(cobroDe(r)['id']));
+    expect(esExito(guardado) && guardado.valor?.cuentaCobro).toBe(CUENTA);
+  });
+
+  it('la respuesta no expone la cuenta, ni siquiera la propia', async () => {
+    const { ctx } = armar();
+    const creada = await crear(ctx);
+    const id = String(cobroDe(creada)['id']);
+    const consultada = await enrutar(ctx, verificador, pedir('GET', `/api/v1/cobros/${id}`));
+    const listada = await enrutar(ctx, verificador, pedir('GET', '/api/v1/cobros'));
+
+    for (const r of [creada, consultada, listada]) {
+      expect(JSON.stringify(r.cuerpo)).not.toContain('cuentaCobro');
+      expect(JSON.stringify(r.cuerpo)).not.toContain(CUENTA);
+    }
+  });
+
+  it('un cobro del mismo consumidor en otra cuenta es 404 por id, por referencia y en /qr', async () => {
+    const { ctx, cobros } = armar();
+    const ajeno = cobroDeOtraCuenta();
+    await cobros.guardar(ajeno);
+
+    for (const ruta of [
+      `/api/v1/cobros/${ajeno.id}`,
+      `/api/v1/cobros/por-referencia/${COBRO.referenciaExterna}`,
+      `/api/v1/cobros/${ajeno.id}/qr`,
+    ]) {
+      const r = await enrutar(ctx, verificador, pedir('GET', ruta));
+      expect([ruta, r.status]).toEqual([ruta, 404]);
+    }
+  });
+
+  it('anular un cobro de otra cuenta es 404, no toca el banco y no cambia el cobro', async () => {
+    const qr = new QrContandoAnulaciones(() => AHORA);
+    const { ctx, cobros } = armar(qr);
+    const ajeno = cobroDeOtraCuenta();
+    await cobros.guardar(ajeno);
+
+    const r = await enrutar(ctx, verificador, pedir('POST', `/api/v1/cobros/${ajeno.id}/anular`, {}));
+
+    expect(r.status).toBe(404);
+    expect(qr.anulaciones).toEqual([]);
+    const despues = await cobros.obtener(ajeno.id);
+    expect(esExito(despues) && despues.valor).toEqual(ajeno);
+  });
+
+  it('el cobro de otra cuenta no aparece en el listado', async () => {
+    const { ctx, cobros } = armar();
+    await cobros.guardar(cobroDeOtraCuenta());
+    await crear(ctx, TOKEN_A, { ...COBRO, referenciaExterna: 'ref-propia' });
+
+    const r = await enrutar(ctx, verificador, pedir('GET', '/api/v1/cobros'));
+    const referencias = (cuerpoDe(r)['cobros'] as Cuerpo[]).map((c) => c['referenciaExterna']);
+    expect(referencias).toEqual(['ref-propia']);
+  });
+
+  it('crear con la referencia de un cobro propio en otra cuenta es 409 y no emite ningún QR', async () => {
+    const qr = new QrContandoAnulaciones(() => AHORA);
+    const { ctx, cobros } = armar(qr);
+    await cobros.guardar(cobroDeOtraCuenta());
+
+    const r = await crear(ctx);
+
+    expect(r.status).toBe(409);
+    expect(codigoDe(r)).toBe('REFERENCIA_EXTERNA_EN_USO');
+    expect(qr.emisiones).toBe(0);
   });
 });
 

@@ -24,6 +24,8 @@ import {
 
 /** 12:00 UTC = 08:00 en Bolivia del 28: la ventana es 25, 26 y 27. */
 const AHORA = new Date('2026-08-28T12:00:00.000Z');
+/** La cuenta de cobro de este satélite en las pruebas. */
+const CUENTA = 'cuenta-a';
 
 function armar(watcherPropio?: PaymentWatcher) {
   const evidencia = new EvidenceStoreEnMemoria();
@@ -92,7 +94,7 @@ describe('cerrarDiasPendientes()', () => {
     const { deps, watcher, abonosSinConciliar } = armar();
     watcher.cargarAbono('qr-de-nadie', abonoHuerfano());
 
-    const resultados = await cerrarDiasPendientes(deps, AHORA, new Set());
+    const resultados = await cerrarDiasPendientes(deps, CUENTA, AHORA, new Set());
     expect(resultados.map((r) => r.clave)).toEqual(['2026-08-25', '2026-08-26', '2026-08-27']);
     const ayer = resultados.at(-1);
     expect(ayer?.tipo === 'CERRADO' && ayer.resumen.huerfanos).toEqual(['baneco:qr-de-nadie:tx-9']);
@@ -114,27 +116,43 @@ describe('cerrarDiasPendientes()', () => {
     };
     const { deps } = armar(caido);
 
-    const resultados = await cerrarDiasPendientes(deps, AHORA, new Set());
+    const resultados = await cerrarDiasPendientes(deps, CUENTA, AHORA, new Set());
     expect(resultados.every((r) => r.tipo === 'ERROR')).toBe(true);
     expect(resultados.some(cerroCompleto)).toBe(false);
   });
 });
 
 describe('describirCierre()', () => {
-  it('resume en conteos, sin datos del pagador (reglas #4 y #9)', () => {
-    const linea = describirCierre('2026-08-27', {
-      abonosLeidos: 3,
-      confirmados: ['a'],
-      enRevision: [],
-      yaRegistrados: 1,
-      sinCorroborar: [],
-      huerfanos: ['baneco:qr-x:tx-1'],
-      nuevosParaRevisar: [],
-      conError: [],
-    });
-    expect(linea).toBe(
-      'cierre 2026-08-27: abonos=3 confirmados=1 enRevision=0 yaRegistrados=1 sinCorroborar=0 huerfanos=1 ' +
-        'nuevosParaRevisar=0',
+  const resumen = {
+    abonosLeidos: 3,
+    confirmados: ['a'],
+    enRevision: [],
+    yaRegistrados: 1,
+    sinCorroborar: [],
+    huerfanos: ['baneco:qr-x:tx-1'],
+    deOtraCuenta: [],
+    nuevosParaRevisar: [],
+    conError: [],
+  };
+
+  it('resume en conteos y nombra la cuenta, sin datos del pagador (reglas #4 y #9)', () => {
+    expect(describirCierre('2026-08-27', 'cuenta-a', resumen)).toBe(
+      'cierre 2026-08-27 cuenta=cuenta-a: abonos=3 confirmados=1 enRevision=0 yaRegistrados=1 sinCorroborar=0 ' +
+        'huerfanos=1 nuevosParaRevisar=0',
+    );
+  });
+
+  it('agrega deOtraCuenta solo cuando hay', () => {
+    expect(
+      describirCierre('2026-08-27', 'cuenta-a', {
+        ...resumen,
+        huerfanos: [],
+        deOtraCuenta: ['baneco:qr-x:tx-2'],
+        nuevosParaRevisar: ['baneco:qr-x:tx-2'],
+      }),
+    ).toBe(
+      'cierre 2026-08-27 cuenta=cuenta-a: abonos=3 confirmados=1 enRevision=0 yaRegistrados=1 sinCorroborar=0 ' +
+        'huerfanos=0 deOtraCuenta=1 nuevosParaRevisar=1',
     );
   });
 });

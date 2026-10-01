@@ -22,6 +22,8 @@ import { describirPasada, unaPasada, type ResumenPasada } from './pasada.js';
 
 const T0 = new Date('2026-08-27T12:00:00.000Z');
 const MONTO = 12_345;
+/** La cuenta de cobro de este satélite en las pruebas. */
+const CUENTA = 'cuenta-a';
 
 function bs(valor: number): Centavos {
   const r = centavos(valor);
@@ -33,6 +35,7 @@ function unCobro(sobrescribir: Partial<Cobro> = {}): Cobro {
   return {
     id: 'cobro-1',
     proveedor: 'baneco',
+    cuentaCobro: CUENTA,
     estado: 'ENVIADO',
     montoCentavos: bs(MONTO),
     moneda: 'BOB',
@@ -103,8 +106,25 @@ function comoResumen(r: Awaited<ReturnType<typeof unaPasada>>): ResumenPasada {
 describe('unaPasada()', () => {
   it('no hace nada si no hay cobros pendientes', async () => {
     const { deps } = armar();
-    const resumen = comoResumen(await unaPasada(deps, T0));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, T0));
     expect(resumen.revisados).toBe(0);
+  });
+
+  it('un pendiente de otra cuenta no se consulta ni se vence', async () => {
+    // Con las credenciales de esta cuenta no se le pregunta al banco por QRs de
+    // otra, ni se anulan: serían llamadas con el usuario API equivocado.
+    const { deps, cobros, watcher, qr } = armar();
+    const ajeno = unCobro({ id: 'ajeno', cuentaCobro: 'cuenta-b' });
+    await cobros.guardar(ajeno);
+    watcher.cargarAbono('qr-1', abono('qr-1'));
+
+    const muyTarde = new Date(T0.getTime() + 100 * 3_600_000);
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, muyTarde));
+
+    expect(resumen.revisados).toBe(0);
+    expect(qr.estaAnulado('qr-1')).toBe(false);
+    const despues = await cobros.obtener('ajeno');
+    expect(esExito(despues) && despues.valor).toEqual(ajeno);
   });
 
   it('confirma un cobro cuyo abono ya está en el banco', async () => {
@@ -112,7 +132,7 @@ describe('unaPasada()', () => {
     await cobros.guardar(unCobro());
     watcher.cargarAbono('qr-1', abono('qr-1'));
 
-    const resumen = comoResumen(await unaPasada(deps, new Date(T0.getTime() + 1_900_000)));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, new Date(T0.getTime() + 1_900_000)));
     expect(resumen.confirmados).toEqual(['cobro-1']);
     expect(resumen.revisados).toBe(1);
 
@@ -124,7 +144,7 @@ describe('unaPasada()', () => {
     const { deps, cobros } = armar();
     await cobros.guardar(unCobro());
 
-    const resumen = comoResumen(await unaPasada(deps, new Date(T0.getTime() + 600_000)));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, new Date(T0.getTime() + 600_000)));
     expect(resumen.sinAbono).toEqual(['cobro-1']);
     expect(resumen.confirmados).toEqual([]);
   });
@@ -134,7 +154,7 @@ describe('unaPasada()', () => {
     await cobros.guardar(unCobro());
     watcher.cargarAbono('qr-1', abono('qr-1', MONTO - 1));
 
-    const resumen = comoResumen(await unaPasada(deps, new Date(T0.getTime() + 1_900_000)));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, new Date(T0.getTime() + 1_900_000)));
     expect(resumen.enRevision).toEqual(['cobro-1']);
   });
 
@@ -146,7 +166,7 @@ describe('unaPasada()', () => {
     watcher.cargarAbono('qr-1', abono('qr-1'));
 
     const muyTarde = new Date(T0.getTime() + 100 * 3_600_000);
-    const resumen = comoResumen(await unaPasada(deps, muyTarde));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, muyTarde));
 
     expect(resumen.confirmados).toEqual(['cobro-1']);
     expect(resumen.vencidos).toEqual([]);
@@ -159,7 +179,7 @@ describe('unaPasada()', () => {
     await cobros.guardar(unCobro());
 
     const muyTarde = new Date(T0.getTime() + 100 * 3_600_000);
-    const resumen = comoResumen(await unaPasada(deps, muyTarde));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, muyTarde));
 
     expect(resumen.vencidos).toEqual(['cobro-1']);
     expect(qr.estaAnulado('qr-1')).toBe(true);
@@ -172,7 +192,7 @@ describe('unaPasada()', () => {
     await cobros.guardar(unCobro());
 
     const muyTarde = new Date(T0.getTime() + 100 * 3_600_000);
-    const resumen = comoResumen(await unaPasada(deps, muyTarde));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, muyTarde));
 
     expect(resumen.conError.map((e) => e.cobroId)).toEqual(['cobro-1']);
     const guardado = await cobros.obtener('cobro-1');
@@ -185,7 +205,7 @@ describe('unaPasada()', () => {
     await cobros.guardar(unCobro({ id: 'b', qrVigente: { ...unCobro().qrVigente!, referenciaProveedor: 'qr-b' } }));
     watcher.cargarAbono('qr-a', abono('qr-a'));
 
-    const resumen = comoResumen(await unaPasada(deps, new Date(T0.getTime() + 1_900_000)));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, new Date(T0.getTime() + 1_900_000)));
     expect(resumen.revisados).toBe(2);
     expect(resumen.confirmados).toEqual(['a']);
     expect(resumen.sinAbono).toEqual(['b']);
@@ -214,7 +234,7 @@ describe('unaPasada()', () => {
     await cobros.guardar(unCobro({ id: 'a', qrVigente: { ...unCobro().qrVigente!, referenciaProveedor: 'qr-a' } }));
     await cobros.guardar(unCobro({ id: 'b', qrVigente: { ...unCobro().qrVigente!, referenciaProveedor: 'qr-b' } }));
 
-    const resumen = comoResumen(await unaPasada(deps, new Date(T0.getTime() + 600_000)));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, new Date(T0.getTime() + 600_000)));
     expect(resumen.conError.map((e) => e.cobroId)).toEqual(['a']);
     expect(resumen.sinAbono).toEqual(['b']);
   });
@@ -236,7 +256,7 @@ describe('unaPasada()', () => {
         }),
     };
 
-    const r = await unaPasada({ ...deps, cobros: cobrosRotos }, T0);
+    const r = await unaPasada({ ...deps, cobros: cobrosRotos }, CUENTA, T0);
     expect('errorFatal' in r).toBe(true);
   });
 
@@ -246,8 +266,8 @@ describe('unaPasada()', () => {
     watcher.cargarAbono('qr-1', abono('qr-1'));
 
     const cuando = new Date(T0.getTime() + 1_900_000);
-    await unaPasada(deps, cuando);
-    const segunda = comoResumen(await unaPasada(deps, cuando));
+    await unaPasada(deps, CUENTA, cuando);
+    const segunda = comoResumen(await unaPasada(deps, CUENTA, cuando));
 
     // Tras confirmar, el cobro deja de estar pendiente: no vuelve a revisarse.
     expect(segunda.revisados).toBe(0);
@@ -264,7 +284,7 @@ describe('mensajería no configurada', () => {
     await cobros.guardar(unCobro());
     watcher.cargarAbono('qr-1', abono('qr-1'));
 
-    const resumen = comoResumen(await unaPasada(deps, new Date(T0.getTime() + 1_900_000)));
+    const resumen = comoResumen(await unaPasada(deps, CUENTA, new Date(T0.getTime() + 1_900_000)));
     expect(resumen.confirmados).toEqual(['cobro-1']);
     // Y el aviso pendiente queda anotado, no se pierde en silencio.
     expect(mensajeria.pendientes).toEqual(['confirmación del cobro cobro-1']);

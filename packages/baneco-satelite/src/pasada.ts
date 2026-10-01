@@ -36,9 +36,12 @@ export type ResumenPasada = {
 
 export async function unaPasada(
   deps: DepsVigilancia,
+  cuentaCobro: string,
   ahora: Date,
 ): Promise<ResumenPasada | { readonly errorFatal: ErrorCasoUso }> {
-  const pendientes = await deps.cobros.listarPendientes();
+  // Solo los de la cuenta de este satélite: con sus credenciales no se le
+  // pregunta al banco por QRs de otra cuenta ni se anulan.
+  const pendientes = await deps.cobros.listarPendientes(cuentaCobro);
   if (!esExito(pendientes)) {
     // Sin la lista no hay pasada: no se puede saber qué quedó sin mirar.
     return { errorFatal: { tipo: 'PUERTO', error: pendientes.error } };

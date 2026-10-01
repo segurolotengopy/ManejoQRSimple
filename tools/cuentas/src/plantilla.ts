@@ -21,6 +21,9 @@ export const VARIABLES = [
   'API_TOKEN_LOCAL',
 ] as const;
 
+const PREFIJO_TOKEN = 'CONSUMIDOR_TOKEN_';
+const PREFIJO_CUENTA = 'CONSUMIDOR_CUENTA_';
+
 export function plantilla(alias: string): string {
   return [
     `# Credenciales de la cuenta de cobro «${alias}» en Banco Económico.`,
@@ -47,6 +50,9 @@ export function plantilla(alias: string): string {
     '# responde a nadie. El identificador sale del nombre de la variable, en',
     '# minúsculas (CONSUMIDOR_TOKEN_NOVUCHAT → «novuchat»).',
     '# CONSUMIDOR_TOKEN_NOVUCHAT=<token del consumidor novuchat>',
+    '# Cada consumidor cobra en UNA cuenta y tiene que decir cuál: sin esta línea',
+    '# la API no arranca. En este archivo, la única cuenta admitida es esta.',
+    `# CONSUMIDOR_CUENTA_NOVUCHAT=${alias}`,
     '',
     '# Y si ese consumidor quiere que le avisemos cuando le pagan (docs/10 §4.6),',
     '# su URL https y el secreto con el que firmamos el aviso. Las dos o ninguna:',
@@ -82,4 +88,37 @@ export function variablesSinCompletar(contenido: string): readonly string[] {
     const valor = linea.slice(variable.length + 1).trim();
     return valor === '' || (valor.startsWith('<') && valor.endsWith('>'));
   });
+}
+
+/**
+ * Qué consumidores no dicen en qué cuenta cobran, o dicen otra que `alias`.
+ *
+ * Mira solo las líneas **no comentadas** `CONSUMIDOR_TOKEN_<X>=` con valor, y
+ * para cada una devuelve `CONSUMIDOR_CUENTA_<X>` si esa línea falta, está vacía
+ * o su valor no es `alias`. Devuelve **nombres de variable**, nunca valores:
+ * el de una cuenta mal puesta podría ser un número de cuenta pegado por error.
+ */
+export function consumidoresSinCuenta(contenido: string, alias: string): readonly string[] {
+  const lineas = contenido.split('\n').map((l) => l.trim());
+  const valorDe = (variable: string): string | null => {
+    const linea = lineas.find((l) => !l.startsWith('#') && l.startsWith(`${variable}=`));
+    return linea === undefined ? null : linea.slice(variable.length + 1).trim();
+  };
+
+  const faltan: string[] = [];
+  for (const linea of lineas) {
+    if (linea.startsWith('#') || !linea.startsWith(PREFIJO_TOKEN)) {
+      continue;
+    }
+    const igual = linea.indexOf('=');
+    if (igual === -1 || linea.slice(igual + 1).trim() === '') {
+      continue;
+    }
+    const sufijo = linea.slice(PREFIJO_TOKEN.length, igual);
+    const cuenta = `${PREFIJO_CUENTA}${sufijo}`;
+    if (valorDe(cuenta) !== alias && !faltan.includes(cuenta)) {
+      faltan.push(cuenta);
+    }
+  }
+  return faltan;
 }

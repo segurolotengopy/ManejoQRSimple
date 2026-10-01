@@ -10,9 +10,10 @@ El repositorio quedó en el estándar de SeguridadGeneral, **stack `solo-ci`, re
 prueba es el 36890902794, CI verde en `main`, head `d0cdc6e`. Antes se resolvieron los
 **diez PRs de Dependabot**: #42 se fusionó tal cual y los otros nueve se reemplazaron por
 tres PRs propios, #48, #52 y #53, que juntan los que se pisaban en el `package-lock.json`.
-`npm audit` quedó en cero. **Falta un paso, que
-necesita el OK del dueño:** cambiar el ruleset de `main` para exigir `compuerta-pr` y una
-aprobación (decisión 22).
+`npm audit` quedó en cero. Después aparecieron siete PRs más de Dependabot, sobre las acciones
+del reusable: se fusionaron #57, #58, #59, #61 y #63, #65 reemplazó a #62 y #60 se cerró solo
+al fusionar #61. **El ruleset de `main` se cambió el 2026-10-01** a las 14:21 de Bolivia, con
+el OK del dueño en el chat: exige `compuerta-pr` y una aprobación (decisión 22).
 
 Antes, el 2026-09-20, sesión «contrato para consumidores»: bloques 1 y 2 del frente
 `Prompts/cobrador-contrato-para-consumidores.md`, **mergeados y ensayados contra el banco
@@ -207,10 +208,13 @@ Además se cerró **C9: no hay comisión bancaria** (decisión 17).
     - **Las excepciones viven solo en `.devsecops.yml`:** hoy no hay ninguna.
     - **Dependabot con `cooldown`** de 7 días, sin retrasar las de seguridad (#56).
     - **El ruleset de `main` pasa a exigir `compuerta-pr` y una aprobación de un code
-      owner, con solo squash, hilos resueltos y rama al día.** Hace falta una segunda cuenta:
-      los PRs los abre `AndresAlberdi` y los aprueba `segurolotengopy`. **Está preparado y
-      sin aplicar, a la espera del OK del dueño.** Hasta entonces `compuerta-pr` corre pero no
-      es obligatoria.
+      owner, con solo squash, hilos resueltos y rama al día.** Aplicado el 2026-10-01 con el OK
+      del dueño, sobre el ruleset existente `main-protegida` (mismo id, sin bypass). Hace
+      falta una segunda cuenta: los PRs los abre `AndresAlberdi` y los aprueba
+      `segurolotengopy`, que Claude Code opera con `GH_CONFIG_DIR=$HOME/.config/gh-pro` y el
+      OK del dueño en el chat, PR por PR. Reversible con una sola llamada `PUT` del ruleset
+      anterior, que tenía cero aprobaciones y exigía `Lint · Types · Tests · Build` y
+      `Secretos en el historial`.
 
 ## Estado actual
 
@@ -615,11 +619,9 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 **Dueño — lo demás:**
 
-0. **Autorizar el cambio del ruleset de `main`** (decisión 22): exigir `compuerta-pr` como único
-   check, una aprobación de un code owner, solo squash, hilos resueltos y rama al día. Desde
-   ese momento ningún PR se fusiona sin la aprobación de la otra cuenta, que da Claude Code
-   con el OK del dueño en el chat. Reversible: se vuelve al ruleset anterior con una sola
-   llamada.
+0. ~~Autorizar el cambio del ruleset de `main`~~ — **hecho el 2026-10-01** (decisión 22). Desde
+   ahora ningún PR se fusiona sin la aprobación de la otra cuenta, que da Claude Code con el
+   OK del dueño en el chat, PR por PR.
 0bis. Quitar el consumidor de ensayo del archivo de credenciales de la cuenta `prod`, y
    borrar `~/.manejoqr/ensayo`, cuando ya no haga falta.
 1. ~~Autorizar #21, #24 y #25~~ — mergeados el 2026-09-12.

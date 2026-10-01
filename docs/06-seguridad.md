@@ -100,10 +100,11 @@ constante. Las cubren las reglas inviolables de CLAUDE.md, los tests del dominio
 - Dependabot con `cooldown`; los majors de runtime, fijados (Node 22 LTS).
 - Secret scanning nativo y push protection de GitHub, activos: el repositorio es público.
   Gitleaks los complementa con las reglas propias del proyecto.
-- Protección de `main`: sin force push, historia lineal y squash-merge. Hoy exige los checks
-  `Lint · Types · Tests · Build` y `Secretos en el historial`, sin aprobaciones. El cambio
-  preparado, pendiente del OK del dueño, pasa a exigir solo `compuerta-pr` y una aprobación de un
-  code owner (decisión 22).
+- Protección de `main`, desde el 2026-10-01: sin force push ni bypass, historia lineal y solo
+  squash. Exige un único check, `compuerta-pr`, que agrega la calidad y toda la seguridad
+  estática, y una aprobación de un code owner. Los hilos de revisión deben estar resueltos, una
+  push nueva descarta las aprobaciones y la rama debe estar al día antes de fusionar. El autor
+  no puede aprobar su propio PR, así que hace falta una segunda cuenta (ESTADO, decisión 22).
 
 ## 5. Checklist previo a cada merge
 

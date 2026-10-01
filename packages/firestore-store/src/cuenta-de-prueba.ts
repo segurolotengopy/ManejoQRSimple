@@ -15,8 +15,12 @@
  * Firestore no entra dato bancario (regla #4).
  */
 
+import { esAliasDeCuenta } from '@mqs/qr-core';
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { z } from 'zod';
+
+import { COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
+import { COLECCION_COBROS } from './repositorio.js';
 
 export const COLECCION_CONFIGURACION = 'configuracion';
 export const DOC_CUENTA_DE_PRUEBA = 'cuentaDePrueba';
@@ -28,6 +32,20 @@ export type MarcaDeCuenta =
   | { readonly tipo: 'COINCIDE'; readonly cuenta: string }
   /** Los datos son de otra cuenta. Nadie arranca. */
   | { readonly tipo: 'CONFLICTO'; readonly cuenta: string; readonly guardada: string }
+  /**
+   * El emulador no tiene marca **y ya trae** cobros o abonos sin una cuenta de
+   * cobro válida, y nadie autorizó explícitamente a marcarlo. No se creó
+   * ninguna marca ni se escribió nada: una marca puesta ahora diría con qué
+   * cuenta arrancó este proceso, no de quién son esos datos, y el siguiente
+   * arranque —o el otro proceso que sube a la vez— los atribuiría en silencio.
+   * Solo conteos: nunca ids ni contenido.
+   */
+  | {
+      readonly tipo: 'SIN_MARCA_CON_DATOS';
+      readonly cuenta: string;
+      readonly cobros: number;
+      readonly abonos: number;
+    }
   | { readonly tipo: 'ERROR'; readonly detalle: string };
 
 export const marcaDoc = z.object({
@@ -35,21 +53,45 @@ export const marcaDoc = z.object({
   desde: z.custom<Timestamp>((v) => v instanceof Timestamp, { message: 'se esperaba un Timestamp' }),
 });
 
+/** ¿Este valor de `cuentaCobro` es un alias de cuenta válido? Todo lo demás es «sin cuenta». */
+export const esCuentaValida = (valor: unknown): valor is string =>
+  typeof valor === 'string' && esAliasDeCuenta(valor);
+
 /**
  * Deja la marca si no había, y la compara si ya estaba. En una transacción: dos
  * procesos que arrancan a la vez sobre un emulador recién creado no pueden
  * marcarlo con alias distintos.
+ *
+ * **La marca no se crea sobre datos sin cuenta** salvo que quien llama lo
+ * autorice (`permitirMarcarConDatos`, que sale de una acción explícita del
+ * dueño). Es lo que impide que la marca autorice, por sí sola, atribuir datos
+ * viejos: quien arranca primero la pondría con *su* cuenta y el siguiente
+ * arranque, o el otro proceso que sube casi a la vez, los atribuiría en
+ * silencio. La comprobación y la escritura van en la misma transacción —los
+ * cobros y abonos se leen con `tx.get`—, así que dos procesos simultáneos no
+ * pueden colarse entre una y otra.
  */
 export async function fijarCuentaDePrueba(
   db: Firestore,
   cuenta: string,
   ahora: Date,
+  permitirMarcarConDatos: boolean,
 ): Promise<MarcaDeCuenta> {
   const ref = db.collection(COLECCION_CONFIGURACION).doc(DOC_CUENTA_DE_PRUEBA);
   try {
     return await db.runTransaction<MarcaDeCuenta>(async (tx) => {
       const actual = await tx.get(ref);
       if (!actual.exists) {
+        if (!permitirMarcarConDatos) {
+          // Todas las lecturas antes de cualquier escritura.
+          const cobros = await tx.get(db.collection(COLECCION_COBROS));
+          const abonos = await tx.get(db.collection(COLECCION_ABONOS_SIN_CONCILIAR));
+          const sinCuentaCobros = cobros.docs.filter((d) => !esCuentaValida(d.get('cuentaCobro'))).length;
+          const sinCuentaAbonos = abonos.docs.filter((d) => !esCuentaValida(d.get('cuentaCobro'))).length;
+          if (sinCuentaCobros + sinCuentaAbonos > 0) {
+            return { tipo: 'SIN_MARCA_CON_DATOS', cuenta, cobros: sinCuentaCobros, abonos: sinCuentaAbonos };
+          }
+        }
         tx.create(ref, { cuenta, desde: Timestamp.fromDate(ahora) });
         return { tipo: 'MARCADA', cuenta };
       }
@@ -82,6 +124,15 @@ export function explicarMarca(marca: MarcaDeCuenta): string | null {
         `  pregunte al banco por QRs que no son de esa cuenta.\n` +
         `  Arrancá las cuatro terminales con el mismo CUENTA=${marca.guardada}, o levantá el\n` +
         `  emulador de la otra cuenta (docs/Integraciones/baneco/03-prueba-en-produccion.md §2).`
+      );
+    case 'SIN_MARCA_CON_DATOS':
+      return (
+        `Hay ${String(marca.cobros)} cobro(s) y ${String(marca.abonos)} abono(s) anteriores sin cuenta de cobro ` +
+        'en un emulador que no tiene marca de cuenta. No se creó ninguna marca ni se escribió nada: una marca ' +
+        'puesta ahora diría con qué cuenta arrancó este proceso, no de quién son esos datos.\n' +
+        '  Para decidir: respalde la carpeta del emulador y, solo si esos datos son de la cuenta ' +
+        `«${marca.cuenta}», arranque una sola vez con ATRIBUIR_DATOS_ANTERIORES_A=${marca.cuenta}; ` +
+        'o borre el emulador y empiece de cero.'
       );
     case 'ERROR':
       return `No se pudo verificar de qué cuenta son los datos del emulador: ${marca.detalle}`;

@@ -25,9 +25,12 @@ export { hablaConProduccion, verificarProduccion } from './produccion.js';
 export {
   archivoDeCredenciales,
   esAliasDeCuenta,
+  leerAtribucionExplicita,
   leerCuentaDeCobro,
   leerCuentaDePrueba,
   prepararDatosDeLaCuenta,
+  VARIABLE_ATRIBUCION,
+  type AtribucionExplicita,
   type ErrorPreparacionDeCuenta,
   ALIAS_DE_CUENTA,
   CUENTA_POR_DEFECTO,

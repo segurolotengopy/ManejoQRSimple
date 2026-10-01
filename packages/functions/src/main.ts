@@ -19,9 +19,11 @@ import {
   describirError,
   explicarMarca,
   fijarCuentaDePrueba,
+  leerAtribucionExplicita,
   leerCuentaDeCobro,
   prepararDatosDeLaCuenta,
   verificarProduccion,
+  type AtribucionExplicita,
   type MarcaDeCuenta,
 } from '@mqs/composicion';
 import { aDecimalBob, esExito } from '@mqs/qr-core';
@@ -136,6 +138,7 @@ async function main(): Promise<number> {
 
   let prueba: ModoPrueba | null = null;
   let marca: MarcaDeCuenta | null = null;
+  let atribucionExplicita: AtribucionExplicita = { permitida: false, aviso: null };
   if (process.env['MODO_PRUEBA_PRODUCCION'] === '1') {
     const leido = leerModoPrueba(process.env, puertos.valor.resumen);
     if (!esExito(leido)) {
@@ -143,20 +146,28 @@ async function main(): Promise<number> {
       return 1;
     }
     prueba = leido.valor;
-    // Antes de tocar nada: ¿los datos de este emulador son de esta cuenta?
-    marca = await fijarCuentaDePrueba(db, prueba.cuenta, new Date());
+    // Antes de tocar nada: ¿los datos de este emulador son de esta cuenta? La
+    // marca no se crea sobre datos sin cuenta salvo que el dueño lo autorice
+    // expresamente (ATRIBUIR_DATOS_ANTERIORES_A=<esta cuenta>).
+    atribucionExplicita = leerAtribucionExplicita(process.env, cuenta);
+    marca = await fijarCuentaDePrueba(db, prueba.cuenta, new Date(), atribucionExplicita.permitida);
     const problema = explicarMarca(marca);
     if (problema !== null) {
       console.error(`✖ ${problema}`);
+      if (atribucionExplicita.aviso !== null) {
+        console.error(`  ${atribucionExplicita.aviso}`);
+      }
       return 1;
     }
   }
   // Siempre, con o sin modo prueba: un cobro pendiente sin cuenta queda fuera
   // de la consulta por cuenta y su QR seguiría pagable sin que nadie lo mire.
-  // En modo prueba se le pasa la marca tal como quedó: solo una que ya existía
-  // antes de este arranque autoriza atribuir los datos viejos.
+  // En modo prueba se le pasa la marca tal como quedó y si el dueño autorizó
+  // atribuir: sin marca previa ni autorización, los datos viejos no se tocan.
   const preparada = await prepararDatosDeLaCuenta(
-    marca === null ? { db, cuenta, modoPrueba: false } : { db, cuenta, modoPrueba: true, marca },
+    marca === null
+      ? { db, cuenta, modoPrueba: false }
+      : { db, cuenta, modoPrueba: true, marca, atribucionExplicita: atribucionExplicita.permitida },
   );
   if (!esExito(preparada)) {
     console.error(`✖ ${preparada.error.mensaje}`);

@@ -8,23 +8,23 @@
  * migración: si el emulador no tiene marca, o la marca es de otra cuenta, **no
  * se escribe nada**. Atribuir por suposición sería inventar un dato.
  *
- * Ojo con quién puso la marca: una marca que **este mismo proceso acaba de
- * crear** (`fijarCuentaDePrueba` devolvió `MARCADA`) solo dice con qué cuenta
- * arrancó este proceso, no de quién son los datos viejos. Quien llama —los
- * `main.ts`, por `prepararDatosDeLaCuenta`— atribuye únicamente cuando la marca
- * ya existía antes de este arranque (`COINCIDE`). Esta función no puede
- * distinguir una de otra por sí sola: en el documento se ven igual.
+ * Ojo con la marca: puesta sobre datos sin cuenta, solo diría con qué cuenta
+ * arrancó el proceso que la puso, no de quién son esos datos. La protección
+ * real es que **`fijarCuentaDePrueba` no crea la marca** sobre un emulador con
+ * datos sin cuenta (devuelve `SIN_MARCA_CON_DATOS`) salvo acción explícita del
+ * dueño (`ATRIBUIR_DATOS_ANTERIORES_A`, que lee `composicion`). Esta función no
+ * puede distinguir por sí sola una marca legítima de otra: en el documento se
+ * ven igual, por eso no se debe llamar sin pasar por esa puerta.
  *
  * Solo agrega el campo que falta. No toca `estado`, ni la evidencia, ni el
  * historial de QRs (reglas #6 y #8), y no pisa un `cuentaCobro` que ya esté.
  * Es idempotente: una segunda corrida no encuentra nada que atribuir.
  */
 
-import { esAliasDeCuenta } from '@mqs/qr-core';
 import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
 
 import { COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
-import { COLECCION_CONFIGURACION, DOC_CUENTA_DE_PRUEBA, marcaDoc } from './cuenta-de-prueba.js';
+import { COLECCION_CONFIGURACION, DOC_CUENTA_DE_PRUEBA, esCuentaValida, marcaDoc } from './cuenta-de-prueba.js';
 import { COLECCION_COBROS, ESTADOS_PENDIENTES } from './repositorio.js';
 
 export type AtribucionDeCuenta =
@@ -128,7 +128,7 @@ export async function contarSinCuentaDeCobro(db: Firestore, cuenta: string): Pro
     let pendientesDeOtraCuenta = 0;
     for (const doc of cobros.docs) {
       const valor: unknown = doc.get('cuentaCobro');
-      if (!esAlias(valor)) {
+      if (!esCuentaValida(valor)) {
         cobrosSinCuenta += 1;
       } else if (valor !== cuenta && esPendiente(doc.get('estado'))) {
         pendientesDeOtraCuenta += 1;
@@ -137,15 +137,13 @@ export async function contarSinCuentaDeCobro(db: Firestore, cuenta: string): Pro
     return {
       tipo: 'CONTADO',
       cobros: cobrosSinCuenta,
-      abonos: abonos.docs.filter((doc) => !esAlias(doc.get('cuentaCobro'))).length,
+      abonos: abonos.docs.filter((doc) => !esCuentaValida(doc.get('cuentaCobro'))).length,
       pendientesDeOtraCuenta,
     };
   } catch (causa) {
     return { tipo: 'ERROR', detalle: causa instanceof Error ? causa.message : 'falló la consulta a Firestore' };
   }
 }
-
-const esAlias = (valor: unknown): valor is string => typeof valor === 'string' && esAliasDeCuenta(valor);
 
 const esPendiente = (estado: unknown): boolean =>
   typeof estado === 'string' && (ESTADOS_PENDIENTES as readonly string[]).includes(estado);

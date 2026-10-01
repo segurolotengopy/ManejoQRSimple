@@ -28,6 +28,7 @@ import {
   describirLlamada,
   explicarMarca,
   fijarCuentaDePrueba,
+  leerAtribucionExplicita,
   leerCuentaDeCobro,
   prepararDatosDeLaCuenta,
   verificarProduccion,
@@ -106,20 +107,30 @@ async function main(): Promise<number> {
   // bucle: contra producción la barrera ya lo rechazó (`verificarProduccion`).
   const modoPrueba = process.env['MODO_PRUEBA_PRODUCCION'] === '1';
   if (db !== null) {
-    const marca = modoPrueba ? await fijarCuentaDePrueba(db, cuenta, new Date()) : null;
+    // La marca no se crea sobre datos sin cuenta salvo que el dueño lo autorice
+    // expresamente (ATRIBUIR_DATOS_ANTERIORES_A=<esta cuenta>).
+    const atribucionExplicita = leerAtribucionExplicita(process.env, cuenta);
+    const marca = modoPrueba
+      ? await fijarCuentaDePrueba(db, cuenta, new Date(), atribucionExplicita.permitida)
+      : null;
     if (marca !== null) {
       const problema = explicarMarca(marca);
       if (problema !== null) {
         console.error(`✖ ${problema}`);
+        if (atribucionExplicita.aviso !== null) {
+          console.error(`  ${atribucionExplicita.aviso}`);
+        }
         return 1;
       }
     }
     // Siempre, con o sin modo prueba: un cobro pendiente sin cuenta queda fuera
     // de la consulta por cuenta y el satélite dejaría de vigilar un QR pagable.
-    // En modo prueba se le pasa la marca tal como quedó: solo una que ya existía
-    // antes de este arranque autoriza atribuir los datos viejos.
+    // En modo prueba se le pasa la marca tal como quedó y si el dueño autorizó
+    // atribuir: sin marca previa ni autorización, los datos viejos no se tocan.
     const preparada = await prepararDatosDeLaCuenta(
-      marca === null ? { db, cuenta, modoPrueba: false } : { db, cuenta, modoPrueba: true, marca },
+      marca === null
+        ? { db, cuenta, modoPrueba: false }
+        : { db, cuenta, modoPrueba: true, marca, atribucionExplicita: atribucionExplicita.permitida },
     );
     if (!esExito(preparada)) {
       console.error(`✖ ${preparada.error.mensaje}`);

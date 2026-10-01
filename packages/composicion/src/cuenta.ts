@@ -18,6 +18,7 @@ export const CUENTA_POR_DEFECTO = 'prod';
 import {
   atribuirCuentaALoAnterior,
   contarSinCuentaDeCobro,
+  explicarMarca,
   type MarcaDeCuenta,
 } from '@mqs/firestore-store';
 import { esAliasDeCuenta, exito, fallo, type Resultado } from '@mqs/qr-core';
@@ -68,11 +69,20 @@ export type ErrorPreparacionDeCuenta =
       readonly mensaje: string;
     }
   /**
-   * Hay datos viejos sin cuenta y la marca del emulador la puso este mismo
-   * arranque: no dice de quién son. No se atribuye nada; decide el dueño.
+   * Defensa en profundidad. Hay datos viejos sin cuenta y la marca la puso este
+   * mismo arranque sin autorización explícita: no dice de quién son. No se
+   * atribuye nada; decide el dueño. Con `fijarCuentaDePrueba` cerrando la
+   * puerta (no marca sobre datos sin cuenta), esta rama casi no se alcanza.
    */
   | {
       readonly tipo: 'MARCA_RECIEN_PUESTA';
+      readonly cobros: number;
+      readonly abonos: number;
+      readonly mensaje: string;
+    }
+  /** El emulador no tiene marca y ya trae datos sin cuenta: no se creó ninguna marca. */
+  | {
+      readonly tipo: 'SIN_MARCA_CON_DATOS';
       readonly cobros: number;
       readonly abonos: number;
       readonly mensaje: string;
@@ -96,13 +106,17 @@ export type ErrorPreparacionDeCuenta =
  * En modo prueba recibe lo que devolvió `fijarCuentaDePrueba` (la marca), no la
  * vuelve a leer: de ella depende si se puede atribuir.
  *
- * 1. Solo en modo prueba **y solo si la marca ya existía** antes de este
- *    arranque (`COINCIDE`): `atribuirCuentaALoAnterior`, que agrega la cuenta a
- *    los cobros y abonos anteriores. Una marca que este mismo arranque acaba de
- *    crear (`MARCADA`) dice con qué cuenta arrancó el proceso, no de quién son
- *    los datos viejos: atribuir con ella sería hacerlo por suposición. Si hay
- *    datos sin cuenta, se aborta sin escribir y decide el dueño. (Que la
- *    migración corra sola en el arranque queda sujeto a la decisión D-A.)
+ * 1. Solo en modo prueba: `atribuirCuentaALoAnterior`, que agrega la cuenta a
+ *    los cobros y abonos anteriores, cuando la marca ya existía (`COINCIDE`)
+ *    o cuando el dueño autorizó explícitamente marcar sobre esos datos
+ *    (`atribucionExplicita`, de `ATRIBUIR_DATOS_ANTERIORES_A`). La protección
+ *    real es anterior: `fijarCuentaDePrueba` **no crea la marca** sobre datos
+ *    sin cuenta sin esa autorización (devuelve `SIN_MARCA_CON_DATOS`), así que
+ *    una marca recién puesta nunca queda autorizando por sí sola a atribuir.
+ *    Una marca `MARCADA` sin autorización explícita y con datos sin cuenta no
+ *    debería darse; si se diera, se aborta sin escribir (defensa en
+ *    profundidad). (Que la migración corra sola en el arranque queda sujeto a
+ *    la decisión D-A.)
  * 2. **Siempre**, con o sin modo prueba, `contarSinCuentaDeCobro`: se aborta si
  *    queda algún documento con la cuenta ausente o inválida, o algún cobro
  *    pendiente de **otra** cuenta. Un cobro pendiente que el filtro por cuenta
@@ -118,7 +132,12 @@ export type ErrorPreparacionDeCuenta =
 export async function prepararDatosDeLaCuenta(
   opciones: { readonly db: Firestore; readonly cuenta: string } & (
     | { readonly modoPrueba: false }
-    | { readonly modoPrueba: true; readonly marca: MarcaDeCuenta }
+    | {
+        readonly modoPrueba: true;
+        readonly marca: MarcaDeCuenta;
+        /** El dueño pidió expresamente atribuir los datos anteriores a esta cuenta. */
+        readonly atribucionExplicita: boolean;
+      }
   ),
 ): Promise<Resultado<{ readonly cobros: number; readonly abonos: number }, ErrorPreparacionDeCuenta>> {
   const { db, cuenta } = opciones;
@@ -128,7 +147,14 @@ export async function prepararDatosDeLaCuenta(
   if (opciones.modoPrueba) {
     const { marca } = opciones;
     switch (marca.tipo) {
+      case 'MARCADA':
       case 'COINCIDE': {
+        if (marca.tipo === 'MARCADA' && !opciones.atribucionExplicita) {
+          // La marca la puso este arranque sin autorización para atribuir.
+          marcaRecienPuesta = true;
+          break;
+        }
+        // La marca ya existía, o el dueño autorizó expresamente atribuir.
         const atribucion = await atribuirCuentaALoAnterior(db, cuenta);
         switch (atribucion.tipo) {
           case 'HECHA':
@@ -159,10 +185,13 @@ export async function prepararDatosDeLaCuenta(
         }
         break;
       }
-      case 'MARCADA':
-        // La marca la puso este arranque: no dice de quién son los datos viejos.
-        marcaRecienPuesta = true;
-        break;
+      case 'SIN_MARCA_CON_DATOS':
+        return fallo({
+          tipo: 'SIN_MARCA_CON_DATOS',
+          cobros: marca.cobros,
+          abonos: marca.abonos,
+          mensaje: explicarMarca(marca) ?? 'El emulador no tiene marca y trae datos sin cuenta.',
+        });
       case 'CONFLICTO':
         return fallo({
           tipo: 'ATRIBUCION_NO_HECHA',
@@ -199,7 +228,8 @@ export async function prepararDatosDeLaCuenta(
         `Hay ${String(conteo.cobros)} cobro(s) y ${String(conteo.abonos)} abono(s) sin cuenta de cobro, y la marca ` +
         'de cuenta del emulador la puso este mismo arranque. Una marca recién puesta no dice de quién son ' +
         'los datos viejos, así que no se les atribuye ninguna cuenta ni se escribe nada. ' +
-        'El dueño debe decidir a qué cuenta pertenecen antes de arrancar.',
+        'El dueño debe decidir a qué cuenta pertenecen antes de arrancar ' +
+        '(ATRIBUIR_DATOS_ANTERIORES_A=<la cuenta>, solo si son de esta cuenta).',
     });
   }
 
@@ -217,4 +247,43 @@ export async function prepararDatosDeLaCuenta(
     });
   }
   return exito(atribuidos);
+}
+
+/** La variable con la que el dueño autoriza, una vez, atribuir los datos anteriores a esta cuenta. */
+export const VARIABLE_ATRIBUCION = 'ATRIBUIR_DATOS_ANTERIORES_A';
+
+export type AtribucionExplicita = {
+  /** `true` solo si la variable vale **exactamente** la cuenta de este proceso. */
+  readonly permitida: boolean;
+  /**
+   * Un texto para sumar al error cuando la variable existe pero no coincide: se
+   * ignora, y esto lo dice. Solo nombra el valor si es un alias válido: podría
+   * ser un número de cuenta pegado por error.
+   */
+  readonly aviso: string | null;
+};
+
+/**
+ * ¿El dueño autorizó explícitamente atribuir los datos anteriores a la cuenta de
+ * este proceso? Es la única puerta para marcar un emulador que ya trae datos
+ * sin cuenta: tiene que ser una acción deliberada, con el alias exacto.
+ */
+export function leerAtribucionExplicita(
+  env: Readonly<Record<string, string | undefined>>,
+  cuenta: string,
+): AtribucionExplicita {
+  const crudo = env[VARIABLE_ATRIBUCION]?.trim();
+  if (crudo === undefined || crudo === '') {
+    return { permitida: false, aviso: null };
+  }
+  if (crudo === cuenta) {
+    return { permitida: true, aviso: null };
+  }
+  const valor = esAliasDeCuenta(crudo) ? ` («${crudo}»)` : '';
+  return {
+    permitida: false,
+    aviso:
+      `${VARIABLE_ATRIBUCION} está definida pero su valor${valor} no coincide con la cuenta de este proceso ` +
+      `(«${cuenta}»): se ignora, como si no estuviera.`,
+  };
 }

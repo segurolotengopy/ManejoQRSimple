@@ -5,6 +5,7 @@ import {
   archivoDeCredenciales,
   esAliasDeCuenta,
   leerCuentaDeCobro,
+  leerAtribucionExplicita,
   leerCuentaDePrueba,
   prepararDatosDeLaCuenta,
 } from './cuenta.js';
@@ -98,4 +99,38 @@ describe('prepararDatosDeLaCuenta() cuando Firestore falla', () => {
     expect(r.error.tipo).toBe('NO_SE_PUDO_COMPROBAR');
     expect(r.error.mensaje).toContain('emulador');
   });
+});
+
+describe('leerAtribucionExplicita()', () => {
+  it('sin la variable, no hay autorización ni aviso', () => {
+    expect(leerAtribucionExplicita({}, 'cuenta-a')).toEqual({ permitida: false, aviso: null });
+    expect(leerAtribucionExplicita({ ATRIBUIR_DATOS_ANTERIORES_A: '  ' }, 'cuenta-a')).toEqual({
+      permitida: false,
+      aviso: null,
+    });
+  });
+
+  it('con el alias exacto de la cuenta, sí', () => {
+    expect(leerAtribucionExplicita({ ATRIBUIR_DATOS_ANTERIORES_A: 'cuenta-a' }, 'cuenta-a')).toEqual({
+      permitida: true,
+      aviso: null,
+    });
+  });
+
+  it('con otro alias válido, no; el aviso lo dice y nombra el valor', () => {
+    const r = leerAtribucionExplicita({ ATRIBUIR_DATOS_ANTERIORES_A: 'cuenta-b' }, 'cuenta-a');
+    expect(r.permitida).toBe(false);
+    expect(r.aviso).toContain('no coincide');
+    expect(r.aviso).toContain('cuenta-b');
+  });
+
+  it.each(['1234567890', 'CUENTA-A', '<alias>', 'cuenta a'])(
+    'con un valor que no es un alias (%s), no, y el aviso no lo imprime',
+    (valor) => {
+      const r = leerAtribucionExplicita({ ATRIBUIR_DATOS_ANTERIORES_A: valor }, 'cuenta-a');
+      expect(r.permitida).toBe(false);
+      expect(r.aviso).toContain('no coincide');
+      expect(r.aviso).not.toContain(valor);
+    },
+  );
 });

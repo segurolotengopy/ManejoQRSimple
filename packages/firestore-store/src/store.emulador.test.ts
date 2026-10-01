@@ -128,22 +128,124 @@ beforeEach(async () => {
 
 describe('fijarCuentaDePrueba()', () => {
   it('marca el emulador vacío y deja pasar al mismo alias', async () => {
-    await expect(fijarCuentaDePrueba(db, 'prod', T0)).resolves.toEqual({ tipo: 'MARCADA', cuenta: 'prod' });
-    await expect(fijarCuentaDePrueba(db, 'prod', T0)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
+    await expect(fijarCuentaDePrueba(db, 'prod', T0, false)).resolves.toEqual({ tipo: 'MARCADA', cuenta: 'prod' });
+    await expect(fijarCuentaDePrueba(db, 'prod', T0, false)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
   });
 
   it('otra cuenta sobre los mismos datos no arranca', async () => {
-    await fijarCuentaDePrueba(db, 'prod', T0);
-    const marca = await fijarCuentaDePrueba(db, 'sucursal-2', T0);
+    await fijarCuentaDePrueba(db, 'prod', T0, false);
+    const marca = await fijarCuentaDePrueba(db, 'sucursal-2', T0, false);
     expect(marca).toEqual({ tipo: 'CONFLICTO', cuenta: 'sucursal-2', guardada: 'prod' });
     // El conflicto no pisa la marca: los datos siguen siendo de la primera.
-    await expect(fijarCuentaDePrueba(db, 'prod', T0)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
+    await expect(fijarCuentaDePrueba(db, 'prod', T0, false)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
     expect(explicarMarca(marca)).toContain('sucursal-2');
+  });
+
+  describe('sobre un emulador que ya trae datos sin cuenta', () => {
+    const marcaDe = async () => (await db.collection(COLECCION_CONFIGURACION).doc('cuentaDePrueba').get()).exists;
+    async function foto(): Promise<unknown> {
+      const leer = async (coleccion: string) =>
+        (await db.collection(coleccion).get()).docs.map((d) => [d.ref.path, d.data()]);
+      return { cobros: await leer('cobros'), abonos: await leer(COLECCION_ABONOS_SIN_CONCILIAR) };
+    }
+    async function sembrar(): Promise<void> {
+      await db.collection('cobros').doc('doc-x7q').set(documentoDeCobroViejo());
+      await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('doc-x7q').set(documentoDeAbonoViejo());
+    }
+    const sinMarcaConDatos = { tipo: 'SIN_MARCA_CON_DATOS', cuenta: 'cuenta-a', cobros: 1, abonos: 1 };
+
+    it('no crea la marca: devuelve SIN_MARCA_CON_DATOS y no escribe nada', async () => {
+      await sembrar();
+      const antes = await foto();
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual(sinMarcaConDatos);
+
+      expect(await marcaDe()).toBe(false);
+      expect(await foto()).toEqual(antes);
+    });
+
+    it('el reintento con la misma cuenta también aborta: la marca no quedó puesta', async () => {
+      await sembrar();
+      const antes = await foto();
+
+      await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual(sinMarcaConDatos);
+
+      expect(await marcaDe()).toBe(false);
+      expect(await foto()).toEqual(antes);
+    });
+
+    it('dos arranques simultáneos abortan los dos, sin marca y sin escribir', async () => {
+      await sembrar();
+      const antes = await foto();
+
+      const resultados = await Promise.all([
+        fijarCuentaDePrueba(db, 'cuenta-a', T0, false),
+        fijarCuentaDePrueba(db, 'cuenta-a', T0, false),
+      ]);
+
+      expect(resultados).toEqual([sinMarcaConDatos, sinMarcaConDatos]);
+      expect(await marcaDe()).toBe(false);
+      expect(await foto()).toEqual(antes);
+    });
+
+    it('con la autorización explícita crea la marca, y la siguiente vez coincide', async () => {
+      await sembrar();
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, true)).resolves.toEqual({
+        tipo: 'MARCADA',
+        cuenta: 'cuenta-a',
+      });
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual({
+        tipo: 'COINCIDE',
+        cuenta: 'cuenta-a',
+      });
+    });
+
+    it('un cobro con la cuenta inválida también cuenta como dato sin cuenta', async () => {
+      await db.collection('cobros').doc('doc-x7q').set({ ...documentoDeCobroViejo(), cuentaCobro: 'PROD' });
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual({
+        tipo: 'SIN_MARCA_CON_DATOS',
+        cuenta: 'cuenta-a',
+        cobros: 1,
+        abonos: 0,
+      });
+    });
+
+    it('los datos que ya tienen cuenta válida no impiden marcar', async () => {
+      await db.collection('cobros').doc('con-cuenta').set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a' });
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual({
+        tipo: 'MARCADA',
+        cuenta: 'cuenta-a',
+      });
+    });
+
+    it('con una marca de otra cuenta sigue siendo CONFLICTO, haya datos o no', async () => {
+      await fijarCuentaDePrueba(db, 'cuenta-b', T0, false);
+      await sembrar();
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual({
+        tipo: 'CONFLICTO',
+        cuenta: 'cuenta-a',
+        guardada: 'cuenta-b',
+      });
+    });
+
+    it('explicarMarca dice qué pasó y cómo decidir, sin ids ni datos', () => {
+      const texto = explicarMarca({ tipo: 'SIN_MARCA_CON_DATOS', cuenta: 'cuenta-a', cobros: 2, abonos: 1 });
+      expect(texto).toContain('2 cobro(s) y 1 abono(s)');
+      expect(texto).toContain('No se creó ninguna marca ni se escribió nada');
+      expect(texto).toContain('ATRIBUIR_DATOS_ANTERIORES_A=cuenta-a');
+      expect(texto).toContain('respalde');
+      expect(texto).not.toContain('doc-x7q');
+    });
   });
 
   it('una marca ilegible tampoco deja arrancar', async () => {
     await db.collection(COLECCION_CONFIGURACION).doc('cuentaDePrueba').set({ cuenta: 7 });
-    const marca = await fijarCuentaDePrueba(db, 'prod', T0);
+    const marca = await fijarCuentaDePrueba(db, 'prod', T0, false);
     expect(marca.tipo).toBe('ERROR');
     expect(explicarMarca(marca)).not.toBeNull();
   });
@@ -372,7 +474,7 @@ describe('atribuirCuentaALoAnterior()', () => {
   });
 
   it('con la marca de otra cuenta se niega y no escribe nada', async () => {
-    await fijarCuentaDePrueba(db, 'cuenta-b', T0);
+    await fijarCuentaDePrueba(db, 'cuenta-b', T0, false);
     await sembrarAnterior();
 
     await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({
@@ -385,7 +487,7 @@ describe('atribuirCuentaALoAnterior()', () => {
   });
 
   it('con la marca correcta atribuye solo lo que falta y no toca el estado', async () => {
-    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
     await sembrarAnterior();
 
     await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({
@@ -408,7 +510,7 @@ describe('atribuirCuentaALoAnterior()', () => {
   });
 
   it('la segunda corrida no encuentra nada que atribuir', async () => {
-    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
     await sembrarAnterior();
     await atribuirCuentaALoAnterior(db, 'cuenta-a');
 
@@ -420,7 +522,7 @@ describe('atribuirCuentaALoAnterior()', () => {
   });
 
   it('no toca la evidencia ni el historial de QRs', async () => {
-    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
     const repo = new CobroRepositoryFirestore(db);
     await repo.guardar(unCobro({ estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr() }));
     await new EvidenceStoreFirestore(db).agregar(unaEvidencia());
@@ -531,7 +633,7 @@ describe('contarSinCuentaDeCobro()', () => {
   });
 
   it('después de atribuir vuelve a dar 0', async () => {
-    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
     await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
     await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
 

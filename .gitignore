@@ -45,3 +45,9 @@ tools/baneco-b0/out/
 
 # Configuración local de la consola (contiene el token de la API local)
 packages/demo-web/.env.local
+.security-reports/
+.trivy-cache/
+.trivyignore.yaml
+.gitleaksignore
+serviceAccountKey*.json
+*-sa-key.json

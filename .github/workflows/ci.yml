@@ -58,6 +58,59 @@ jobs:
       - name: Escanear historial completo
         run: gitleaks detect --redact --verbose
 
-  # CodeQL queda fuera: code scanning requiere GitHub Advanced Security,
-  # no disponible en repos privados de cuenta personal (misma situación que
-  # los proyectos hermanos). Semgrep en CI puede cubrir SAST más adelante.
+  # ---------------------------------------------------------------------------
+  # Seguridad estática del estándar DevSecOps (stack solo-ci): Gitleaks, Semgrep,
+  # Trivy, auditoría de npm y Checkov sobre los workflows. La configuración vive
+  # en .devsecops.yml y en .github/ (copias del estándar). CodeQL va aparte, en
+  # codeql.yml.
+  # ---------------------------------------------------------------------------
+  seguridad-estatica:
+    name: seguridad-estatica
+    permissions:
+      contents: read
+      # security-events: write solo lo usa el reusable cuando subir_sarif = true.
+      # pull-requests: read lo pide el job `secretos` del reusable. Un job
+      # llamador no puede conceder menos de lo que el reusable pide.
+      pull-requests: read
+      security-events: write
+      actions: read
+    uses: ./.github/workflows/_reusable-security.yml
+    with:
+      ruta: '.'
+      stack: auto
+      bloquear_en: ${{ vars.BLOQUEAR_EN || 'CRITICAL,HIGH' }}
+      subir_sarif: ${{ github.event.repository.visibility == 'public' || vars.GHAS_ENABLED == 'true' }}
+    # Mínimo privilegio: solo los dos secretos que el reusable declara, ambos
+    # opcionales. Nunca `secrets: inherit`.
+    secrets:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # compuerta-pr: el ÚNICO status check que exige el ruleset de main. Agrega la
+  # calidad (verify), el escaneo de secretos propio (gitleaks) y la seguridad
+  # estática del estándar. `if: always()` para que un job saltado o fallido
+  # bloquee en vez de dejar la compuerta sin publicar.
+  # ---------------------------------------------------------------------------
+  compuerta-pr:
+    name: compuerta-pr
+    needs: [verify, gitleaks, seguridad-estatica]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verificar resultados de calidad y seguridad
+        env:
+          R_VERIFY: ${{ needs.verify.result }}
+          R_GITLEAKS: ${{ needs.gitleaks.result }}
+          R_SEGURIDAD: ${{ needs.seguridad-estatica.result }}
+        run: |
+          set -euo pipefail
+          echo "verify=$R_VERIFY | gitleaks=$R_GITLEAKS | seguridad-estatica=$R_SEGURIDAD"
+          for r in "$R_VERIFY" "$R_GITLEAKS" "$R_SEGURIDAD"; do
+            if [[ "$r" != "success" ]]; then
+              echo "::error::compuerta-pr bloqueada: algún job requerido no terminó en success"
+              exit 1
+            fi
+          done
+          echo "compuerta-pr: aprobada"

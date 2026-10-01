@@ -4,7 +4,11 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-10-01, sesión «adopción del estándar DevSecOps v2». Después de
+**Última actualización:** 2026-10-01, sesión «prueba intermitente de AES». El test de
+`descifrar()` con otra llave fallaba una de cada ~250 corridas; se hizo determinista con un
+vector fijo, **PR #67 mergeado** (squash `fe4cf62`), y no se tocó `aes.ts` (decisión 23).
+
+Antes, el mismo día, sesión «adopción del estándar DevSecOps v2». Después de
 adoptarlo se **actualizó a la versión 2.8** (reusable 2.8, `gitleaks.toml` 2.2 y pre-commit 2.1,
 commit `0bf9b9d` de SeguridadGeneral), en un PR propio. Lo que sigue describe la adopción.
 El repositorio quedó en el estándar de SeguridadGeneral, **stack `solo-ci`, reusable 2.7**
@@ -219,6 +223,15 @@ Además se cerró **C9: no hay comisión bancaria** (decisión 17).
       OK del dueño en el chat, PR por PR. Reversible con una sola llamada `PUT` del ruleset
       anterior, que tenía cero aprobaciones y exigía `Lint · Types · Tests · Build` y
       `Secretos en el historial`.
+23. **El esquema AES no se toca, y su resultado no es prueba de nada (Andres, 2026-10-01).**
+    `aes.ts` hace AES-256-CBC con relleno PKCS#7 y **sin autenticación**, porque así lo
+    dicta el banco. Consecuencia: descifrar con una llave equivocada **no siempre falla**,
+    porque el relleno valida por azar con probabilidad ≈ 1/256 y entrega texto basura como
+    `ok: true`. Se decidió corregir el test que lo daba por garantizado y **no** cambiar
+    la función ni el esquema. Regla para lo que venga: quien llame a `descifrar()` valida
+    la **estructura** del resultado con Zod (regla 11) y nunca toma «descifró» como
+    «era la llave correcta». Hoy los únicos llamadores fuera de `aes.ts` son dos tests de
+    `adaptadores.test.ts`, con la llave correcta: nada en producción confía en lo contrario.
 
 ## Estado actual
 
@@ -495,6 +508,27 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
           divergencia menos.
       - 880 tests (67 nuevos), typecheck, lint, `deps:check` y build en verde.
         **Sin ensayo contra el banco todavía** — ver "Próximo paso".
+- [x] **2026-10-01 — Prueba intermitente de AES, resuelta (PR #67, squash `fe4cf62`).**
+      Falló en el CI de `main` el paso `npm run test -- --coverage`: «rechaza el payload
+      cifrado con otra llave» (`baneco-gateway/src/crypto/aes.test.ts`) recibió `ok: true`
+      con texto basura. Causa en la decisión 23.
+      - **Confirmada midiendo con la `descifrar()` real:** 427 de 100 000 corridas (0,43 %)
+        aceptaron la llave equivocada, con IV aleatorio.
+      - **Solución:** vector fijo (llave del test y la otra, IV de 16 ceros, texto
+        «secreto»). Descifrado con la llave equivocada, el bloque crudo es
+        `5d4b76198d24e465ab7fb18e380cdb09`: termina en `0x09` y sus últimos 9 bytes no son
+        todos `0x09`, así que el relleno no valida. El test lleva un comentario con esto y
+        con la advertencia de volver a comprobarlo si se cambia llave, IV o texto. La
+        aserción es la misma que antes; **no se debilitó**. Solo cambió el archivo de test.
+      - Verificado: `typecheck`, `lint` y `npm test` en verde (929 tests), y el archivo repetido
+        200 veces sin fallos. Esa repetición prueba poco por sí sola, porque el vector es
+        constante: lo que da la garantía es que el test ya no usa IV aleatorio.
+      - **Cómo se fusionó:** el PR lo abrió `segurolotengopy` y lo aprobó `AndresAlberdi`
+        (al revés de lo escrito en la decisión 22; sirve cualquiera de las dos cuentas
+        mientras el autor y quien aprueba sean distintos). Squash con la rama fijada al
+        commit aprobado, sin `--admin`, y el mensaje del merge y la revisión dejan constancia
+        del OK del dueño en el chat. Antes, la rama se puso al día con `main` (merge, solo
+        docs). Después se borraron la rama (local y remota) y su worktree.
 - [x] **2026-10-01 — Adopción del estándar DevSecOps v2 (stack `solo-ci`, reusable 2.7).**
       Un PR por tema, todos con el CI verde sobre el `main` vigente: **#54** el reusable, el
       manifiesto `.devsecops.yml`, las copias de `.github/` y los dos jobs nuevos del CI;
@@ -517,6 +551,12 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       `uuid`, con `npm audit` de dos avisos a cero). Verificado además con las 28 pruebas del
       emulador de Firestore. Decisión a revisar: para quitar `uuid`, `npm audit fix` bajó
       `gaxios` de 6.7.1 a 6.3.0, dentro del rango de sus paquetes padre.
+- [x] **2026-09-19/20 — `.env.example` completo (PR #44).** Claude Code no tiene permiso
+      sobre `.env.*`, así que, con autorización del dueño en el chat, lo hizo un script que
+      solo informó qué cambió, nunca qué decía el archivo. `BANECO_POLL_INTERVAL_SECONDS` pasó
+      de 180 a 30; quedaron documentadas `CONSUMIDOR_TOKEN_<ID>`,
+      `CONSUMIDOR_AVISO_URL_<ID>` y `CONSUMIDOR_AVISO_SECRETO_<ID>`. La plantilla de
+      `npm run prueba:cuenta` también las documenta.
 - [x] **2026-09-20 — Ensayo de los bloques 1 y 2 contra el banco real.** Cobro creado
       por el contrato, QR de Bs 1 pagado desde una cuenta propia, confirmado 1 s después
       del pago, y el aviso entregado al primer intento a un receptor local que verifica
@@ -583,13 +623,12 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
   pasarlo a un contador compartido.
 
 - ~~**Prueba intermitente de AES (`baneco-gateway/src/crypto/aes.test.ts`).**~~ **Resuelta en
-  el PR #67** con un vector fijo. Medido el 2026-10-01: con otra llave, `descifrar()` dijo
-  «ok» el 0,43 % de las veces en cien mil intentos. Texto original: «Rechaza el
-  payload cifrado con otra llave» falló una vez en el CI de `main` (2026-10-01) y pasó al
-  relanzar. AES-CBC no autentica: con otra llave, el relleno valida por azar una de cada unas
-  256 veces. No es un defecto de la adopción ni del código de producción, sino de un test que
-  afirma más de lo que la función garantiza. Hay una tarea abierta para hacerlo determinista.
-  Mientras tanto, un CI rojo en ese test se relanza.
+  el PR #67** con un vector fijo (detalle en «Hecho»). Ya no se relanza el CI por ese test: si
+  vuelve a ponerse rojo, es un fallo real.
+- **`descifrar()` no autentica** (decisión 23). El esquema lo dicta el banco, así que el riesgo no
+  se elimina, se acota: descifrar con una llave equivocada puede devolver `ok: true` con texto
+  basura (≈ 0,4 %). Hoy no lo sufre ningún camino de producción. **Si alguna vez algo descifra datos
+  del banco, hay que validar la estructura del resultado con Zod** antes de usarlo.
 - ~~El estándar no escanea los `.md` de `docs/`~~ — **atenuado en la 2.8**, que a raíz de este
   caso los analiza con las reglas de proveedor. Queda exenta `generic-api-key` en esos `.md`, y
   aquí ahí se escriben los informes de la prueba en producción. Lo sigue cubriendo el job
@@ -613,83 +652,59 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
   cero, reiniciar el emulador.
 - `firebase-admin` arrastra 6 avisos moderados transitivos sin versión que los
   corrija (cadena de Google).
+- Los worktrees van en `.claude/worktrees/` (git los ignora) y **recién creados no traen
+  `node_modules`**: hay que correr `npm ci` dentro. La herramienta `sync_with_base_branch` de la
+  app puede no estar disponible; el respaldo es `git merge origin/main` (nunca rebase si la rama
+  ya se subió). Borrar un worktree se hace desde el repo principal con `git worktree remove`.
+- El PR lo puede abrir cualquiera de las dos cuentas (`AndresAlberdi` o `segurolotengopy`, esta
+  con `GH_CONFIG_DIR=$HOME/.config/gh-pro`); lo que exige el ruleset es que quien aprueba sea otra.
 
 ### Próximo paso (retomar acá)
 
-**Dueño — prueba en producción** (guía: `docs/Integraciones/baneco/03-prueba-en-produccion.md`):
+Estado de partida: `main` está sano (CI verde, Dependabot en cero, `npm audit` en cero) y el
+PR #67 ya está dentro. Lo que sigue, en orden de importancia.
 
-0. ~~Conseguir la contraseña y hacer la prueba en producción~~ — **hecho el 2026-09-13/14,
-   P1–P9 ok**. Cuando ya no hagan falta, borrar `~/.manejoqr/emulador-prueba` y
-   `~/.manejoqr/qrs`; conservar `~/.manejoqr/logs/`. La prueba se repite completa con cada
-   cuenta de cobro nueva o banco nuevo (decisión 16).
-0bis. ~~Segunda cuenta de cobro~~ — **hecha el 2026-09-18/19, P1–P9 ok** (alias
-   `cuenta-2`; informe en `02-hallazgos-produccion.md` §5). Cuatro pagos reales
-   conciliados, cierre diario `yaRegistrados=4 huerfanos=0`, ningún QR cobrable suelto y
-   ningún hallazgo nuevo del banco. Cuando ya no hagan falta, borrar
-   `~/.manejoqr/emulador-cuenta-2` y `~/.manejoqr/qrs/cuenta-2`.
-1. Pedirle al oficial el catálogo de bancos (D9). ~~La cuenta de pruebas (A4)~~ — no
-   existe (decisión 21). ~~Confirmar las comisiones (C9)~~ —
-   respondida (decisión 17).
+**Dueño:**
 
-**Dueño — lo demás:**
-
-0. ~~Autorizar el cambio del ruleset de `main`~~ — **hecho el 2026-10-01** (decisión 22). Desde
-   ahora ningún PR se fusiona sin la aprobación de la otra cuenta, que da Claude Code con el
-   OK del dueño en el chat, PR por PR.
-0bis. Quitar el consumidor de ensayo del archivo de credenciales de la cuenta `prod`, y
-   borrar `~/.manejoqr/ensayo`, cuando ya no haga falta.
-1. ~~Autorizar #21, #24 y #25~~ — mergeados el 2026-09-12.
-2. Cuando llegue el catálogo de bancos (D9), guardarlo en `privado-no-gh/`. Si
-   interesa, pedir los manuales de **Bec QR Connect** (G2). ~~Correr el B0 con la
-   cuenta de pruebas~~ — sin cuenta de pruebas, el B0 no genera ni paga QRs
-   (decisión 21).
-3. ~~Revisar `.env.example`~~ — **completo el 2026-09-20**: las variables del aviso
-   (`CONSUMIDOR_AVISO_URL_<ID>` y `CONSUMIDOR_AVISO_SECRETO_<ID>`) quedaron documentadas
-   en el PR #44, con el mismo método de script. Antes, el 2026-09-19/20, con autorización del dueño
-   en el chat: Claude Code no tiene permiso sobre `.env.*`, así que lo hizo un script
-   que solo informó qué cambió, nunca qué decía el archivo.
-   `BANECO_POLL_INTERVAL_SECONDS` pasó de 180 a 30 y se documentó
-   `CONSUMIDOR_TOKEN_<ID>`. **Queda pendiente** sumar `CONSUMIDOR_AVISO_URL_<ID>` y
-   `CONSUMIDOR_AVISO_SECRETO_<ID>` del bloque 2: el script está listo y espera el «sí»
-   del dueño. La plantilla de `npm run prueba:cuenta` ya los documenta.
-4. Decidir la opción de WhatsAppModular en docs/04 §2.3.
-5. Comercial: al acercarse producción, pedir la llave de producción por un canal que no
-   sea un adjunto de correo (B3). Las comisiones (C9) ya están respondidas: no hay.
-6. Adoptar la rutina de `docs/09-revision-manual.md` §3: una revisión diaria de la
-   pestaña Revisión.
-7. Persistir el límite de inotify (archivo en `/etc/sysctl.d/`).
+1. **Decidir la opción de WhatsAppModular en `docs/04` §2.3.** Es lo que más destraba: sin
+   `wa-bridge` ningún cobro real pasa de `QR_ACTIVO`.
+2. **Revisar los cambios sin commitear del checkout principal** (`~/ManejoQRSimple`): hay
+   modificados `CLAUDE.md` y cuatro agentes de `.claude/agents/` (`backend-dev`, `code-reviewer`,
+   `scraper-yape`, `test-engineer`). No son de la sesión del AES: vienen de otra, y esta no los
+   tocó. Decir si se commitean (en un PR) o se descartan.
+3. Pedirle al oficial el **catálogo de bancos (D9)** y guardarlo en `privado-no-gh/`. Si
+   interesa, pedir también los manuales de **Bec QR Connect** (G2).
+4. Adoptar la rutina de `docs/09-revision-manual.md` §3: una revisión diaria de la pestaña
+   Revisión.
+5. Limpieza cuando ya no haga falta: borrar `~/.manejoqr/emulador-prueba`, `~/.manejoqr/qrs`
+   y `~/.manejoqr/emulador-cuenta-2` (con `qrs/cuenta-2`); conservar `~/.manejoqr/logs/`. Quitar
+   el consumidor de ensayo del archivo de credenciales de la cuenta `prod` y borrar
+   `~/.manejoqr/ensayo`.
+6. Persistir el límite de inotify (archivo en `/etc/sysctl.d/`, ver «Notas de entorno»).
+7. Comercial, al acercarse producción: pedir la llave de producción por un canal que no sea un
+   adjunto de correo (B3).
+8. Si se abre un PR nuevo, dar el OK en el chat PR por PR (decisión 11): Claude Code aprueba y
+   fusiona con ese OK.
 
 **Claude Code:**
 
-1. ~~Documentar la prueba en producción y ajustar el adaptador~~ — hecho
-   (`02-hallazgos-produccion.md`; `cancelQR` 403 → consulta de `statusQR`). Quedan las
-   fixtures reales saneadas. Sin cuenta de pruebas (decisión 21) tienen que salir de la
-   prueba en producción, y los logs no guardan cuerpos a propósito: falta una captura
-   saneada en ese modo, con la misma barrera anti-secretos del B0.
-2. ~~**Hito B0** en certificación~~ — sin cuenta de pruebas (decisión 21) se reemplaza
-   por la captura saneada del punto 1. Con ella: reemplazar las fixtures derivadas de la
-   espec. y ajustar el adaptador a los `responseCode` observados (anular un QR pagado).
-3. ~~Persistir los abonos huérfanos y sin corroborar~~ — hecho en el PR #27.
-4. ~~Barrido documental pendiente de §8.2~~ — hecho (docs/02 §5, docs/05 §1 y §5,
-   docs/06 T9–T11 y secretos, docs/07 Fase 3). Solo queda `.env.example`, del dueño.
-5. `wa-bridge`, cuando el dueño decida docs/04 §2.3; con él, aviso de casos
-   críticos por WhatsApp.
-6. **Contrato para consumidores** (`Prompts/cobrador-contrato-para-consumidores.md`):
-   1. Bloque 1 — **mergeado** (PR #38) y **ensayado contra el banco real** el
-      2026-09-20: cobro creado por el contrato, QR de Bs 1 pagado desde una cuenta
-      propia, `crearCobro` idempotente, `anularCobro` sobre pagado `409` y
-      `listarCobros` ok (`02-hallazgos-produccion.md` §6). **Cerrado.**
-   2. Bloque 2 — **mergeado** (PR #40) y **ensayado de punta a punta** el 2026-09-20
-      contra un receptor local que hace de consumidor: el aviso llegó al primer intento,
-      769 ms después de la confirmación, con firma válida, marca de tiempo fresca y sin
-      datos de quien pagó; un solo aviso por cobro (§6). **Cerrado.**
-   3. Bloque 3 — una cuenta de cobro por consumidor. Hoy cada cuenta es un **proceso**
-      con su alias (decisión 16); falta que un consumidor solo use la suya y que los
-      cobros queden atribuidos por cuenta para el cierre diario.
-   4. Bloque 4 — pase a producción: checklist del estándar DevSecOps. Ya no espera
-      una cuenta de pruebas, que el banco no tiene (decisión 21). Lo aprueba el dueño.
-   Los ensayos de los bloques 1 y 2 **se corrieron el 2026-09-20** (§6 del informe de
-   producción): quedan cerrados. Sigue abierto el bloque 3.
+1. **Fixtures reales saneadas de `baneco-gateway`.** Sin cuenta de pruebas (decisión 21) tienen
+   que salir de la prueba en producción, y los logs no guardan cuerpos a propósito: falta una
+   captura saneada en ese modo, con la misma barrera anti-secretos del B0. Con ella, reemplazar
+   las fixtures derivadas de la espec. y ajustar el adaptador a los `responseCode` observados
+   (por ejemplo, anular un QR pagado). Necesita que el dueño pague un QR de monto mínimo.
+2. **Contrato para consumidores, bloque 3**
+   (`Prompts/cobrador-contrato-para-consumidores.md`): una cuenta de cobro por consumidor. Hoy
+   cada cuenta es un **proceso** con su alias (decisión 16); falta que un consumidor solo use la
+   suya y que los cobros queden atribuidos por cuenta para el cierre diario. Los bloques 1 y 2
+   están cerrados y ensayados (PR #38 y #40; `02-hallazgos-produccion.md` §6).
+3. **Contrato para consumidores, bloque 4:** pase a producción con el checklist del estándar
+   DevSecOps (skill `pase-a-produccion`). No espera una cuenta de pruebas. Lo aprueba el dueño.
+4. `wa-bridge`, cuando el dueño decida el punto 1; con él, el aviso por WhatsApp de los casos
+   críticos de revisión.
+5. Al desplegar la API en serio, pasar el cupo de QRs por consumidor a un contador compartido
+   (hoy vive en memoria del proceso; ver «Riesgos abiertos»).
+6. Cualquier código nuevo que llame a `descifrar()` valida el resultado con Zod (decisión 23).
 
 **Riel Yape — diferido** (retomar cuando haya documentación completa, D1): capturas
 en `docs/consola-yape/`, verificación del Playwright MCP local y sesión de mapeo de

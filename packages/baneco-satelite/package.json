@@ -22,6 +22,6 @@
     "@mqs/composicion": "*",
     "@mqs/firestore-store": "*",
     "@mqs/qr-core": "*",
-    "firebase-admin": "^14.3.0"
+    "firebase-admin": "^14.5.0"
   }
 }

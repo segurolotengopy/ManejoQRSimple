@@ -15,7 +15,11 @@
 
 export const CUENTA_POR_DEFECTO = 'prod';
 
-import { atribuirCuentaALoAnterior, contarSinCuentaDeCobro } from '@mqs/firestore-store';
+import {
+  atribuirCuentaALoAnterior,
+  contarSinCuentaDeCobro,
+  type MarcaDeCuenta,
+} from '@mqs/firestore-store';
 import { esAliasDeCuenta, exito, fallo, type Resultado } from '@mqs/qr-core';
 import type { Firestore } from 'firebase-admin/firestore';
 
@@ -63,85 +67,153 @@ export type ErrorPreparacionDeCuenta =
       readonly variante: 'SIN_MARCA' | 'MARCA_DE_OTRA_CUENTA' | 'ERROR';
       readonly mensaje: string;
     }
-  /** Quedan cobros o abonos sin cuenta: el satélite no los vigilaría. */
+  /**
+   * Hay datos viejos sin cuenta y la marca del emulador la puso este mismo
+   * arranque: no dice de quién son. No se atribuye nada; decide el dueño.
+   */
+  | {
+      readonly tipo: 'MARCA_RECIEN_PUESTA';
+      readonly cobros: number;
+      readonly abonos: number;
+      readonly mensaje: string;
+    }
+  /** Quedan documentos que el satélite de esta cuenta no vigilaría. */
   | {
       readonly tipo: 'DATOS_SIN_CUENTA';
       readonly cobros: number;
       readonly abonos: number;
+      readonly pendientesDeOtraCuenta: number;
       readonly mensaje: string;
-    };
+    }
+  /** Firestore falló al comprobarlo: no se sabe qué hay, así que no se arranca. */
+  | { readonly tipo: 'NO_SE_PUDO_COMPROBAR'; readonly mensaje: string };
 
 /**
  * La comprobación que la API y el satélite hacen **siempre** al arrancar, antes
  * de atender nada, sobre los datos de su cuenta. Un solo código para los dos:
  * si cada `main.ts` la escribiera por su cuenta, tarde o temprano divergirían.
  *
- * En este orden:
+ * En modo prueba recibe lo que devolvió `fijarCuentaDePrueba` (la marca), no la
+ * vuelve a leer: de ella depende si se puede atribuir.
  *
- * 1. Solo en modo prueba, `atribuirCuentaALoAnterior`: los cobros y abonos
- *    anteriores a que el cobro llevara `cuentaCobro` reciben la de este
- *    proceso. Solo es posible con la marca del emulador, que es lo único que
- *    dice de qué cuenta son esos datos; si falta o es de otra cuenta, no hay
- *    atribución y se aborta. (Que esta migración corra sola en el arranque de
- *    la prueba queda sujeto a la decisión D-A del dueño.)
- * 2. **Siempre**, con o sin modo prueba, `contarSinCuentaDeCobro`: si queda
- *    algún cobro o abono sin cuenta se aborta. Un cobro pendiente sin cuenta
- *    queda fuera de `listarPendientes(cuenta)`: sería un QR pagable que el
- *    satélite dejó de vigilar, sin ningún error (T10).
+ * 1. Solo en modo prueba **y solo si la marca ya existía** antes de este
+ *    arranque (`COINCIDE`): `atribuirCuentaALoAnterior`, que agrega la cuenta a
+ *    los cobros y abonos anteriores. Una marca que este mismo arranque acaba de
+ *    crear (`MARCADA`) dice con qué cuenta arrancó el proceso, no de quién son
+ *    los datos viejos: atribuir con ella sería hacerlo por suposición. Si hay
+ *    datos sin cuenta, se aborta sin escribir y decide el dueño. (Que la
+ *    migración corra sola en el arranque queda sujeto a la decisión D-A.)
+ * 2. **Siempre**, con o sin modo prueba, `contarSinCuentaDeCobro`: se aborta si
+ *    queda algún documento con la cuenta ausente o inválida, o algún cobro
+ *    pendiente de **otra** cuenta. Un cobro pendiente que el filtro por cuenta
+ *    deja afuera es un QR pagable que el satélite dejó de vigilar, sin ningún
+ *    error (T10). Lo de otra cuenta es anomalía mientras cada cuenta tenga su
+ *    propia base; el bloque 4, con base compartida, tendrá que revisar esa regla.
  *
  * Los mensajes dicen cuántos son y qué hacer; nunca ids ni datos de los
  * documentos. En caso de éxito devuelve cuántos documentos se atribuyeron en
- * esta corrida (`0` y `0` fuera de modo prueba).
+ * esta corrida (`0` y `0` si no se atribuyó nada). Nunca lanza: un fallo de
+ * Firestore vuelve como `NO_SE_PUDO_COMPROBAR`.
  */
-export async function prepararDatosDeLaCuenta(opciones: {
-  readonly db: Firestore;
-  readonly cuenta: string;
-  readonly modoPrueba: boolean;
-}): Promise<Resultado<{ readonly cobros: number; readonly abonos: number }, ErrorPreparacionDeCuenta>> {
-  const { db, cuenta, modoPrueba } = opciones;
+export async function prepararDatosDeLaCuenta(
+  opciones: { readonly db: Firestore; readonly cuenta: string } & (
+    | { readonly modoPrueba: false }
+    | { readonly modoPrueba: true; readonly marca: MarcaDeCuenta }
+  ),
+): Promise<Resultado<{ readonly cobros: number; readonly abonos: number }, ErrorPreparacionDeCuenta>> {
+  const { db, cuenta } = opciones;
   let atribuidos = { cobros: 0, abonos: 0 };
+  let marcaRecienPuesta = false;
 
-  if (modoPrueba) {
-    const atribucion = await atribuirCuentaALoAnterior(db, cuenta);
-    switch (atribucion.tipo) {
-      case 'HECHA':
-        atribuidos = { cobros: atribucion.cobros, abonos: atribucion.abonos };
+  if (opciones.modoPrueba) {
+    const { marca } = opciones;
+    switch (marca.tipo) {
+      case 'COINCIDE': {
+        const atribucion = await atribuirCuentaALoAnterior(db, cuenta);
+        switch (atribucion.tipo) {
+          case 'HECHA':
+            atribuidos = { cobros: atribucion.cobros, abonos: atribucion.abonos };
+            break;
+          case 'SIN_MARCA':
+            return fallo({
+              tipo: 'ATRIBUCION_NO_HECHA',
+              variante: 'SIN_MARCA',
+              mensaje:
+                'SIN_MARCA: la marca de cuenta del emulador desapareció durante el arranque. ' +
+                'No se atribuye ninguna cuenta a los datos anteriores.',
+            });
+          case 'MARCA_DE_OTRA_CUENTA':
+            return fallo({
+              tipo: 'ATRIBUCION_NO_HECHA',
+              variante: 'MARCA_DE_OTRA_CUENTA',
+              mensaje:
+                `MARCA_DE_OTRA_CUENTA: los datos de este emulador son de la cuenta «${atribucion.guardada}», ` +
+                `no de «${cuenta}». No se les atribuye ninguna.`,
+            });
+          case 'ERROR':
+            return fallo({
+              tipo: 'ATRIBUCION_NO_HECHA',
+              variante: 'ERROR',
+              mensaje: `ERROR: no se pudo atribuir la cuenta a los datos anteriores (${atribucion.detalle}).`,
+            });
+        }
         break;
-      case 'SIN_MARCA':
-        return fallo({
-          tipo: 'ATRIBUCION_NO_HECHA',
-          variante: 'SIN_MARCA',
-          mensaje:
-            'SIN_MARCA: el emulador no tiene marca de cuenta, así que no se puede saber de qué cuenta ' +
-            'son sus datos anteriores. No se les atribuye ninguna.',
-        });
-      case 'MARCA_DE_OTRA_CUENTA':
+      }
+      case 'MARCADA':
+        // La marca la puso este arranque: no dice de quién son los datos viejos.
+        marcaRecienPuesta = true;
+        break;
+      case 'CONFLICTO':
         return fallo({
           tipo: 'ATRIBUCION_NO_HECHA',
           variante: 'MARCA_DE_OTRA_CUENTA',
           mensaje:
-            `MARCA_DE_OTRA_CUENTA: los datos de este emulador son de la cuenta «${atribucion.guardada}», ` +
+            `MARCA_DE_OTRA_CUENTA: los datos de este emulador son de la cuenta «${marca.guardada}», ` +
             `no de «${cuenta}». No se les atribuye ninguna.`,
         });
       case 'ERROR':
         return fallo({
           tipo: 'ATRIBUCION_NO_HECHA',
           variante: 'ERROR',
-          mensaje: `ERROR: no se pudo atribuir la cuenta a los datos anteriores (${atribucion.detalle}).`,
+          mensaje: `ERROR: no se pudo verificar la marca de cuenta del emulador (${marca.detalle}).`,
         });
     }
   }
 
-  const sinCuenta = await contarSinCuentaDeCobro(db);
-  if (sinCuenta.cobros + sinCuenta.abonos > 0) {
+  const conteo = await contarSinCuentaDeCobro(db, cuenta);
+  if (conteo.tipo === 'ERROR') {
+    return fallo({
+      tipo: 'NO_SE_PUDO_COMPROBAR',
+      mensaje:
+        `No se pudo comprobar si hay cobros sin cuenta de cobro (${conteo.detalle}). ` +
+        '¿Está corriendo el emulador? Sin esa comprobación no se arranca.',
+    });
+  }
+
+  if (marcaRecienPuesta && conteo.cobros + conteo.abonos > 0) {
+    return fallo({
+      tipo: 'MARCA_RECIEN_PUESTA',
+      cobros: conteo.cobros,
+      abonos: conteo.abonos,
+      mensaje:
+        `Hay ${String(conteo.cobros)} cobro(s) y ${String(conteo.abonos)} abono(s) sin cuenta de cobro, y la marca ` +
+        'de cuenta del emulador la puso este mismo arranque. Una marca recién puesta no dice de quién son ' +
+        'los datos viejos, así que no se les atribuye ninguna cuenta ni se escribe nada. ' +
+        'El dueño debe decidir a qué cuenta pertenecen antes de arrancar.',
+    });
+  }
+
+  if (conteo.cobros + conteo.abonos + conteo.pendientesDeOtraCuenta > 0) {
     return fallo({
       tipo: 'DATOS_SIN_CUENTA',
-      cobros: sinCuenta.cobros,
-      abonos: sinCuenta.abonos,
+      cobros: conteo.cobros,
+      abonos: conteo.abonos,
+      pendientesDeOtraCuenta: conteo.pendientesDeOtraCuenta,
       mensaje:
-        `Hay ${String(sinCuenta.cobros)} cobro(s) y ${String(sinCuenta.abonos)} abono(s) sin cuenta de cobro. ` +
-        'Un cobro pendiente sin cuenta queda fuera de la vigilancia: su QR seguiría pagable sin que nadie lo mire. ' +
-        'Atribúyanse a su cuenta con la marca del emulador (modo prueba) antes de arrancar.',
+        `Hay ${String(conteo.cobros)} cobro(s) y ${String(conteo.abonos)} abono(s) sin una cuenta de cobro ` +
+        `válida, y ${String(conteo.pendientesDeOtraCuenta)} cobro(s) pendiente(s) de otra cuenta. ` +
+        'Esos cobros quedarían fuera de la vigilancia de esta cuenta: su QR seguiría pagable sin que nadie ' +
+        'lo mire. Hay que resolverlos antes de arrancar.',
     });
   }
   return exito(atribuidos);

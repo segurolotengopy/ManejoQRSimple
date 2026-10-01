@@ -58,6 +58,9 @@ const PREFIJO_CUENTA_ENV = 'CONSUMIDOR_CUENTA_';
 const esMarcadorDePlantilla = (valor: string): boolean =>
   valor.startsWith('<') && valor.endsWith('>');
 
+/** El id del consumidor a partir del sufijo de su variable: minúsculas, y `_` equivale a `-`. */
+const idDeSufijo = (sufijo: string): string => sufijo.toLowerCase().replace(/_/g, '-');
+
 /** Compara dos textos en tiempo constante. Un largo distinto no llega a comparar. */
 function iguales(recibido: string, esperado: Buffer): boolean {
   const bytes = Buffer.from(recibido, 'utf8');
@@ -175,7 +178,7 @@ export function leerConsumidores(
     if (!variable.startsWith(PREFIJO_ENV) || valor === undefined || valor.trim() === '') {
       continue;
     }
-    const consumidorId = variable.slice(PREFIJO_ENV.length).toLowerCase().replace(/_/g, '-');
+    const consumidorId = idDeSufijo(variable.slice(PREFIJO_ENV.length));
     if (!ID_CONSUMIDOR.test(consumidorId)) {
       return { ok: false, error: { tipo: 'ID_INVALIDO', variable } };
     }
@@ -202,10 +205,28 @@ export function leerConsumidores(
 
     // La cuenta, en este orden. Ningún mensaje de error lleva el valor de una
     // cuenta inválida: podría ser un número de cuenta pegado por error.
-    const cuenta = env[`${PREFIJO_CUENTA_ENV}${variable.slice(PREFIJO_ENV.length)}`]?.trim();
-    if (cuenta === undefined || cuenta === '') {
+    //
+    // La pareja del token tiene que ser **exactamente** `CONSUMIDOR_CUENTA_` con
+    // el mismo sufijo, y única. Si el mismo id se escribe de dos maneras
+    // (`MI_APP` y `MI-APP`), no se elige una: la misma ambigüedad que ya
+    // rechaza `ID_REPETIDO` entre tokens. Ignorar en silencio una declaración
+    // contradictoria sería atender a un consumidor en una cuenta que nadie
+    // eligió.
+    const sufijo = variable.slice(PREFIJO_ENV.length);
+    const declaraciones = Object.entries(env).filter(
+      ([nombre, valor]) =>
+        nombre.startsWith(PREFIJO_CUENTA_ENV) &&
+        valor !== undefined &&
+        valor.trim() !== '' &&
+        idDeSufijo(nombre.slice(PREFIJO_CUENTA_ENV.length)) === consumidorId,
+    );
+    if (declaraciones.length === 0) {
       return { ok: false, error: { tipo: 'SIN_CUENTA', consumidorId } };
     }
+    if (declaraciones.length > 1 || declaraciones[0]?.[0] !== `${PREFIJO_CUENTA_ENV}${sufijo}`) {
+      return { ok: false, error: { tipo: 'ID_REPETIDO', consumidorId } };
+    }
+    const cuenta = declaraciones[0][1]?.trim() ?? '';
     if (!esAliasDeCuenta(cuenta)) {
       return { ok: false, error: { tipo: 'CUENTA_INVALIDA', consumidorId } };
     }
@@ -223,7 +244,7 @@ export function leerConsumidores(
     if (!variable.startsWith(PREFIJO_CUENTA_ENV) || valor === undefined || valor.trim() === '') {
       continue;
     }
-    const consumidorId = variable.slice(PREFIJO_CUENTA_ENV.length).toLowerCase().replace(/_/g, '-');
+    const consumidorId = idDeSufijo(variable.slice(PREFIJO_CUENTA_ENV.length));
     if (!consumidores.has(consumidorId)) {
       return { ok: false, error: { tipo: 'CUENTA_SIN_TOKEN', consumidorId } };
     }

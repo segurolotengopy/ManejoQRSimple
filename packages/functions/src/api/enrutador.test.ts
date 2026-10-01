@@ -19,7 +19,7 @@ import {
 
 import { leerModoPrueba } from '../modo-prueba.js';
 import { RegistroEventos } from '../registro.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { enrutar, type VerificadorDeToken } from './enrutador.js';
 import type { ContextoApi } from './handlers.js';
@@ -122,6 +122,40 @@ describe('la cuenta de los cobros del dueño', () => {
     const { id } = await crear(ctx);
     const guardado = await ctx.deps.cobros.obtener(id);
     expect(esExito(guardado) && guardado.valor?.cuentaCobro).toBe(CUENTA);
+  });
+});
+
+describe('el dueño y los cobros de otra cuenta', () => {
+  it('no puede verificar, anular, renovar ni sondear un cobro de otra cuenta, y no se llama al banco', async () => {
+    const { ctx, watcher } = armar();
+    const base = await crear(ctx);
+    const propio = await ctx.deps.cobros.obtener(base.id);
+    if (!esExito(propio) || propio.valor === null) throw new Error('debería existir');
+    const ajeno = { ...propio.valor, id: 'cobro-de-otra-cuenta', cuentaCobro: 'cuenta-b' };
+    await ctx.deps.cobros.guardar(ajeno);
+    const anular = vi.spyOn(ctx.deps.qr, 'anular');
+    const emitir = vi.spyOn(ctx.deps.qr, 'emitir');
+    const consultar = vi.spyOn(watcher, 'consultarCobro');
+
+    for (const [metodo, ruta] of [
+      ['POST', '/api/cobros/cobro-de-otra-cuenta/verificar'],
+      ['POST', '/api/cobros/cobro-de-otra-cuenta/anular'],
+      ['POST', '/api/cobros/cobro-de-otra-cuenta/renovar'],
+      ['POST', '/api/cobros/cobro-de-otra-cuenta/buscar-abono'],
+      ['POST', '/api/cobros/cobro-de-otra-cuenta/sondear-anulacion'],
+      ['GET', '/api/cobros/cobro-de-otra-cuenta'],
+      ['GET', '/api/cobros/cobro-de-otra-cuenta/qr'],
+    ] as const) {
+      // Con un cuerpo válido: sin él, 400 saldría antes de mirar el cobro.
+      const r = await enrutar(ctx, aceptaTodo, pedir(metodo, ruta, { motivo: 'prueba de otra cuenta' }));
+      expect([ruta, r.status]).toEqual([ruta, 404]);
+    }
+
+    expect(anular).not.toHaveBeenCalled();
+    expect(emitir).not.toHaveBeenCalled();
+    expect(consultar).not.toHaveBeenCalled();
+    const despues = await ctx.deps.cobros.obtener(ajeno.id);
+    expect(esExito(despues) && despues.valor).toEqual(ajeno);
   });
 });
 

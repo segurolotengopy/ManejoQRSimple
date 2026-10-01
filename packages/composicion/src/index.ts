@@ -43,6 +43,7 @@ export {
   explicarMarca,
   fijarCuentaDePrueba,
   type AtribucionDeCuenta,
+  type ConteoSinCuenta,
   type MarcaDeCuenta,
 } from '@mqs/firestore-store';
 export {

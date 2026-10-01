@@ -106,8 +106,9 @@ async function main(): Promise<number> {
   // bucle: contra producción la barrera ya lo rechazó (`verificarProduccion`).
   const modoPrueba = process.env['MODO_PRUEBA_PRODUCCION'] === '1';
   if (db !== null) {
-    if (modoPrueba) {
-      const problema = explicarMarca(await fijarCuentaDePrueba(db, cuenta, new Date()));
+    const marca = modoPrueba ? await fijarCuentaDePrueba(db, cuenta, new Date()) : null;
+    if (marca !== null) {
+      const problema = explicarMarca(marca);
       if (problema !== null) {
         console.error(`✖ ${problema}`);
         return 1;
@@ -115,7 +116,11 @@ async function main(): Promise<number> {
     }
     // Siempre, con o sin modo prueba: un cobro pendiente sin cuenta queda fuera
     // de la consulta por cuenta y el satélite dejaría de vigilar un QR pagable.
-    const preparada = await prepararDatosDeLaCuenta({ db, cuenta, modoPrueba });
+    // En modo prueba se le pasa la marca tal como quedó: solo una que ya existía
+    // antes de este arranque autoriza atribuir los datos viejos.
+    const preparada = await prepararDatosDeLaCuenta(
+      marca === null ? { db, cuenta, modoPrueba: false } : { db, cuenta, modoPrueba: true, marca },
+    );
     if (!esExito(preparada)) {
       console.error(`✖ ${preparada.error.mensaje}`);
       return 1;
@@ -162,7 +167,7 @@ async function main(): Promise<number> {
   bitacora.escribir(
     'info',
     'satelite',
-    `Satélite iniciado · ${puertos.valor.resumen}· cuenta ${cuenta}${unaSola ? ' · una pasada' : ''}`,
+    `Satélite iniciado · ${puertos.valor.resumen} · cuenta ${cuenta}${unaSola ? ' · una pasada' : ''}`,
   );
 
   // En un objeto y no en un `let`: el manejador de señal lo muta desde una
@@ -214,14 +219,18 @@ async function main(): Promise<number> {
           const lineaCierre = describirCierre(cierre.clave, cuenta, cierre.resumen);
           console.log(`${ahora.toISOString()} ${lineaCierre}`);
           bitacora.escribir('info', 'satelite', lineaCierre);
+          const deOtraCuenta = new Set(cierre.resumen.deOtraCuenta);
           for (const id of cierre.resumen.nuevosParaRevisar) {
             // Plata en la cuenta que ningún cobro explica: nunca se descarta.
             // Ya quedó guardada; el aviso es para quien mira la terminal, y
             // solo por lo nuevo: un abono ya visto (o ya cerrado) no se repite.
-            registrar('aviso', `  ! abono nuevo para revisar (pestaña Revisión): ${id}`);
-          }
-          for (const id of cierre.resumen.deOtraCuenta) {
-            registrar('aviso', `  ! abono ${id}: su QR es de un cobro de otra cuenta; queda para revisión.`);
+            // Una sola línea por abono: si además es de otra cuenta, la dice.
+            registrar(
+              'aviso',
+              deOtraCuenta.has(id)
+                ? `  ! abono nuevo para revisar (pestaña Revisión): ${id}; su QR es de un cobro de otra cuenta.`
+                : `  ! abono nuevo para revisar (pestaña Revisión): ${id}`,
+            );
           }
           for (const { idDeduplicacion, error } of cierre.resumen.conError) {
             registrar('error', `  ! abono ${idDeduplicacion} sin procesar (${error.tipo}); se reintenta.`);

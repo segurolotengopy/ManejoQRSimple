@@ -22,6 +22,7 @@ import {
   leerCuentaDeCobro,
   prepararDatosDeLaCuenta,
   verificarProduccion,
+  type MarcaDeCuenta,
 } from '@mqs/composicion';
 import { aDecimalBob, esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
@@ -134,8 +135,8 @@ async function main(): Promise<number> {
   }
 
   let prueba: ModoPrueba | null = null;
-  const modoPrueba = process.env['MODO_PRUEBA_PRODUCCION'] === '1';
-  if (modoPrueba) {
+  let marca: MarcaDeCuenta | null = null;
+  if (process.env['MODO_PRUEBA_PRODUCCION'] === '1') {
     const leido = leerModoPrueba(process.env, puertos.valor.resumen);
     if (!esExito(leido)) {
       console.error(`✖ ${leido.error}`);
@@ -143,7 +144,7 @@ async function main(): Promise<number> {
     }
     prueba = leido.valor;
     // Antes de tocar nada: ¿los datos de este emulador son de esta cuenta?
-    const marca = await fijarCuentaDePrueba(db, prueba.cuenta, new Date());
+    marca = await fijarCuentaDePrueba(db, prueba.cuenta, new Date());
     const problema = explicarMarca(marca);
     if (problema !== null) {
       console.error(`✖ ${problema}`);
@@ -152,7 +153,11 @@ async function main(): Promise<number> {
   }
   // Siempre, con o sin modo prueba: un cobro pendiente sin cuenta queda fuera
   // de la consulta por cuenta y su QR seguiría pagable sin que nadie lo mire.
-  const preparada = await prepararDatosDeLaCuenta({ db, cuenta, modoPrueba });
+  // En modo prueba se le pasa la marca tal como quedó: solo una que ya existía
+  // antes de este arranque autoriza atribuir los datos viejos.
+  const preparada = await prepararDatosDeLaCuenta(
+    marca === null ? { db, cuenta, modoPrueba: false } : { db, cuenta, modoPrueba: true, marca },
+  );
   if (!esExito(preparada)) {
     console.error(`✖ ${preparada.error.mensaje}`);
     return 1;

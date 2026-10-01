@@ -73,22 +73,56 @@ beforeEach(async () => {
   await db.recursiveDelete(db.collection('configuracion'));
 });
 
-describe('prepararDatosDeLaCuenta()', () => {
+/**
+ * El arranque de la API y del satélite, tal como lo escriben sus `main.ts`: en
+ * modo prueba se fija la marca **primero** (si no hay, la crea) y con lo que
+ * devolvió se prepara. Probar `prepararDatosDeLaCuenta` sin ese paso previo
+ * probaría un orden que ningún proceso ejecuta.
+ */
+async function arrancar(cuenta: string, modoPrueba: boolean) {
+  if (!modoPrueba) {
+    return prepararDatosDeLaCuenta({ db, cuenta, modoPrueba: false });
+  }
+  const marca = await fijarCuentaDePrueba(db, cuenta, T0);
+  return prepararDatosDeLaCuenta({ db, cuenta, modoPrueba: true, marca });
+}
+
+describe('prepararDatosDeLaCuenta() con la secuencia de los main.ts', () => {
   it('sin datos anteriores sigue, con o sin modo prueba', async () => {
-    const fuera = await prepararDatosDeLaCuenta({ db, cuenta: 'cuenta-a', modoPrueba: false });
+    const fuera = await arrancar('cuenta-a', false);
     expect(esExito(fuera) && fuera.valor).toEqual({ cobros: 0, abonos: 0 });
 
-    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
-    const enPrueba = await prepararDatosDeLaCuenta({ db, cuenta: 'cuenta-a', modoPrueba: true });
+    const enPrueba = await arrancar('cuenta-a', true);
     expect(esExito(enPrueba) && enPrueba.valor).toEqual({ cobros: 0, abonos: 0 });
   });
 
-  it('en modo prueba, con un cobro viejo, lo atribuye y sigue', async () => {
-    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+  it('sobre datos viejos SIN marca previa aborta y no escribe: la marca recién puesta no dice de quién son', async () => {
+    // El caso que importa: el emulador tiene datos de antes y ninguna marca. El
+    // arranque la crea con la cuenta en curso, y esa marca no autoriza nada.
+    await db.collection('cobros').doc('doc-x7q').set(cobroViejo());
+    await db.collection('abonosSinConciliar').doc('doc-x7q').set(abonoViejo());
+    const antes = await foto();
+
+    const r = await arrancar('cuenta-a', true);
+
+    expect(esExito(r)).toBe(false);
+    if (esExito(r)) return;
+    expect(r.error).toMatchObject({ tipo: 'MARCA_RECIEN_PUESTA', cobros: 1, abonos: 1 });
+    expect(r.error.mensaje).toContain('marca');
+    expect(r.error.mensaje).toContain('El dueño debe decidir');
+    expect(r.error.mensaje).not.toContain('doc-x7q');
+    // Cero escrituras en los datos (la marca sí quedó puesta: la creó fijarCuentaDePrueba).
+    expect(await foto()).toEqual(antes);
+    const cobro = await db.collection('cobros').doc('doc-x7q').get();
+    expect(cobro.get('cuentaCobro')).toBeUndefined();
+  });
+
+  it('con la marca de una corrida anterior, un cobro viejo se atribuye y sigue', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0); // marca que ya existía
     await db.collection('cobros').doc('viejo').set(cobroViejo());
     await db.collection('abonosSinConciliar').doc('viejo').set(abonoViejo());
 
-    const r = await prepararDatosDeLaCuenta({ db, cuenta: 'cuenta-a', modoPrueba: true });
+    const r = await arrancar('cuenta-a', true);
 
     expect(esExito(r) && r.valor).toEqual({ cobros: 1, abonos: 1 });
     const cobro = await db.collection('cobros').doc('viejo').get();
@@ -96,18 +130,18 @@ describe('prepararDatosDeLaCuenta()', () => {
   });
 
   it('fuera de modo prueba, con un cobro viejo aborta con el conteo y no escribe', async () => {
-    await db.collection('cobros').doc('viejo').set(cobroViejo());
-    await db.collection('abonosSinConciliar').doc('viejo').set(abonoViejo());
+    await db.collection('cobros').doc('doc-x7q').set(cobroViejo());
+    await db.collection('abonosSinConciliar').doc('doc-x7q').set(abonoViejo());
     const antes = await foto();
 
-    const r = await prepararDatosDeLaCuenta({ db, cuenta: 'cuenta-a', modoPrueba: false });
+    const r = await arrancar('cuenta-a', false);
 
     expect(esExito(r)).toBe(false);
     if (esExito(r)) return;
-    expect(r.error).toMatchObject({ tipo: 'DATOS_SIN_CUENTA', cobros: 1, abonos: 1 });
+    expect(r.error).toMatchObject({ tipo: 'DATOS_SIN_CUENTA', cobros: 1, abonos: 1, pendientesDeOtraCuenta: 0 });
     expect(r.error.mensaje).toContain('1 cobro(s) y 1 abono(s)');
     // Ni ids ni datos de los documentos.
-    expect(r.error.mensaje).not.toContain('viejo');
+    expect(r.error.mensaje).not.toContain('doc-x7q');
     expect(await foto()).toEqual(antes);
   });
 
@@ -116,7 +150,7 @@ describe('prepararDatosDeLaCuenta()', () => {
     await db.collection('cobros').doc('viejo').set(cobroViejo());
     const antes = await foto();
 
-    const r = await prepararDatosDeLaCuenta({ db, cuenta: 'cuenta-a', modoPrueba: true });
+    const r = await arrancar('cuenta-a', true);
 
     expect(esExito(r)).toBe(false);
     if (esExito(r)) return;
@@ -125,13 +159,38 @@ describe('prepararDatosDeLaCuenta()', () => {
     expect(await foto()).toEqual(antes);
   });
 
-  it('en modo prueba, sin marca, aborta con SIN_MARCA', async () => {
-    await db.collection('cobros').doc('viejo').set(cobroViejo());
+  it('un cobro con la cuenta inválida sobrevive a la atribución y aborta el arranque', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    await db
+      .collection('cobros')
+      .doc('invalido')
+      .set({ ...cobroViejo(), cuentaCobro: 'PROD' });
 
-    const r = await prepararDatosDeLaCuenta({ db, cuenta: 'cuenta-a', modoPrueba: true });
+    const r = await arrancar('cuenta-a', true);
 
     expect(esExito(r)).toBe(false);
     if (esExito(r)) return;
-    expect(r.error).toMatchObject({ tipo: 'ATRIBUCION_NO_HECHA', variante: 'SIN_MARCA' });
+    expect(r.error).toMatchObject({ tipo: 'DATOS_SIN_CUENTA', cobros: 1 });
+    expect(r.error.mensaje).not.toContain('PROD');
+  });
+
+  it('un cobro pendiente de otra cuenta aborta el arranque; uno que no está pendiente no', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    await db
+      .collection('cobros')
+      .doc('terminado')
+      .set({ ...cobroViejo(), cuentaCobro: 'cuenta-b', estado: 'CONFIRMADO' });
+    const sinPendiente = await arrancar('cuenta-a', true);
+    expect(esExito(sinPendiente)).toBe(true);
+
+    await db
+      .collection('cobros')
+      .doc('pendiente')
+      .set({ ...cobroViejo(), cuentaCobro: 'cuenta-b', estado: 'ENVIADO' });
+    const r = await arrancar('cuenta-a', true);
+
+    expect(esExito(r)).toBe(false);
+    if (esExito(r)) return;
+    expect(r.error).toMatchObject({ tipo: 'DATOS_SIN_CUENTA', cobros: 0, abonos: 0, pendientesDeOtraCuenta: 1 });
   });
 });

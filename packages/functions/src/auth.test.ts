@@ -96,6 +96,39 @@ describe('leerConsumidores()', () => {
     expect(r).toEqual({ ok: false, error: { tipo: 'CUENTA_SIN_TOKEN', consumidorId: 'novuchat' } });
   });
 
+  it('el token y su cuenta con la grafía distinta del mismo id no se emparejan en silencio', () => {
+    // Caso a: `MI_APP` y `MI-APP` dan el mismo consumidor. No es «sin cuenta»
+    // (engañoso) sino la misma ambigüedad que ya rechaza ID_REPETIDO.
+    const r = leerConsumidores({ CONSUMIDOR_TOKEN_MI_APP: TOKEN_A, 'CONSUMIDOR_CUENTA_MI-APP': CUENTA }, CUENTA);
+    expect(r).toEqual({ ok: false, error: { tipo: 'ID_REPETIDO', consumidorId: 'mi-app' } });
+  });
+
+  it('dos declaraciones de cuenta del mismo id, una contradictoria, no se ignoran', () => {
+    // Caso b: arrancar con la primera y descartar la segunda sería atender al
+    // consumidor en una cuenta que nadie eligió.
+    const r = leerConsumidores(
+      {
+        CONSUMIDOR_TOKEN_MI_APP: TOKEN_A,
+        CONSUMIDOR_CUENTA_MI_APP: CUENTA,
+        'CONSUMIDOR_CUENTA_MI-APP': 'cuenta-b',
+      },
+      CUENTA,
+    );
+    expect(r).toEqual({ ok: false, error: { tipo: 'ID_REPETIDO', consumidorId: 'mi-app' } });
+  });
+
+  it('dos declaraciones del mismo id aunque coincidan tampoco arrancan', () => {
+    const r = leerConsumidores(
+      {
+        CONSUMIDOR_TOKEN_MI_APP: TOKEN_A,
+        CONSUMIDOR_CUENTA_MI_APP: CUENTA,
+        'CONSUMIDOR_CUENTA_MI-APP': CUENTA,
+      },
+      CUENTA,
+    );
+    expect(r).toEqual({ ok: false, error: { tipo: 'ID_REPETIDO', consumidorId: 'mi-app' } });
+  });
+
   it('una cuenta con otra forma de escribir el id, sin token, tampoco pasa inadvertida', () => {
     const r = leerConsumidores(
       { CONSUMIDOR_TOKEN_NOVUCHAT: TOKEN_A, CONSUMIDOR_CUENTA_NOVUCHAT: CUENTA, CONSUMIDOR_CUENTA_FANTASMA: CUENTA },

@@ -31,6 +31,7 @@ export {
   atribuirCuentaALoAnterior,
   contarSinCuentaDeCobro,
   type AtribucionDeCuenta,
+  type ConteoSinCuenta,
 } from './atribucion-de-cuenta.js';
 export {
   explicarMarca,

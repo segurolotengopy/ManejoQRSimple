@@ -451,46 +451,106 @@ describe('contarSinCuentaDeCobro()', () => {
       (await db.collection(coleccion).get()).docs.map((d) => [d.ref.path, d.data()]);
     return { cobros: await leer('cobros'), abonos: await leer(COLECCION_ABONOS_SIN_CONCILIAR) };
   }
+  const contado = (cobros: number, abonos: number, pendientesDeOtraCuenta = 0) => ({
+    tipo: 'CONTADO',
+    cobros,
+    abonos,
+    pendientesDeOtraCuenta,
+  });
 
-  it('una base vacía da 0 y 0', async () => {
-    await expect(contarSinCuentaDeCobro(db)).resolves.toEqual({ cobros: 0, abonos: 0 });
+  it('una base vacía da 0, 0 y 0', async () => {
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0));
   });
 
   it('cuenta los cobros y los abonos que no tienen el campo', async () => {
     await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
     await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
 
-    await expect(contarSinCuentaDeCobro(db)).resolves.toEqual({ cobros: 1, abonos: 1 });
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(1, 1));
   });
 
-  it('con cuenta en todos da 0 y 0, aunque el valor sea inválido (eso lo reporta el mapeo)', async () => {
+  it.each([
+    ['null', null],
+    ['vacía', ''],
+    ['un número', 5],
+    ['mayúsculas', 'PROD'],
+    ['un número de cuenta', '1234567890'],
+    ['con espacios', 'otra cuenta'],
+  ])('un cobro y un abono con la cuenta inválida (%s) cuentan: el mapeo no los ve', async (_caso, valor) => {
+    // El filtro por cuenta los deja fuera de `listarPendientes` antes de que se
+    // lea el documento: el mapeo nunca llega a reportarlos.
+    await db.collection('cobros').doc('invalido').set({ ...documentoDeCobroViejo(), cuentaCobro: valor });
+    await db
+      .collection(COLECCION_ABONOS_SIN_CONCILIAR)
+      .doc('invalido')
+      .set({ ...documentoDeAbonoViejo(), cuentaCobro: valor });
+
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(1, 1));
+  });
+
+  it('con una cuenta válida en todos da 0 y 0', async () => {
     await db.collection('cobros').doc('nuevo').set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a' });
-    await db.collection('cobros').doc('numerico').set({ ...documentoDeCobroViejo(), cuentaCobro: '1234567890' });
     await db
       .collection(COLECCION_ABONOS_SIN_CONCILIAR)
       .doc('nuevo')
       .set({ ...documentoDeAbonoViejo(), cuentaCobro: 'cuenta-a' });
 
-    await expect(contarSinCuentaDeCobro(db)).resolves.toEqual({ cobros: 0, abonos: 0 });
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0));
   });
 
-  it('después de atribuir vuelve a dar 0 y 0', async () => {
+  it.each(['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO'])(
+    'un cobro %s de otra cuenta cuenta aparte',
+    async (estado) => {
+      await db
+        .collection('cobros')
+        .doc('ajeno')
+        .set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-b', estado });
+
+      await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0, 1));
+    },
+  );
+
+  it('un cobro de otra cuenta que no está pendiente no cuenta', async () => {
+    for (const estado of ['CONFIRMADO', 'ANULADO', 'VENCIDO', 'EN_REVISION', 'BORRADOR']) {
+      await db
+        .collection('cobros')
+        .doc(`ajeno-${estado}`)
+        .set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-b', estado });
+    }
+
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0, 0));
+  });
+
+  it('un cobro pendiente de esta misma cuenta no cuenta', async () => {
+    await db
+      .collection('cobros')
+      .doc('propio')
+      .set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a', estado: 'ENVIADO' });
+
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0, 0));
+  });
+
+  it('después de atribuir vuelve a dar 0', async () => {
     await fijarCuentaDePrueba(db, 'cuenta-a', T0);
     await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
     await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
 
     await atribuirCuentaALoAnterior(db, 'cuenta-a');
 
-    await expect(contarSinCuentaDeCobro(db)).resolves.toEqual({ cobros: 0, abonos: 0 });
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0));
   });
 
   it('es de solo lectura: no cambia ningún documento', async () => {
     await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
     await db.collection('cobros').doc('nuevo').set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a' });
+    await db
+      .collection('cobros')
+      .doc('ajeno')
+      .set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-b', estado: 'ENVIADO' });
     await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
     const antes = await fotoDeLaBase();
 
-    await contarSinCuentaDeCobro(db);
+    await contarSinCuentaDeCobro(db, 'cuenta-a');
 
     expect(await fotoDeLaBase()).toEqual(antes);
   });

@@ -744,12 +744,12 @@ export async function conciliarDia(
       case 'sinCorroborar':
       case 'deOtraCuenta':
       case 'huerfano': {
-        const huerfano = destino.valor.destino === 'huerfano';
+        const tipo = destino.valor.destino;
         // Plata que ninguna regla explica: se guarda para una persona. Solo
         // cuenta como reportada si quedó guardada.
         const guardado = await deps.abonosSinConciliar.registrar({
           idDeduplicacion: abono.idDeduplicacion,
-          motivo: huerfano ? 'HUERFANO' : 'SIN_CORROBORAR',
+          motivo: tipo === 'huerfano' ? 'HUERFANO' : 'SIN_CORROBORAR',
           cobroId: destino.valor.cobroId === '' ? null : destino.valor.cobroId,
           montoCentavos: abono.montoCentavos,
           ocurridoEn: abono.ocurridoEn,
@@ -762,13 +762,7 @@ export async function conciliarDia(
           conError.push({ idDeduplicacion: abono.idDeduplicacion, error: dePuerto(guardado.error) });
           break;
         }
-        const lista =
-          destino.valor.destino === 'huerfano'
-            ? huerfanos
-            : destino.valor.destino === 'deOtraCuenta'
-              ? deOtraCuenta
-              : sinCorroborar;
-        lista.push(abono.idDeduplicacion);
+        ({ huerfano: huerfanos, deOtraCuenta, sinCorroborar })[tipo].push(abono.idDeduplicacion);
         if (guardado.valor) {
           nuevosParaRevisar.push(abono.idDeduplicacion);
         }

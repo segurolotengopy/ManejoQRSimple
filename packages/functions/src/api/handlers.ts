@@ -277,12 +277,21 @@ export function comoHttp(err: ErrorCasoUso): Respuesta {
   }
 }
 
+/**
+ * El cobro por id, o la respuesta de error. Un cobro de **otra cuenta** de
+ * cobro responde 404 como si no existiera: este proceso tiene las credenciales
+ * de la suya, y verificarlo, anularlo o renovarlo le pediría al banco
+ * equivocado. Es la misma regla que ya aplica `cerrarPrueba`.
+ */
 async function buscar(ctx: ContextoApi, id: string): Promise<Cobro | Respuesta> {
   const encontrado = await ctx.deps.cobros.obtener(id);
   if (!esExito(encontrado)) {
     return comoHttp({ tipo: 'PUERTO', error: encontrado.error });
   }
-  return encontrado.valor ?? noEncontrado();
+  if (encontrado.valor === null || encontrado.valor.cuentaCobro !== ctx.cuentaCobro) {
+    return noEncontrado();
+  }
+  return encontrado.valor;
 }
 
 const esRespuesta = (v: Cobro | Respuesta): v is Respuesta => 'status' in v;

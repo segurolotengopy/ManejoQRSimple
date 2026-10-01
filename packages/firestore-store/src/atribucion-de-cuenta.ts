@@ -8,16 +8,24 @@
  * migración: si el emulador no tiene marca, o la marca es de otra cuenta, **no
  * se escribe nada**. Atribuir por suposición sería inventar un dato.
  *
+ * Ojo con quién puso la marca: una marca que **este mismo proceso acaba de
+ * crear** (`fijarCuentaDePrueba` devolvió `MARCADA`) solo dice con qué cuenta
+ * arrancó este proceso, no de quién son los datos viejos. Quien llama —los
+ * `main.ts`, por `prepararDatosDeLaCuenta`— atribuye únicamente cuando la marca
+ * ya existía antes de este arranque (`COINCIDE`). Esta función no puede
+ * distinguir una de otra por sí sola: en el documento se ven igual.
+ *
  * Solo agrega el campo que falta. No toca `estado`, ni la evidencia, ni el
  * historial de QRs (reglas #6 y #8), y no pisa un `cuentaCobro` que ya esté.
  * Es idempotente: una segunda corrida no encuentra nada que atribuir.
  */
 
+import { esAliasDeCuenta } from '@mqs/qr-core';
 import type { DocumentReference, Firestore } from 'firebase-admin/firestore';
 
 import { COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
 import { COLECCION_CONFIGURACION, DOC_CUENTA_DE_PRUEBA, marcaDoc } from './cuenta-de-prueba.js';
-import { COLECCION_COBROS } from './repositorio.js';
+import { COLECCION_COBROS, ESTADOS_PENDIENTES } from './repositorio.js';
 
 export type AtribucionDeCuenta =
   /** Hecha: cuántos cobros y abonos recibieron la cuenta en esta corrida. */
@@ -80,25 +88,64 @@ async function atribuirDocumento(db: Firestore, ref: DocumentReference, cuenta: 
   });
 }
 
+/** Lo que encontró `contarSinCuentaDeCobro`. */
+export type ConteoSinCuenta =
+  | {
+      readonly tipo: 'CONTADO';
+      /** Cobros cuya `cuentaCobro` no es un alias válido (falta, es `null`, vacía, un número…). */
+      readonly cobros: number;
+      /** Abonos sin conciliar en la misma situación. */
+      readonly abonos: number;
+      /** Cobros **pendientes** con un alias válido pero distinto del de este proceso. */
+      readonly pendientesDeOtraCuenta: number;
+    }
+  | { readonly tipo: 'ERROR'; readonly detalle: string };
+
 /**
- * Cuántos cobros y abonos sin conciliar **no tienen el campo** `cuentaCobro`.
+ * Cuántos documentos quedarían fuera de la vigilancia de la cuenta `cuenta`.
  *
  * Solo lectura: no escribe nada. Existe para que quien arranca un proceso
- * pueda negarse si queda alguno. Un cobro pendiente sin cuenta queda fuera de
- * `listarPendientes(cuenta)`: sería un QR pagable que el satélite dejó de
- * vigilar sin ningún error (T10). Un documento con el campo presente, aunque
- * sea inválido, no cuenta: ese lo reporta el mapeo al leerlo.
+ * pueda negarse si encuentra alguno. Un cobro pendiente cuya `cuentaCobro` no
+ * sirve queda fuera de `listarPendientes(cuenta)`: sería un QR pagable que el
+ * satélite dejó de vigilar sin ningún error (T10). Y el mapeo **no** lo avisa:
+ * el filtro por cuenta lo deja afuera de la consulta antes de que se lea.
+ *
+ * Cuenta, por eso, **todo** documento cuya `cuentaCobro` no sea un texto que
+ * cumpla `ALIAS_DE_CUENTA`: falta, `null`, vacía, un número, mayúsculas… Y,
+ * aparte, los cobros en estado pendiente con un alias válido pero de otra
+ * cuenta: hoy cada cuenta tiene su propia base, así que uno de otra cuenta
+ * acá es una anomalía. **El bloque 4, con una base compartida entre cuentas,
+ * tendrá que revisar esta regla**: ahí uno de otra cuenta será lo normal.
+ *
+ * Si Firestore falla devuelve `ERROR`, como `atribuirCuentaALoAnterior`: quien
+ * arranca no debe soltar un stack trace ni seguir sin saber qué hay.
  */
-export async function contarSinCuentaDeCobro(
-  db: Firestore,
-): Promise<{ readonly cobros: number; readonly abonos: number }> {
-  return {
-    cobros: await contarSinCuenta(db, COLECCION_COBROS),
-    abonos: await contarSinCuenta(db, COLECCION_ABONOS_SIN_CONCILIAR),
-  };
+export async function contarSinCuentaDeCobro(db: Firestore, cuenta: string): Promise<ConteoSinCuenta> {
+  try {
+    const cobros = await db.collection(COLECCION_COBROS).get();
+    const abonos = await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).get();
+    let cobrosSinCuenta = 0;
+    let pendientesDeOtraCuenta = 0;
+    for (const doc of cobros.docs) {
+      const valor: unknown = doc.get('cuentaCobro');
+      if (!esAlias(valor)) {
+        cobrosSinCuenta += 1;
+      } else if (valor !== cuenta && esPendiente(doc.get('estado'))) {
+        pendientesDeOtraCuenta += 1;
+      }
+    }
+    return {
+      tipo: 'CONTADO',
+      cobros: cobrosSinCuenta,
+      abonos: abonos.docs.filter((doc) => !esAlias(doc.get('cuentaCobro'))).length,
+      pendientesDeOtraCuenta,
+    };
+  } catch (causa) {
+    return { tipo: 'ERROR', detalle: causa instanceof Error ? causa.message : 'falló la consulta a Firestore' };
+  }
 }
 
-async function contarSinCuenta(db: Firestore, coleccion: string): Promise<number> {
-  const snapshot = await db.collection(coleccion).get();
-  return snapshot.docs.filter((doc) => doc.get('cuentaCobro') === undefined).length;
-}
+const esAlias = (valor: unknown): valor is string => typeof valor === 'string' && esAliasDeCuenta(valor);
+
+const esPendiente = (estado: unknown): boolean =>
+  typeof estado === 'string' && (ESTADOS_PENDIENTES as readonly string[]).includes(estado);

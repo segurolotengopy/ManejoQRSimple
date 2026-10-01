@@ -4,7 +4,9 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-10-01, sesión «adopción del estándar DevSecOps v2».
+**Última actualización:** 2026-10-01, sesión «adopción del estándar DevSecOps v2». Después de
+adoptarlo se **actualizó a la versión 2.8** (reusable 2.8, `gitleaks.toml` 2.2 y pre-commit 2.1,
+commit `0bf9b9d` de SeguridadGeneral), en un PR propio. Lo que sigue describe la adopción.
 El repositorio quedó en el estándar de SeguridadGeneral, **stack `solo-ci`, reusable 2.7**
 (commit `0ab6e88` de SeguridadGeneral), con **PRs #54, #55 y #56** mergeados; el run que lo
 prueba es el 36890902794, CI verde en `main`, head `d0cdc6e`. Antes se resolvieron los
@@ -199,10 +201,12 @@ Además se cerró **C9: no hay comisión bancaria** (decisión 17).
     TypeScript es el job `verify` de `ci.yml`, propio. Lo que se decidió:
     - **`ci-solo-ci.yml` no se copia:** su calidad es de Python. Se agregaron a `ci.yml` solo
       los jobs que faltaban, `seguridad-estatica`, `actionlint y ShellCheck` y `compuerta-pr`.
-    - **El job `gitleaks` propio se conserva** junto al del estándar. La allowlist del
-      estándar excluye todos los `docs/**/*.md`, y aquí los informes de la prueba en
-      producción viven en `docs/`; el job propio, con su `.gitleaks.toml`, los sigue
-      escaneando. Las cuatro reglas propias (credencial bancaria, `storageState`, token de
+    - **El job `gitleaks` propio se conserva** junto al del estándar. Hasta la 2.1 la
+      allowlist del estándar excluía todos los `docs/**/*.md`; desde la 2.8 los analiza con las
+      reglas de proveedor y exime solo `generic-api-key`. Aquí los informes de la prueba en
+      producción viven en `docs/`, y un token sin formato de proveedor reconocible es justo lo
+      que esa regla exenta detectaría: el job propio, con su `.gitleaks.toml` y todas las
+      reglas por defecto, los sigue escaneando. Las cuatro reglas propias (credencial bancaria, `storageState`, token de
       WhatsAppModular y secreto HMAC) también viven ahora en `.github/gitleaks.toml`, que es
       lo único que lee el reusable.
     - **Las excepciones viven solo en `.devsecops.yml`:** hoy no hay ninguna.
@@ -500,6 +504,13 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       sin fallos, actionlint limpio. En `main`, cero alertas abiertas de Code Scanning. Las
       categorías nuevas (`semgrep`, `trivy-fs`, `checkov-workflows`) no dejan categorías
       viejas que borrar y no apareció ningún Environment solo.
+- [x] **2026-10-01 — Actualización a la versión 2.8 del estándar** (commit `0bf9b9d` de
+      SeguridadGeneral). Reusable 2.7 a 2.8 y `gitleaks.toml` 2.1 a 2.2, ambos por fusión de tres
+      vías, conservando mis SHAs de Dependabot y la sección de reglas propias; pre-commit 2.0 a
+      2.1, copia exacta. La 2.8 fija Gitleaks en 8.30.1: la versión que instalaba el CI, la
+      8.24.3, ignoraba la allowlist global. `ci-solo-ci.yml` 2.4 no se copia. Medido en local:
+      Gitleaks sin hallazgos en el historial, las tres reglas propias disparan, Checkov 344
+      comprobaciones sin fallos y `security-local.sh` aprobado con umbral MEDIUM.
 - [x] **2026-10-01 — Dependabot, a cero.** #42 (seis dev-menores), #48 (`codeql-action` init y
       analyze juntas: por separado fallaban las dos), #52 (vitest 5 con su coverage-v8, @eslint/js
       10, plugin-react 6 y zod 4.6) y #53 (`grpc-js`, `brace-expansion`, `firebase-admin` y
@@ -571,16 +582,19 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
   suyo. Hoy la API es un proceso local y alcanza; al desplegarla en serio hay que
   pasarlo a un contador compartido.
 
-- **Prueba intermitente de AES (`baneco-gateway/src/crypto/aes.test.ts`).** «Rechaza el
+- ~~**Prueba intermitente de AES (`baneco-gateway/src/crypto/aes.test.ts`).**~~ **Resuelta en
+  el PR #67** con un vector fijo. Medido el 2026-10-01: con otra llave, `descifrar()` dijo
+  «ok» el 0,43 % de las veces en cien mil intentos. Texto original: «Rechaza el
   payload cifrado con otra llave» falló una vez en el CI de `main` (2026-10-01) y pasó al
   relanzar. AES-CBC no autentica: con otra llave, el relleno valida por azar una de cada unas
   256 veces. No es un defecto de la adopción ni del código de producción, sino de un test que
   afirma más de lo que la función garantiza. Hay una tarea abierta para hacerlo determinista.
   Mientras tanto, un CI rojo en ese test se relanza.
-- **El estándar no escanea los `.md` de `docs/`.** Su allowlist de Gitleaks los excluye, y aquí
-  ahí se escriben los informes de la prueba en producción. Lo cubre el job `gitleaks` propio,
-  que se conserva a propósito (decisión 22). Si algún día se quita, hay que decidir antes cómo
-  se cubren los documentos. Anotado para SeguridadGeneral.
+- ~~El estándar no escanea los `.md` de `docs/`~~ — **atenuado en la 2.8**, que a raíz de este
+  caso los analiza con las reglas de proveedor. Queda exenta `generic-api-key` en esos `.md`, y
+  aquí ahí se escriben los informes de la prueba en producción. Lo sigue cubriendo el job
+  `gitleaks` propio, que se conserva a propósito (decisión 22). Si algún día se quita, hay que
+  decidir antes cómo se cubre esa regla en los documentos.
 
 ### Notas de entorno (no obvias)
 

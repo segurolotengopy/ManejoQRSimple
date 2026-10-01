@@ -1,6 +1,6 @@
 # =============================================================================
 # _reusable-security.yml — Fase 2 "seguridad-estatica" (workflow reutilizable)
-# Versión: 2.7 | Fecha: 2026-10-01
+# Versión: 2.8 | Fecha: 2026-10-01
 # -----------------------------------------------------------------------------
 # Propósito: concentrar en un solo lugar todas las comprobaciones de seguridad
 # estática que corren en TODOS los modos (A público, B privado con licencias,
@@ -408,6 +408,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .github/gitleaks.toml
+          # Sin esta variable la acción instala SU versión por defecto (8.24.3 en este
+          # SHA), distinta de la de security-local.sh y pre-commit. Medido el 2026-10-01:
+          # la 8.24.3 IGNORA la sección global [[allowlists]] de gitleaks.toml (tests/,
+          # lockfiles, artefactos...), que la 8.28.0 y la 8.30.1 sí aplican; los tres
+          # motores tienen que ser el mismo. Mismo valor que GITLEAKS_VERSION de
+          # 03-scripts/security-local.sh (lo comprueba pruebas-workflows/gitleaks_docs.py).
+          GITLEAKS_VERSION: 8.30.1
           # Obligatoria SOLO cuando el repositorio pertenece a una organización
           # (licencia gratuita en gitleaks.io). En cuentas personales queda vacía.
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

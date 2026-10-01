@@ -22,7 +22,7 @@ import { FieldValue, getFirestore, Timestamp, type Firestore } from 'firebase-ad
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AbonosSinConciliarFirestore, COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
-import { atribuirCuentaALoAnterior } from './atribucion-de-cuenta.js';
+import { atribuirCuentaALoAnterior, contarSinCuentaDeCobro } from './atribucion-de-cuenta.js';
 import { COLECCION_CONFIGURACION, explicarMarca, fijarCuentaDePrueba } from './cuenta-de-prueba.js';
 import { CobroRepositoryFirestore, EvidenceStoreFirestore } from './repositorio.js';
 
@@ -425,12 +425,74 @@ describe('atribuirCuentaALoAnterior()', () => {
     await repo.guardar(unCobro({ estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr() }));
     await new EvidenceStoreFirestore(db).agregar(unaEvidencia());
     await db.collection('cobros').doc('cobro-emulador-1').update({ cuentaCobro: FieldValue.delete() });
+    const contenidoDeSubcolecciones = async () => {
+      const leer = async (sub: string) =>
+        (await db.collection('cobros').doc('cobro-emulador-1').collection(sub).get()).docs.map((d) => [
+          d.id,
+          d.data(),
+        ]);
+      return { evidencia: await leer('evidencia'), qrs: await leer('qrs') };
+    };
+    const antes = await contenidoDeSubcolecciones();
+    expect(antes.evidencia).toHaveLength(1);
+    expect(antes.qrs).toHaveLength(1);
 
     await atribuirCuentaALoAnterior(db, 'cuenta-a');
 
-    const evidencia = await db.collection('cobros').doc('cobro-emulador-1').collection('evidencia').get();
-    const qrs = await db.collection('cobros').doc('cobro-emulador-1').collection('qrs').get();
-    expect([evidencia.size, qrs.size]).toEqual([1, 1]);
+    expect(await contenidoDeSubcolecciones()).toEqual(antes);
+    const cobro = await db.collection('cobros').doc('cobro-emulador-1').get();
+    expect(cobro.get('cuentaCobro')).toBe('cuenta-a');
+  });
+});
+
+describe('contarSinCuentaDeCobro()', () => {
+  async function fotoDeLaBase(): Promise<unknown> {
+    const leer = async (coleccion: string) =>
+      (await db.collection(coleccion).get()).docs.map((d) => [d.ref.path, d.data()]);
+    return { cobros: await leer('cobros'), abonos: await leer(COLECCION_ABONOS_SIN_CONCILIAR) };
+  }
+
+  it('una base vacía da 0 y 0', async () => {
+    await expect(contarSinCuentaDeCobro(db)).resolves.toEqual({ cobros: 0, abonos: 0 });
+  });
+
+  it('cuenta los cobros y los abonos que no tienen el campo', async () => {
+    await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+
+    await expect(contarSinCuentaDeCobro(db)).resolves.toEqual({ cobros: 1, abonos: 1 });
+  });
+
+  it('con cuenta en todos da 0 y 0, aunque el valor sea inválido (eso lo reporta el mapeo)', async () => {
+    await db.collection('cobros').doc('nuevo').set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a' });
+    await db.collection('cobros').doc('numerico').set({ ...documentoDeCobroViejo(), cuentaCobro: '1234567890' });
+    await db
+      .collection(COLECCION_ABONOS_SIN_CONCILIAR)
+      .doc('nuevo')
+      .set({ ...documentoDeAbonoViejo(), cuentaCobro: 'cuenta-a' });
+
+    await expect(contarSinCuentaDeCobro(db)).resolves.toEqual({ cobros: 0, abonos: 0 });
+  });
+
+  it('después de atribuir vuelve a dar 0 y 0', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+
+    await atribuirCuentaALoAnterior(db, 'cuenta-a');
+
+    await expect(contarSinCuentaDeCobro(db)).resolves.toEqual({ cobros: 0, abonos: 0 });
+  });
+
+  it('es de solo lectura: no cambia ningún documento', async () => {
+    await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
+    await db.collection('cobros').doc('nuevo').set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a' });
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+    const antes = await fotoDeLaBase();
+
+    await contarSinCuentaDeCobro(db);
+
+    expect(await fotoDeLaBase()).toEqual(antes);
   });
 });
 

@@ -79,3 +79,26 @@ async function atribuirDocumento(db: Firestore, ref: DocumentReference, cuenta: 
     return true;
   });
 }
+
+/**
+ * Cuántos cobros y abonos sin conciliar **no tienen el campo** `cuentaCobro`.
+ *
+ * Solo lectura: no escribe nada. Existe para que quien arranca un proceso
+ * pueda negarse si queda alguno. Un cobro pendiente sin cuenta queda fuera de
+ * `listarPendientes(cuenta)`: sería un QR pagable que el satélite dejó de
+ * vigilar sin ningún error (T10). Un documento con el campo presente, aunque
+ * sea inválido, no cuenta: ese lo reporta el mapeo al leerlo.
+ */
+export async function contarSinCuentaDeCobro(
+  db: Firestore,
+): Promise<{ readonly cobros: number; readonly abonos: number }> {
+  return {
+    cobros: await contarSinCuenta(db, COLECCION_COBROS),
+    abonos: await contarSinCuenta(db, COLECCION_ABONOS_SIN_CONCILIAR),
+  };
+}
+
+async function contarSinCuenta(db: Firestore, coleccion: string): Promise<number> {
+  const snapshot = await db.collection(coleccion).get();
+  return snapshot.docs.filter((doc) => doc.get('cuentaCobro') === undefined).length;
+}

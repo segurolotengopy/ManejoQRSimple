@@ -29,6 +29,7 @@ export {
 export { AvisosFirestore, COLECCION_AVISOS } from './avisos.js';
 export {
   atribuirCuentaALoAnterior,
+  contarSinCuentaDeCobro,
   type AtribucionDeCuenta,
 } from './atribucion-de-cuenta.js';
 export {

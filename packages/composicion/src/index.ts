@@ -37,6 +37,7 @@ export {
  */
 export {
   atribuirCuentaALoAnterior,
+  contarSinCuentaDeCobro,
   explicarMarca,
   fijarCuentaDePrueba,
   type AtribucionDeCuenta,

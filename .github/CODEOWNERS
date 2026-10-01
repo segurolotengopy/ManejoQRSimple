@@ -1,0 +1,35 @@
+# =============================================================================
+# CODEOWNERS — Revisores obligatorios por ruta
+# Versión: 2.0 | Fecha: 2026-08-24 | Destino: .github/CODEOWNERS
+# -----------------------------------------------------------------------------
+# Con la rama main protegida y "Require review from Code Owners" activo
+# (ruleset), ningún cambio en estas rutas se fusiona sin la aprobación del
+# equipo dueño. En Modo B0 (privado Free) los rulesets básicos existen pero la
+# revisión de Code Owners NO se exige: el archivo sigue siendo útil para
+# asignar revisores automáticamente.
+# Reemplace @AndresAlberdi @segurolotengopy por equipos reales (o @usuario en cuentas personales).
+# La última regla que coincide gana; el orden importa.
+# =============================================================================
+
+# Propietario por defecto de todo el repositorio
+*                                   @AndresAlberdi @segurolotengopy
+
+# Pipeline, seguridad y configuración de CI: exige al equipo de plataforma
+/.github/                           @AndresAlberdi @segurolotengopy
+/.github/workflows/                 @AndresAlberdi @segurolotengopy
+/.github/CODEOWNERS                 @AndresAlberdi @segurolotengopy
+/.github/dependabot.yml             @AndresAlberdi @segurolotengopy
+/.github/gitleaks.toml              @AndresAlberdi @segurolotengopy
+/.pre-commit-config.yaml            @AndresAlberdi @segurolotengopy
+/.devsecops.yml                     @AndresAlberdi @segurolotengopy
+
+/firestore.rules                    @AndresAlberdi @segurolotengopy
+/firebase.json                      @AndresAlberdi @segurolotengopy
+
+# Dependencias (revisar cambios de lockfile en PRs no generados por Dependabot)
+/package.json                       @AndresAlberdi @segurolotengopy
+/package-lock.json                  @AndresAlberdi @segurolotengopy
+
+# Documentación del estándar y runbooks
+/docs/                              @AndresAlberdi @segurolotengopy
+/CHANGELOG.md                       @AndresAlberdi @segurolotengopy

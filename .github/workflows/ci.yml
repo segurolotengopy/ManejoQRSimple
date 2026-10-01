@@ -59,6 +59,32 @@ jobs:
         run: gitleaks detect --redact --verbose
 
   # ---------------------------------------------------------------------------
+  # Calidad de lo que el estándar agrega: los workflows y los scripts de shell.
+  # Es la parte del job `calidad` de ci-solo-ci.yml que aplica a este repositorio;
+  # ruff y pytest no, porque aquí no hay Python (la calidad de TypeScript es
+  # `verify`). Solo lectura: el repositorio se monta sin permiso de escritura.
+  # ---------------------------------------------------------------------------
+  workflows-y-scripts:
+    name: actionlint y ShellCheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      # actionlint, en una imagen de terceros fijada por digest.
+      - name: actionlint
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.7@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+      # shellcheck ya viene en el runner. Severidad warning: lo que rompe o puede
+      # romper, no el estilo.
+      - name: ShellCheck
+        run: |
+          set -euo pipefail
+          git ls-files -z -- '*.sh' | xargs -0 shellcheck --severity=warning
+
+  # ---------------------------------------------------------------------------
   # Seguridad estática del estándar DevSecOps (stack solo-ci): Gitleaks, Semgrep,
   # Trivy, auditoría de npm y Checkov sobre los workflows. La configuración vive
   # en .devsecops.yml y en .github/ (copias del estándar). CodeQL va aparte, en
@@ -88,13 +114,13 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # compuerta-pr: el ÚNICO status check que exige el ruleset de main. Agrega la
-  # calidad (verify), el escaneo de secretos propio (gitleaks) y la seguridad
-  # estática del estándar. `if: always()` para que un job saltado o fallido
+  # calidad (verify), el escaneo de secretos propio (gitleaks), la calidad de
+  # workflows y scripts, y la seguridad estática del estándar. `if: always()` para que un job saltado o fallido
   # bloquee en vez de dejar la compuerta sin publicar.
   # ---------------------------------------------------------------------------
   compuerta-pr:
     name: compuerta-pr
-    needs: [verify, gitleaks, seguridad-estatica]
+    needs: [verify, gitleaks, workflows-y-scripts, seguridad-estatica]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -103,11 +129,12 @@ jobs:
         env:
           R_VERIFY: ${{ needs.verify.result }}
           R_GITLEAKS: ${{ needs.gitleaks.result }}
+          R_SCRIPTS: ${{ needs.workflows-y-scripts.result }}
           R_SEGURIDAD: ${{ needs.seguridad-estatica.result }}
         run: |
           set -euo pipefail
-          echo "verify=$R_VERIFY | gitleaks=$R_GITLEAKS | seguridad-estatica=$R_SEGURIDAD"
-          for r in "$R_VERIFY" "$R_GITLEAKS" "$R_SEGURIDAD"; do
+          echo "verify=$R_VERIFY | gitleaks=$R_GITLEAKS | workflows-y-scripts=$R_SCRIPTS | seguridad-estatica=$R_SEGURIDAD"
+          for r in "$R_VERIFY" "$R_GITLEAKS" "$R_SCRIPTS" "$R_SEGURIDAD"; do
             if [[ "$r" != "success" ]]; then
               echo "::error::compuerta-pr bloqueada: algún job requerido no terminó en success"
               exit 1

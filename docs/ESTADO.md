@@ -693,6 +693,14 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 - Deuda menor del bloque 3: el índice `(consumidor.consumidorId, creadoEn desc)` ya no lo usa ninguna
   consulta, y la API lee la cuenta del proceso dos veces.
 
+- **Bloque 3, observaciones de endurecimiento de la última auditoría** (sin escenario concreto hoy):
+  la defensa `MARCA_RECIEN_PUESTA` dejaría la marca escrita si algún día se llegara a esa rama, que
+  hoy solo alcanza un escritor viejo concurrente; mientras convivan `main` y esta rama sobre el mismo
+  emulador, la versión vieja crea la marca sin comprobar nada, así que **antes de arrancar con la
+  rama hay que confirmar que `emulador-prod` y `emulador-cuenta-2` ya tienen su marca**; y si el
+  dueño deja `ATRIBUIR_DATOS_ANTERIORES_A` en el archivo de la cuenta, queda puesta para siempre: es
+  de una sola vez, y el código no lo impone. Conviene quitarla después de usarla.
+
 ### Notas de entorno (no obvias)
 
 - Node 22+ por nvm (hay v24): `export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use 24`.

@@ -84,11 +84,13 @@ P1–P9 ok; hallazgos en `02-hallazgos-produccion.md`.
    **El alias es la identidad de la cuenta en los datos:** cada cobro lo guarda, y no se
    renombra mientras existan cobros con él. Al arrancar por primera vez después del bloque 3,
    la API y el satélite se niegan a seguir si el emulador tiene cobros anteriores sin cuenta, o
-   con una inválida, o pendientes de otra cuenta. En modo prueba **solo** los atribuyen solos a
-   esta cuenta si el emulador **ya tenía** la marca de esa misma cuenta: una marca recién puesta
-   por ese mismo arranque no dice de quién son los datos viejos, y entonces aborta sin escribir
-   nada y espera la decisión del dueño. Conviene respaldar la carpeta
-   `~/.manejoqr/emulador-<alias>` antes de esa primera corrida.
+   con una inválida, o pendientes de otra cuenta. En modo prueba los atribuyen solos a esta
+   cuenta **solo** si el emulador ya tenía la marca de esa misma cuenta. Si no tenía marca y sí
+   datos sin cuenta, aborta **sin crear la marca ni escribir nada**: una marca puesta por ese
+   mismo arranque no dice de quién son los datos viejos. Para decidirlo hay que respaldar la
+   carpeta `~/.manejoqr/emulador-<alias>` y, solo si esos datos son de esta cuenta, arrancar
+   una vez con `ATRIBUIR_DATOS_ANTERIORES_A=<alias>`, igual al alias de la corrida; o borrar el
+   emulador y empezar de cero.
 
    **La URL del API Gateway no va en el archivo** (dato del dueño, 2026-09-18): es del
    banco y la misma para toda cuenta de cobro, así que vive en el código

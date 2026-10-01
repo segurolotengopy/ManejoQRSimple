@@ -254,9 +254,13 @@ Además se cerró **C9: no hay comisión bancaria** (decisión 17).
       inválida, o un cobro pendiente de otra cuenta.** Es la defensa contra T10: sin ella, un cobro
       pendiente sin cuenta queda fuera de la consulta por cuenta y el satélite dejaría de vigilar
       un QR todavía pagable, sin ningún error.
-    - **La migración de datos viejos se autoriza solo con una marca de emulador que ya existía.**
-      Una marca recién puesta por el mismo proceso no dice de quién son los datos: aborta y espera
-      al dueño. Lo encontraron las dos revisiones independientes.
+    - **La marca del emulador no se crea sobre datos sin cuenta.** Si el emulador no tiene marca y ya
+      contiene cobros o abonos sin cuenta válida, el arranque aborta sin crear la marca ni escribir
+      nada: una marca puesta por el mismo arranque no dice de quién son los datos, y si se creara, el
+      siguiente arranque, o el otro proceso que arranca casi a la vez, atribuiría todo en silencio.
+      Lo encontraron dos pasadas de auditoría independientes. **Atribuir es una acción explícita del
+      dueño:** arrancar una vez con `ATRIBUIR_DATOS_ANTERIORES_A=<alias>`, igual a la cuenta del
+      proceso. Una marca que ya existía y coincide con la cuenta sí permite atribuir.
     Supuestos asumidos, a la espera de la confirmación del dueño: **D-B** una cuenta puede atender
     a varios consumidores y a la consola del dueño; **D-C** el alias es la identidad persistida;
     **D-D** una API o un satélite para varias cuentas se pospone al bloque 4; **D-F** la cuenta
@@ -722,11 +726,11 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
 
 0. **Bloque 3, antes de fusionarlo o de arrancar la API con él:**
    - **D-A, los datos ya guardados en `~/.manejoqr/emulador-prod` y `emulador-cuenta-2`.** Opciones:
-     (a) atribuirlos solos a su cuenta al arrancar, solo si el emulador ya tiene la marca de esa
-     cuenta, con un respaldo previo de cada carpeta; (b) borrarlos y empezar de cero, que `ESTADO` ya
-     permitía; (c) dejarlos ilegibles. Recomendación: **(a)**, pero no se ejecuta nada sin el OK. Un
-     emulador sin marca con datos viejos **siempre aborta**, porque una marca recién puesta no dice de
-     quién son.
+     (a) atribuirlos a su cuenta, con un respaldo previo de cada carpeta: se hace arrancando una vez
+     con `ATRIBUIR_DATOS_ANTERIORES_A=<alias>`, o solos si el emulador ya tiene la marca de esa cuenta;
+     (b) borrarlos y empezar de cero, que `ESTADO` ya permitía; (c) dejarlos ilegibles.
+     Recomendación: **(a)**, pero no se ejecuta nada sin el OK. Un emulador sin marca con datos viejos
+     **aborta y no crea la marca** hasta que el dueño decida.
    - **Aprobar o corregir los supuestos de la decisión 24** (D-B, D-C, D-D y D-F).
    - **El consumidor de ensayo se conserva** (pedido del dueño): para que la API de `prod` siga
      arrancando, su archivo necesita `CONSUMIDOR_CUENTA_ENSAYO=prod`. Lo agrega un script que no muestra

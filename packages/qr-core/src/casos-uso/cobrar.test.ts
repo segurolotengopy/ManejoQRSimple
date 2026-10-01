@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { esExito, type Resultado } from '../comun/resultado.js';
 import { POLITICA_POR_DEFECTO } from '../conciliacion/conciliar.js';
@@ -30,6 +30,8 @@ import {
 const MONTO = 12_345;
 const VENCE = enMinutos(72 * 60);
 const REFERENCIA = 'mock-qr-000001';
+/** La cuenta de cobro de `unCobro()` y del satélite en estas pruebas. */
+const CUENTA = 'cuenta-a';
 const TRAS_VENCER = enMinutos(72 * 60 + 1);
 
 /** Cuenta los QRs que se le pidieron al banco. */
@@ -463,7 +465,7 @@ describe('conciliarDia()', () => {
     await hastaEnviado(deps);
     watcher.cargarAbono('mock-qr-000001', abono());
 
-    const r = await conciliarDia(deps, enMinutos(30), enMinutos(35));
+    const r = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(35));
     expect(esExito(r)).toBe(true);
     if (!esExito(r)) return;
     expect(r.valor.abonosLeidos).toBe(1);
@@ -486,7 +488,7 @@ describe('conciliarDia()', () => {
       }),
     );
 
-    const r = await conciliarDia(deps, enMinutos(30), enMinutos(35));
+    const r = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(35));
     expect(esExito(r)).toBe(true);
     if (!esExito(r)) return;
     expect(r.valor.confirmados).toEqual([]);
@@ -501,7 +503,7 @@ describe('conciliarDia()', () => {
     watcher.cargarAbono(REFERENCIA, abono());
     await verificarPago(deps, cobro, enMinutos(31));
 
-    const r = await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    const r = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(40));
     expect(esExito(r) && r.valor).toMatchObject({ yaRegistrados: 1, huerfanos: [], confirmados: [] });
   });
 
@@ -511,13 +513,13 @@ describe('conciliarDia()', () => {
     if (!esExito(vencido)) throw new Error('debería vencer');
     watcher.cargarAbono(REFERENCIA, abono({ ocurridoEn: enMinutos(72 * 60 + 30) }));
 
-    const r = await conciliarDia(deps, enMinutos(72 * 60 + 30), enMinutos(72 * 60 + 60));
+    const r = await conciliarDia(deps, CUENTA, enMinutos(72 * 60 + 30), enMinutos(72 * 60 + 60));
     expect(esExito(r) && r.valor.enRevision).toEqual(['cobro-1']);
     expect(await estadoGuardado(cobros)).toBe('EN_REVISION');
     expect((await ultimaEvidencia(evidencia))?.evento).toBe('ABONO_TARDIO');
 
     // Idempotente: repetir el cierre (el satélite reinició) no duplica nada.
-    const otraVez = await conciliarDia(deps, enMinutos(72 * 60 + 30), enMinutos(72 * 60 + 90));
+    const otraVez = await conciliarDia(deps, CUENTA, enMinutos(72 * 60 + 30), enMinutos(72 * 60 + 90));
     expect(esExito(otraVez) && otraVez.valor).toMatchObject({ enRevision: [], yaRegistrados: 1 });
   });
 
@@ -533,7 +535,7 @@ describe('conciliarDia()', () => {
     expect(esExito(agotada) && agotada.valor.tipo).toBe('VENTANA_AGOTADA');
     watcher.cargarAbono(REFERENCIA, abono({ ocurridoEn: enMinutos(72 * 60 + 30) }));
 
-    const r = await conciliarDia(deps, enMinutos(72 * 60 + 30), enMinutos(72 * 60 + 60));
+    const r = await conciliarDia(deps, CUENTA, enMinutos(72 * 60 + 30), enMinutos(72 * 60 + 60));
     expect(esExito(r) && r.valor).toMatchObject({ enRevision: ['cobro-1'], yaRegistrados: 0, sinCorroborar: [] });
     expect((await ultimaEvidencia(evidencia))?.evento).toBe('DETECCION_EN_REVISION');
   });
@@ -556,7 +558,7 @@ describe('conciliarDia()', () => {
       }),
     );
 
-    const r = await conciliarDia(deps, enMinutos(30), enMinutos(50));
+    const r = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(50));
     expect(esExito(r) && r.valor).toMatchObject({
       yaRegistrados: 1,
       sinCorroborar: ['baneco:mock-qr-000001:tx-2'],
@@ -589,7 +591,7 @@ describe('conciliarDia()', () => {
       );
     }
 
-    const r = await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    const r = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(40));
     expect(esExito(r) && r.valor.huerfanos).toEqual(['baneco:qr-de-nadie:tx-1']);
     expect(esExito(r) && r.valor.conError.map((e) => e.idDeduplicacion)).toEqual(['baneco:qr-roto:tx-1']);
   });
@@ -600,7 +602,7 @@ describe('conciliarDia()', () => {
     await anular(deps, cobro, 'x', enMinutos(10));
     watcher.cargarAbono(REFERENCIA, abono());
 
-    const r = await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    const r = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(40));
     expect(esExito(r) && r.valor.huerfanos).toEqual(['baneco:mock-qr-000001:tx-1']);
   });
 
@@ -610,7 +612,7 @@ describe('conciliarDia()', () => {
     await anular(deps, cobro, 'x', enMinutos(10));
     watcher.cargarAbono(REFERENCIA, abono());
 
-    await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(40));
     const abiertos = await abonosSinConciliar.listarAbiertos(10);
     expect(esExito(abiertos) && abiertos.valor).toEqual([
       {
@@ -620,9 +622,84 @@ describe('conciliarDia()', () => {
         montoCentavos: bs(MONTO),
         ocurridoEn: enMinutos(30),
         origen: 'watcher-baneco',
+        cuentaCobro: CUENTA,
         registradoEn: enMinutos(40),
         resolucion: null,
       },
+    ]);
+  });
+
+  it('un abono sobre un cobro de otra cuenta no se verifica ni se concilia: queda para revisión', async () => {
+    // El satélite de la cuenta-b lee en su `paidQR` un pago cuyo QR es de un
+    // cobro de la cuenta-a. Verificarlo exigiría consultar el banco con
+    // credenciales ajenas, y confirmarlo sería decidir con datos de otra cuenta.
+    const { deps, watcher, abonosSinConciliar, evidencia } = armar();
+    const cobro = await hastaEnviado(deps);
+    watcher.cargarAbono(REFERENCIA, abono());
+    const consultas = vi.spyOn(watcher, 'consultarCobro');
+    const antes = await evidencia.listarDeCobro(cobro.id);
+
+    const r = await conciliarDia(deps, 'cuenta-b', enMinutos(30), enMinutos(40));
+
+    expect(esExito(r) && r.valor).toMatchObject({
+      deOtraCuenta: ['baneco:mock-qr-000001:tx-1'],
+      nuevosParaRevisar: ['baneco:mock-qr-000001:tx-1'],
+      confirmados: [],
+      enRevision: [],
+      huerfanos: [],
+      sinCorroborar: [],
+      conError: [],
+    });
+    expect(consultas).toHaveBeenCalledTimes(0);
+    expect(await deps.cobros.obtener(cobro.id)).toEqual({ ok: true, valor: cobro });
+    expect(await evidencia.listarDeCobro(cobro.id)).toEqual(antes);
+    const abiertos = await abonosSinConciliar.listarAbiertos(10);
+    expect(esExito(abiertos) && abiertos.valor).toEqual([
+      {
+        idDeduplicacion: 'baneco:mock-qr-000001:tx-1',
+        motivo: 'SIN_CORROBORAR',
+        cobroId: cobro.id,
+        montoCentavos: bs(MONTO),
+        ocurridoEn: enMinutos(30),
+        origen: 'watcher-baneco',
+        cuentaCobro: 'cuenta-b',
+        registradoEn: enMinutos(40),
+        resolucion: null,
+      },
+    ]);
+  });
+
+  it('un segundo cierre del mismo día no repite el abono de otra cuenta como novedad', async () => {
+    const { deps, watcher } = armar();
+    await hastaEnviado(deps);
+    watcher.cargarAbono(REFERENCIA, abono());
+
+    await conciliarDia(deps, 'cuenta-b', enMinutos(30), enMinutos(40));
+    const otraVez = await conciliarDia(deps, 'cuenta-b', enMinutos(30), enMinutos(60));
+
+    expect(esExito(otraVez) && otraVez.valor).toMatchObject({
+      deOtraCuenta: ['baneco:mock-qr-000001:tx-1'],
+      nuevosParaRevisar: [],
+    });
+  });
+
+  it('un huérfano queda con la cuenta del satélite que lo leyó', async () => {
+    const { deps, watcher, abonosSinConciliar } = armar();
+    watcher.cargarAbono(
+      'qr-de-nadie',
+      registrarDeteccion({
+        idDeduplicacion: 'baneco:qr-de-nadie:tx-1',
+        montoCentavos: bs(500),
+        ocurridoEn: enMinutos(30),
+        origen: 'watcher-baneco',
+        referencia: null,
+      }),
+    );
+
+    await conciliarDia(deps, 'cuenta-b', enMinutos(30), enMinutos(40));
+    const abiertos = await abonosSinConciliar.listarAbiertos(10);
+    expect(esExito(abiertos) && abiertos.valor.map((a) => [a.motivo, a.cuentaCobro])).toEqual([
+      ['HUERFANO', 'cuenta-b'],
     ]);
   });
 
@@ -638,14 +715,14 @@ describe('conciliarDia()', () => {
         referencia: null,
       }),
     );
-    const primero = await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    const primero = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(40));
     expect(esExito(primero) && primero.valor.nuevosParaRevisar).toEqual(['baneco:qr-de-nadie:tx-1']);
     await abonosSinConciliar.cerrar('baneco:qr-de-nadie:tx-1', {
       motivo: 'Devuelto al pagador',
       resueltoEn: enMinutos(50),
     });
 
-    const otraVez = await conciliarDia(deps, enMinutos(30), enMinutos(60));
+    const otraVez = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(60));
     expect(esExito(otraVez) && otraVez.valor.huerfanos).toEqual(['baneco:qr-de-nadie:tx-1']);
     // Lo vuelve a ver, pero no es novedad: el satélite no repite el aviso.
     expect(esExito(otraVez) && otraVez.valor.nuevosParaRevisar).toEqual([]);
@@ -676,7 +753,7 @@ describe('conciliarDia()', () => {
       }),
     );
 
-    const r = await conciliarDia(deps, enMinutos(30), enMinutos(40));
+    const r = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(40));
     expect(esExito(r) && r.valor.huerfanos).toEqual([]);
     expect(esExito(r) && r.valor.conError.map((e) => e.idDeduplicacion)).toEqual(['baneco:qr-de-nadie:tx-1']);
   });

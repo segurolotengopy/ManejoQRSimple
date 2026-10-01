@@ -18,10 +18,11 @@ import {
   type RegistroEvidencia,
 } from '@mqs/qr-core';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
-import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AbonosSinConciliarFirestore, COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
+import { atribuirCuentaALoAnterior } from './atribucion-de-cuenta.js';
 import { COLECCION_CONFIGURACION, explicarMarca, fijarCuentaDePrueba } from './cuenta-de-prueba.js';
 import { CobroRepositoryFirestore, EvidenceStoreFirestore } from './repositorio.js';
 
@@ -40,6 +41,7 @@ function unCobro(sobrescribir: Partial<Cobro> = {}): Cobro {
   return {
     id: 'cobro-emulador-1',
     proveedor: 'baneco',
+    cuentaCobro: 'cuenta-a',
     estado: 'BORRADOR',
     montoCentavos: bs(12_345),
     moneda: 'BOB',
@@ -75,6 +77,27 @@ function unaEvidencia(sobrescribir: Partial<RegistroEvidencia> = {}): RegistroEv
     registradoEn: T0,
     datos: {},
     ...sobrescribir,
+  };
+}
+
+/** Un cobro como lo guardaba la versión anterior: sin `cuentaCobro`. */
+function documentoDeCobroViejo(): Record<string, unknown> {
+  const { id: _id, cuentaCobro: _cuenta, ...resto } = unCobro();
+  return { ...resto, creadoEn: Timestamp.fromDate(T0) };
+}
+
+/** Un abono como lo guardaba la versión anterior: sin `cuentaCobro`. */
+function documentoDeAbonoViejo(): Record<string, unknown> {
+  return {
+    idDeduplicacion: 'baneco:qr-viejo:tx-1',
+    motivo: 'HUERFANO',
+    cobroId: null,
+    montoCentavos: 100,
+    ocurridoEn: Timestamp.fromDate(T0),
+    origen: 'watcher-baneco',
+    registradoEn: Timestamp.fromDate(T0),
+    abierto: true,
+    resolucion: null,
   };
 }
 
@@ -151,12 +174,36 @@ describe('AbonosSinConciliarFirestore', () => {
       montoCentavos: monto,
       ocurridoEn: T0,
       origen: 'watcher-baneco',
+      cuentaCobro: 'cuenta-a',
       registradoEn: T0,
       resolucion: null,
     });
     expect(esExito(r)).toBe(true);
     const abiertos = await store.listarAbiertos(10);
     expect(esExito(abiertos) && abiertos.valor.map((a) => a.idDeduplicacion)).toEqual(['baneco:qr/raro:tx-1']);
+  });
+
+  it('el abono conserva la cuenta en que cayó el pago', async () => {
+    const store = new AbonosSinConciliarFirestore(db);
+    await store.registrar({
+      idDeduplicacion: 'baneco:qr-cuenta:tx-1',
+      motivo: 'HUERFANO',
+      cobroId: null,
+      montoCentavos: bs(100),
+      ocurridoEn: T0,
+      origen: 'watcher-baneco',
+      cuentaCobro: 'cuenta-b',
+      registradoEn: T0,
+      resolucion: null,
+    });
+    const abiertos = await store.listarAbiertos(10);
+    expect(esExito(abiertos) && abiertos.valor.map((a) => a.cuentaCobro)).toEqual(['cuenta-b']);
+  });
+
+  it('un abono sin cuenta falla fuerte al leerse, no se lee como «sin cuenta»', async () => {
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+    const abiertos = await new AbonosSinConciliarFirestore(db).listarAbiertos(10);
+    expect(esExito(abiertos)).toBe(false);
   });
 });
 
@@ -189,7 +236,7 @@ describe('CobroRepositoryFirestore', () => {
     await repo.guardar(unCobro({ id: 'c4', estado: 'BORRADOR' }));
     await repo.guardar(unCobro({ id: 'c5', estado: 'QR_ACTIVO', qrVersion: 1, qrVigente: unQr() }));
 
-    const pendientes = await repo.listarPendientes();
+    const pendientes = await repo.listarPendientes('cuenta-a');
     expect(esExito(pendientes)).toBe(true);
     if (esExito(pendientes)) {
       // QR_ACTIVO también: su QR es pagable y al vencer hay que anularlo.
@@ -251,10 +298,139 @@ describe('CobroRepositoryFirestore', () => {
 
   it('un documento corrupto se reporta, no se saltea en silencio', async () => {
     // Saltear un cobro pendiente sería dejar de mirarlo sin que nadie se entere.
-    await db.collection('cobros').doc('roto').set({ estado: 'ENVIADO', basura: true });
+    await db.collection('cobros').doc('roto').set({ cuentaCobro: 'cuenta-a', estado: 'ENVIADO', basura: true });
 
-    const pendientes = await new CobroRepositoryFirestore(db).listarPendientes();
+    const pendientes = await new CobroRepositoryFirestore(db).listarPendientes('cuenta-a');
     expect(esExito(pendientes)).toBe(false);
+  });
+
+  it('la cuenta de cobro hace el viaje de ida y vuelta', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    await repo.guardar(unCobro({ cuentaCobro: 'sucursal-2' }));
+
+    const leido = await repo.obtener('cobro-emulador-1');
+    expect(esExito(leido) && leido.valor?.cuentaCobro).toBe('sucursal-2');
+    const crudo = await db.collection('cobros').doc('cobro-emulador-1').get();
+    expect(crudo.get('cuentaCobro')).toBe('sucursal-2');
+  });
+
+  it('un documento sin cuentaCobro es DOCUMENTO_INVALIDO, no un cobro «sin cuenta»', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
+
+    const leido = await repo.obtener('viejo');
+    expect(esExito(leido)).toBe(false);
+  });
+
+  it('un alias que parece un número de cuenta no se acepta al leer', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    await db.collection('cobros').doc('numerico').set({ ...documentoDeCobroViejo(), cuentaCobro: '1234567890' });
+
+    expect(esExito(await repo.obtener('numerico'))).toBe(false);
+  });
+
+  it('listarPendientes solo devuelve los de la cuenta pedida', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    await repo.guardar(unCobro({ id: 'a1', cuentaCobro: 'cuenta-a', estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr() }));
+    await repo.guardar(unCobro({ id: 'b1', cuentaCobro: 'cuenta-b', estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr(2) }));
+
+    const deB = await repo.listarPendientes('cuenta-b');
+    expect(esExito(deB) && deB.valor.map((c) => c.id)).toEqual(['b1']);
+  });
+
+  it('listarDeConsumidor filtra por consumidor y por cuenta', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    const consumidor = (ref: string) => ({ consumidorId: 'novuchat', referenciaExterna: ref });
+    await repo.guardar(unCobro({ id: 'a1', cuentaCobro: 'cuenta-a', telefonoCliente: null, consumidor: consumidor('r1') }));
+    await repo.guardar(unCobro({ id: 'b1', cuentaCobro: 'cuenta-b', telefonoCliente: null, consumidor: consumidor('r2') }));
+
+    const desde = new Date(T0.getTime() - 3_600_000);
+    const hasta = new Date(T0.getTime() + 3_600_000);
+    const deA = await repo.listarDeConsumidor({ consumidorId: 'novuchat', cuentaCobro: 'cuenta-a' }, desde, hasta, 10);
+    expect(esExito(deA) && deA.valor.map((c) => c.id)).toEqual(['a1']);
+  });
+});
+
+describe('atribuirCuentaALoAnterior()', () => {
+  async function sembrarAnterior(): Promise<void> {
+    await db.collection('cobros').doc('viejo-1').set({ ...documentoDeCobroViejo(), estado: 'ENVIADO' });
+    await db.collection('cobros').doc('viejo-2').set({ ...documentoDeCobroViejo(), estado: 'CONFIRMADO' });
+    await db.collection('cobros').doc('con-cuenta').set({ ...documentoDeCobroViejo(), cuentaCobro: 'otra' });
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+  }
+
+  async function sinCuenta(): Promise<string[]> {
+    const todos = await db.collection('cobros').get();
+    return todos.docs.filter((d) => d.get('cuentaCobro') === undefined).map((d) => d.id).sort();
+  }
+
+  it('sin marca de cuenta no hay con qué atribuir: no escribe nada', async () => {
+    await sembrarAnterior();
+
+    await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({ tipo: 'SIN_MARCA' });
+    expect(await sinCuenta()).toEqual(['viejo-1', 'viejo-2']);
+  });
+
+  it('con la marca de otra cuenta se niega y no escribe nada', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-b', T0);
+    await sembrarAnterior();
+
+    await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({
+      tipo: 'MARCA_DE_OTRA_CUENTA',
+      guardada: 'cuenta-b',
+    });
+    expect(await sinCuenta()).toEqual(['viejo-1', 'viejo-2']);
+    const abono = await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').get();
+    expect(abono.get('cuentaCobro')).toBeUndefined();
+  });
+
+  it('con la marca correcta atribuye solo lo que falta y no toca el estado', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    await sembrarAnterior();
+
+    await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({
+      tipo: 'HECHA',
+      cobros: 2,
+      abonos: 1,
+    });
+
+    const viejo1 = await db.collection('cobros').doc('viejo-1').get();
+    const viejo2 = await db.collection('cobros').doc('viejo-2').get();
+    expect([viejo1.get('cuentaCobro'), viejo1.get('estado')]).toEqual(['cuenta-a', 'ENVIADO']);
+    expect([viejo2.get('cuentaCobro'), viejo2.get('estado')]).toEqual(['cuenta-a', 'CONFIRMADO']);
+    // No pisa una cuenta que ya estaba, aunque sea distinta.
+    const conCuenta = await db.collection('cobros').doc('con-cuenta').get();
+    expect(conCuenta.get('cuentaCobro')).toBe('otra');
+    const abono = await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').get();
+    expect(abono.get('cuentaCobro')).toBe('cuenta-a');
+    // Y ahora los documentos se leen.
+    expect(esExito(await new CobroRepositoryFirestore(db).obtener('viejo-1'))).toBe(true);
+  });
+
+  it('la segunda corrida no encuentra nada que atribuir', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    await sembrarAnterior();
+    await atribuirCuentaALoAnterior(db, 'cuenta-a');
+
+    await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({
+      tipo: 'HECHA',
+      cobros: 0,
+      abonos: 0,
+    });
+  });
+
+  it('no toca la evidencia ni el historial de QRs', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0);
+    const repo = new CobroRepositoryFirestore(db);
+    await repo.guardar(unCobro({ estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr() }));
+    await new EvidenceStoreFirestore(db).agregar(unaEvidencia());
+    await db.collection('cobros').doc('cobro-emulador-1').update({ cuentaCobro: FieldValue.delete() });
+
+    await atribuirCuentaALoAnterior(db, 'cuenta-a');
+
+    const evidencia = await db.collection('cobros').doc('cobro-emulador-1').collection('evidencia').get();
+    const qrs = await db.collection('cobros').doc('cobro-emulador-1').collection('qrs').get();
+    expect([evidencia.size, qrs.size]).toEqual([1, 1]);
   });
 });
 

@@ -44,6 +44,7 @@ export function unCobro(sobrescribir: Partial<Cobro> = {}): Cobro {
   return {
     id: 'cobro-1',
     proveedor: 'baneco',
+    cuentaCobro: 'cuenta-a',
     estado: 'BORRADOR',
     montoCentavos: bs(12_345),
     moneda: 'BOB',

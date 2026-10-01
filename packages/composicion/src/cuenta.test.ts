@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { archivoDeCredenciales, esAliasDeCuenta, leerCuentaDePrueba } from './cuenta.js';
+import { archivoDeCredenciales, esAliasDeCuenta, leerCuentaDeCobro, leerCuentaDePrueba } from './cuenta.js';
 
 describe('esAliasDeCuenta()', () => {
   it.each(['prod', 'sucursal-2', 'a', `a${'b'.repeat(23)}`])('acepta %s', (alias) => {
@@ -41,6 +41,29 @@ describe('leerCuentaDePrueba()', () => {
     // Si `CUENTA` está mal escrita, el archivo de credenciales que se cargó
     // tampoco es el que se cree: seguir con un valor inventado es peor.
     expect(leerCuentaDePrueba({ PRUEBA_CUENTA: '../otra' })).toBeNull();
+  });
+});
+
+describe('leerCuentaDeCobro()', () => {
+  it('sin variable, la primera cuenta', () => {
+    expect(leerCuentaDeCobro({})).toBe('prod');
+    expect(leerCuentaDeCobro({ PRUEBA_CUENTA: '  ' })).toBe('prod');
+  });
+
+  it('con alias válido, ese alias', () => {
+    expect(leerCuentaDeCobro({ PRUEBA_CUENTA: ' sucursal-2 ' })).toBe('sucursal-2');
+  });
+
+  it('un alias que no sirve como nombre de archivo no se corrige solo', () => {
+    expect(leerCuentaDeCobro({ PRUEBA_CUENTA: '../otra' })).toBeNull();
+  });
+
+  it('un número de cuenta no es una cuenta de cobro', () => {
+    expect(leerCuentaDeCobro({ PRUEBA_CUENTA: '1234567890' })).toBeNull();
+  });
+
+  it('leerCuentaDePrueba sigue siendo la misma función', () => {
+    expect(leerCuentaDePrueba).toBe(leerCuentaDeCobro);
   });
 });
 

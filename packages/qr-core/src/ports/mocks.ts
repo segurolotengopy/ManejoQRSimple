@@ -12,7 +12,7 @@
  */
 
 import { exito, fallo, type Resultado } from '../comun/resultado.js';
-import type { Cobro, QrEmitido } from '../cobro/cobro.js';
+import type { Cobro, PropietarioConsumidor, QrEmitido } from '../cobro/cobro.js';
 import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
@@ -169,9 +169,11 @@ export class CobroRepositoryEnMemoria implements CobroRepository {
     return Promise.resolve(exito(undefined));
   }
 
-  listarPendientes(): Ok<readonly Cobro[]> {
+  listarPendientes(cuentaCobro: string): Ok<readonly Cobro[]> {
     const pendientes = [...this.cobros.values()].filter(
-      (c) => c.estado === 'QR_ACTIVO' || c.estado === 'ENVIADO' || c.estado === 'COMPROBANTE_RECIBIDO',
+      (c) =>
+        c.cuentaCobro === cuentaCobro &&
+        (c.estado === 'QR_ACTIVO' || c.estado === 'ENVIADO' || c.estado === 'COMPROBANTE_RECIBIDO'),
     );
     return Promise.resolve(exito(pendientes));
   }
@@ -196,11 +198,17 @@ export class CobroRepositoryEnMemoria implements CobroRepository {
     return Promise.resolve(exito(cobro ?? null));
   }
 
-  listarDeConsumidor(consumidorId: string, desde: Date, hasta: Date, limite: number): Ok<readonly Cobro[]> {
+  listarDeConsumidor(
+    propietario: PropietarioConsumidor,
+    desde: Date,
+    hasta: Date,
+    limite: number,
+  ): Ok<readonly Cobro[]> {
     const suyos = [...this.cobros.values()]
       .filter(
         (c) =>
-          c.consumidor?.consumidorId === consumidorId &&
+          c.consumidor?.consumidorId === propietario.consumidorId &&
+          c.cuentaCobro === propietario.cuentaCobro &&
           c.creadoEn.getTime() >= desde.getTime() &&
           c.creadoEn.getTime() < hasta.getTime(),
       )

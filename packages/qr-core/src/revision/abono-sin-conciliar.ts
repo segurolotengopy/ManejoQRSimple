@@ -40,6 +40,11 @@ export type AbonoSinConciliar = {
   readonly montoCentavos: Centavos;
   readonly ocurridoEn: Date;
   readonly origen: OrigenDeteccion;
+  /**
+   * Cuenta en la que el banco acreditó el pago: la del satélite que lo leyó en
+   * su reporte diario. Es un alias, nunca el número de cuenta (regla #4).
+   */
+  readonly cuentaCobro: string;
   /** Cuándo lo encontró el cierre: desde ahí corre la alerta. */
   readonly registradoEn: Date;
   readonly resolucion: ResolucionAbono | null;

@@ -30,7 +30,7 @@ export type MarcaDeCuenta =
   | { readonly tipo: 'CONFLICTO'; readonly cuenta: string; readonly guardada: string }
   | { readonly tipo: 'ERROR'; readonly detalle: string };
 
-const marcaDoc = z.object({
+export const marcaDoc = z.object({
   cuenta: z.string().min(1),
   desde: z.custom<Timestamp>((v) => v instanceof Timestamp, { message: 'se esperaba un Timestamp' }),
 });

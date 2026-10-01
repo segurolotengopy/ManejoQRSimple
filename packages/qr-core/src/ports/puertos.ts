@@ -13,7 +13,7 @@
 
 import type { Centavos } from '../comun/dinero.js';
 import type { Resultado } from '../comun/resultado.js';
-import type { Cobro, OrigenQr, QrEmitido } from '../cobro/cobro.js';
+import type { Cobro, OrigenQr, PropietarioConsumidor, QrEmitido } from '../cobro/cobro.js';
 import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
 import type { DeteccionDePago } from '../conciliacion/deteccion.js';
@@ -124,8 +124,11 @@ export interface CobroRepository {
    * WhatsApp puede entregar el QR aunque reporte una falla, y porque su QR
    * también hay que anularlo al vencer. Es la pregunta del satélite, no la de
    * la consola.
+   *
+   * Solo los de esa cuenta de cobro: el watcher de una cuenta no le pregunta a
+   * su banco por QRs de otra.
    */
-  listarPendientes(): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
+  listarPendientes(cuentaCobro: string): Promise<Resultado<readonly Cobro[], ErrorPuerto>>;
 
   /**
    * Los cobros más recientes, en cualquier estado.
@@ -162,12 +165,13 @@ export interface CobroRepository {
    */
 
   /**
-   * Los cobros de un consumidor creados en `[desde, hasta)`, para que concilie
-   * contra su propio sistema. Es la pregunta del contrato de docs/10, y por
-   * eso lleva el consumidor adentro: no existe una variante sin filtrar.
+   * Los cobros de un consumidor **en su cuenta** creados en `[desde, hasta)`,
+   * para que concilie contra su propio sistema. Es la pregunta del contrato de
+   * docs/10, y por eso lleva consumidor y cuenta adentro: no existe una
+   * variante sin filtrar.
    */
   listarDeConsumidor(
-    consumidorId: string,
+    propietario: PropietarioConsumidor,
     desde: Date,
     hasta: Date,
     limite: number,

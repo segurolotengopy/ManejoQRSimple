@@ -28,6 +28,10 @@ export {
 } from './abonos-sin-conciliar.js';
 export { AvisosFirestore, COLECCION_AVISOS } from './avisos.js';
 export {
+  atribuirCuentaALoAnterior,
+  type AtribucionDeCuenta,
+} from './atribucion-de-cuenta.js';
+export {
   explicarMarca,
   fijarCuentaDePrueba,
   COLECCION_CONFIGURACION,

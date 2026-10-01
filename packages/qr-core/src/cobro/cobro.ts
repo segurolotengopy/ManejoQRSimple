@@ -52,9 +52,25 @@ export type DatosConsumidor = {
   readonly referenciaExterna: string;
 };
 
+/**
+ * A quién pertenece un cobro del contrato de consumidores: el consumidor y la
+ * cuenta de cobro en la que cobra. Los dos salen de la identidad autenticada,
+ * nunca del cuerpo del pedido.
+ */
+export type PropietarioConsumidor = {
+  readonly consumidorId: string;
+  readonly cuentaCobro: string;
+};
+
 export type Cobro = {
   readonly id: string;
   readonly proveedor: Proveedor;
+  /**
+   * Alias de la cuenta de cobro cuyo QR lleva el cobro. Rótulo del dueño,
+   * nunca el número de cuenta (regla #4). No se renombra mientras existan
+   * cobros con él.
+   */
+  readonly cuentaCobro: string;
   readonly estado: EstadoCobro;
   readonly montoCentavos: Centavos;
   readonly moneda: 'BOB';

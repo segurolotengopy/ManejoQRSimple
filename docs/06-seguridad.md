@@ -80,7 +80,7 @@ lo que agrega el estándar es la seguridad estática, y todo junto lo agrega `co
 | Control | Qué mira | Cubre |
 |---|---|---|
 | Gitleaks del estándar, con `.github/gitleaks.toml` | Secretos en todo el historial, con cuatro reglas propias: credencial bancaria, `storageState`, token de WhatsAppModular y secreto HMAC | T7, y la parte de T2, T5, T14 y T15 que es «el secreto no está en el repo» |
-| Gitleaks propio (job `gitleaks`, `.gitleaks.toml`) | Lo mismo, **pero también `docs/`**, que el estándar excluye | T6 y T7 en los informes de producción |
+| Gitleaks propio (job `gitleaks`, `.gitleaks.toml`) | Lo mismo, y con todas las reglas por defecto en `docs/`, donde el estándar exime `generic-api-key` | T6 y T7 en los informes de producción |
 | Semgrep CE y CodeQL | SAST sobre el código | Código inseguro en general; ninguna amenaza propia |
 | Trivy fs, `npm audit` y `dependency-review` | Vulnerabilidades conocidas en dependencias; bloquean en CRITICAL y HIGH | T16 |
 | Checkov, actionlint y ShellCheck | Permisos e inyección en workflows, y errores en scripts | T16 |

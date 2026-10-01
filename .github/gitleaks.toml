@@ -1,0 +1,174 @@
+# =============================================================================
+# gitleaks.toml — Configuración de Gitleaks para _reusable-security.yml,
+#                 pre-commit y security-local.sh
+# Versión: 2.1 | Fecha: 2026-10-01 | Destino: .github/gitleaks.toml
+# -----------------------------------------------------------------------------
+# Extiende la configuración por defecto de Gitleaks (≈170 reglas: AWS, GCP,
+# GitHub, Slack, claves privadas, JWT, etc.) y añade:
+#   - Reglas propias para credenciales de OCI y GCP que el default no cubre
+#     bien (config de OCI con fingerprint + OCID, JSON de service account).
+#   - Allowlist de rutas de pruebas/fixtures/documentación (con cuidado:
+#     un secreto real en un fixture sigue siendo un secreto; la allowlist solo
+#     evita falsos positivos de datos claramente sintéticos).
+# Sintaxis de Gitleaks >= 8.21 ([[allowlists]]). Verificar con:
+#   gitleaks detect --config .github/gitleaks.toml --redact -v
+# =============================================================================
+title = "Estándar DevSecOps — Gitleaks"
+
+[extend]
+useDefault = true
+# Para desactivar reglas del default con justificación (ID exacto):
+# disabledRules = ["generic-api-key"]
+
+# -----------------------------------------------------------------------------
+# Reglas propias
+# -----------------------------------------------------------------------------
+
+[[rules]]
+id = "oci-api-key-config"
+description = "Bloque de configuración de OCI (~/.oci/config) con fingerprint y OCIDs"
+regex = '''(?i)fingerprint\s*=\s*([0-9a-f]{2}:){15}[0-9a-f]{2}'''
+keywords = ["fingerprint"]
+tags = ["oci", "config"]
+
+[[rules]]
+id = "oci-ocid-user-or-tenancy"
+description = "OCID de usuario/tenancy fuera de IaC (suele acompañar a una API key en archivos de config)"
+regex = '''ocid1\.(user|tenancy)\.oc1\.\.[a-z0-9]{40,}'''
+keywords = ["ocid1.user", "ocid1.tenancy"]
+tags = ["oci", "identificador"]
+# Los OCID por sí solos no son secretos, pero en un ~/.oci/config o .env
+# copiado al repo delatan una credencial completa. Se permiten en IaC y en
+# el manifiesto, donde son referencias legítimas.
+[[rules.allowlists]]
+paths = ['''(^|/)infra/.*\.tf$''', '''\.tfvars(\.example)?$''', '''(^|/)\.devsecops\.yml$''']
+
+[[rules]]
+id = "oci-auth-token"
+description = "Auth token de OCI (usado para OCIR/Docker login)"
+regex = '''(?i)(oci[_-]?auth[_-]?token|OCIR_TOKEN)\s*[:=]\s*['"]?[A-Za-z0-9#$%&()*+,\-.:;<=>?@\[\]^_{|}~]{20,}['"]?'''
+keywords = ["oci_auth_token", "OCIR_TOKEN", "oci-auth-token"]
+tags = ["oci", "token"]
+
+[[rules]]
+id = "gcp-service-account-json"
+description = "JSON de service account de GCP (type service_account + private_key_id)"
+regex = '''"type"\s*:\s*"service_account"'''
+keywords = ["service_account"]
+tags = ["gcp", "credencial"]
+# El estándar prohíbe JSON de SA en repositorios: siempre WIF.
+
+[[rules]]
+id = "gcp-api-key"
+description = "Clave de API de Google (AIza...) fuera de archivos de configuración pública de Firebase"
+regex = '''AIza[0-9A-Za-z\-_]{35}'''
+keywords = ["AIza"]
+tags = ["gcp", "api-key"]
+[[rules.allowlists]]
+# Las API keys web de Firebase son públicas por diseño (se protegen con App
+# Check y restricciones de referer); se permiten solo en estos archivos.
+paths = ['''(^|/)firebase(-config)?\.(js|ts|json)$''', '''(^|/)\.env\.(staging|production)\.example$''']
+
+[[rules]]
+id = "firebase-token-ci"
+description = "FIREBASE_TOKEN de `firebase login:ci` (deprecado y prohibido por el estándar)"
+regex = '''1//0[A-Za-z0-9_\-]{40,}'''
+keywords = ["1//0"]
+tags = ["firebase", "token"]
+
+# -----------------------------------------------------------------------------
+# Allowlist global (aplica a todas las reglas)
+# -----------------------------------------------------------------------------
+[[allowlists]]
+description = "Rutas de pruebas, fixtures, documentación y artefactos generados"
+paths = [
+  '''(^|/)(test|tests|__tests__|spec|fixtures|__fixtures__|mocks|__mocks__)/''',
+  '''\.(test|spec)\.(js|jsx|ts|tsx|py)$''',
+  '''(^|/)docs?/.*\.md$''',
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)pnpm-lock\.yaml$''',
+  '''(^|/)yarn\.lock$''',
+  '''(^|/)poetry\.lock$''',
+  '''(^|/)uv\.lock$''',
+  '''(^|/)go\.sum$''',
+  '''(^|/)node_modules/''',
+  '''(^|/)dist/''',
+  '''(^|/)coverage/''',
+  '''\.min\.(js|css)$''',
+  '''\.(png|jpg|jpeg|gif|svg|ico|woff2?|ttf|pdf)$''',
+  '''(^|/)\.gitleaks\.toml$''',
+  '''(^|/)\.github/gitleaks\.toml$''',
+  # Artefactos que generan las propias herramientas del estándar. Todos están en
+  # .gitignore (security-local.sh y bootstrap-repo.sh los agregan), así que no hay
+  # código del proyecto ahí; pero Gitleaks en modo directorio (--no-git) no respeta
+  # .gitignore y en la SEGUNDA corrida de security-local.sh leía la base de Trivy
+  # (.trivy-cache/db/trivy.db) y daba ~20 CRITICAL falsos. Son directorios exactos,
+  # no nombres: un `src/trivy-cache.js` se sigue analizando.
+  '''(^|/)\.trivy-cache/''',
+  '''(^|/)\.security-reports/''',
+  '''(^|/)\.deploy-log/''',
+]
+
+[[allowlists]]
+description = "Valores claramente sintéticos usados en ejemplos y plantillas"
+regexes = [
+  '''(?i)(ejemplo|example|dummy|placeholder|changeme|xxxxxxxx|REEMPLAZAR|<[A-Z_]+>)''',
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
+]
+stopwords = ["ejemplo", "example", "placeholder", "sample"]
+
+# =============================================================================
+# Reglas propias de ManejoQRSimple
+# -----------------------------------------------------------------------------
+# Todo lo de abajo es del repositorio, no del estándar: viene del .gitleaks.toml
+# de la raíz, que existía antes de adoptar el estándar. Se conserva aquí porque
+# el reusable lee SOLO .github/gitleaks.toml, y sin estas reglas dejaría de
+# detectar lo que este proyecto más teme. Motivo: CLAUDE.md, reglas 2 y 1ter.
+# Al actualizar el estándar, la fusión de tres vías conserva esta sección.
+# =============================================================================
+
+# Ninguna de estas credenciales debería existir en el repo (el login bancario
+# es siempre manual del dueño): por eso conviene que el pipeline avise el día
+# que aparezca una.
+[[rules]]
+id = "mqs-credencial-bancaria"
+description = "Posible credencial de Yape/BCP (usuario, clave o PIN)"
+regex = '''(?i)(yape|bcp)[_-]?(user|usuario|pass|clave|password|pin)\s*[:=]\s*['"][^'"]{4,}['"]'''
+tags = ["banco", "yape"]
+
+[[rules]]
+id = "mqs-storage-state"
+description = "Contenido de storageState de Playwright (cookies de sesión bancaria)"
+regex = '''"cookies"\s*:\s*\[\s*\{[^\]]{0,400}(yape|bcp|viabcp)'''
+tags = ["banco", "sesion"]
+
+[[rules]]
+id = "mqs-wm-api-token"
+description = "Token de WhatsAppModular en claro"
+regex = '''(?i)wm[_-]?api[_-]?token\s*[:=]\s*['"][0-9a-zA-Z/+=._-]{16,}['"]'''
+tags = ["whatsapp"]
+
+[[rules]]
+id = "mqs-hmac-secret"
+description = "Secreto HMAC del webhook en claro"
+regex = '''(?i)hmac[_-]?secret\s*[:=]\s*['"][^'"]{12,}['"]'''
+tags = ["webhook"]
+
+[[allowlists]]
+description = "ManejoQRSimple: capturas de consola y documentos de proveedores, sin secretos por construcción"
+paths = [
+  '''(^|/)docs/consola-yape/''',
+  '''(^|/)docs/Integraciones/.*\.(pdf|csv)$''',
+]
+
+[[allowlists]]
+description = "ManejoQRSimple: identificadores y digests del dominio, no credenciales"
+regexTarget = "line"
+# hashMovimiento e imagenRef son identificadores/digests del dominio: no
+# autentican nada. La regla genérica los marca solo por tener aspecto de hash
+# largo.
+regexes = [
+  '''hashMovimiento\s*[:=]''',
+  '''hashImagen\s*[:=]''',
+]

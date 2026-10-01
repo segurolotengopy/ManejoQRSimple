@@ -1,0 +1,21 @@
+# Manifiesto del estándar DevSecOps (esquema: .github/devsecops.schema.json;
+# convenciones: 00-gobernanza/00-convenciones.md de SeguridadGeneral).
+# Stack solo-ci: este repositorio no despliega nada. La calidad (lint, tipos,
+# pruebas y build) es el job `verify` de ci.yml, propio del repositorio, y por
+# eso no se declara aquí una cobertura mínima: el estándar solo la mide en los
+# repositorios de Python.
+version: 1
+proyecto: manejoqrsimple
+modo: A            # público; A | B | B0
+produccion: false  # no despliega: `firebase deploy` solo lo pide el dueño, a mano
+componentes:
+  - nombre: manejoqrsimple
+    ruta: ./
+    stack: node
+    proveedor: ninguno
+    ambientes: {}   # sin despliegue no hay ambientes (el esquema exige la clave)
+seguridad:
+  dast: false                     # sin despliegue no hay nada contra lo que correr ZAP
+  bloquear_en: [CRITICAL, HIGH]   # se puede endurecer (añadir MEDIUM), nunca relajar
+  # id, herramienta, componente, justificacion, aprobado_por, creado, vence
+  excepciones: []

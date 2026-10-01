@@ -22,6 +22,7 @@
 | T15 | **Aviso de confirmación falsificado** | Un tercero que descubre la URL de aviso de un consumidor le manda un «te pagaron» inventado y le hace entregar lo que vendió | Es T9 en la dirección opuesta, y se resuelve igual: **HMAC-SHA256 sobre el cuerpo crudo** con un secreto por consumidor, comparado en tiempo constante, y la marca de tiempo **dentro** de lo firmado para que un aviso interceptado no se pueda reenviar. La URL tiene que ser https o la API no arranca: firmar no sirve si el canal no es privado. Y el contrato le dice al consumidor, en letra grande, que el aviso es un acelerador y `estadoCobro` la fuente de verdad (docs/10 §4.6). |
 
 | T16 | **Dependencia o acción de CI comprometida** | Un paquete de npm o una acción de GitHub publica una versión maliciosa, o un workflow queda con más permisos de los que necesita | Acciones fijadas por SHA, `permissions: contents: read`, Dependabot con `cooldown` de 7 días (que no retrasa las actualizaciones de seguridad), `dependency-review` en los PRs, Trivy y `npm audit` con bloqueo en CRITICAL y HIGH, y Checkov, actionlint y ShellCheck sobre los workflows y scripts. §4 dice qué mide cada uno. |
+| T17 | **Un consumidor cobra en una cuenta ajena** | Un token cargado por error en el archivo de otra cuenta, o un campo `cuenta` en el cuerpo del pedido | El vínculo consumidor→cuenta se declara con `CONSUMIDOR_CUENTA_<ID>` y se verifica al arrancar: la API se niega a arrancar si falta, si no es un alias válido o si es de otro proceso. La cuenta viaja en la identidad tipada y nunca sale del pedido; `esDelConsumidor` exige consumidor **y** cuenta, y lo ajeno responde 404. El alias es un rótulo que empieza con letra, así que no puede ser un número de cuenta, y su valor inválido no se imprime. Residual: el mismo consumidor cargado en los archivos de dos cuentas no se detecta desde un solo proceso; hoy cada cuenta tiene su propia base. |
 
 ## 2. Gestión de secretos
 
@@ -37,6 +38,7 @@
 | Adjuntos originales del banco | `docs/Integraciones/baneco/privado-no-gh/` (git-ignored, D4) | GitHub, cualquier nube |
 | Token de la API local (`API_TOKEN_LOCAL` / `VITE_API_TOKEN`) | `~/.manejoqr/baneco-<cuenta>.env` y `demo-web/.env.local` | Repo; queda embebido en el bundle, así que publicar la consola exige Firebase Auth |
 | Tokens de consumidores (`CONSUMIDOR_TOKEN_<ID>`) | `~/.manejoqr/baneco-<cuenta>.env`, 600 — Claude Code no lo lee | Repo, código, fixtures, chat. Uno por consumidor: se rota y se revoca sin tocar a los demás |
+| Cuenta de cobro de un consumidor (`CONSUMIDOR_CUENTA_<ID>`) | `~/.manejoqr/baneco-<cuenta>.env`, junto a su token. **No es un secreto:** es el alias de la cuenta | Repo ni logs con un valor inválido, que podría ser un número de cuenta pegado por error |
 | Secretos de firma de los avisos (`CONSUMIDOR_AVISO_SECRETO_<ID>`) | `~/.manejoqr/baneco-<cuenta>.env`, 600 — Claude Code no lo lee | Repo, código, fixtures, chat. Uno por consumidor, distinto de su token: con el token se llama a la API, con el secreto se verifica lo que sale |
 
 `.env` nunca se versiona (`.gitignore`); `.env.example` lista todas las

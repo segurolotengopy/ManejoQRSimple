@@ -70,6 +70,20 @@ cupo, `crearCobro` responde `429 CUPO_POR_HORA_AGOTADO`.
 consumidor —o los de dos consumidores— fueran iguales, la API no arranca: uno
 entraría como el otro.
 
+**Cada consumidor cobra en UNA cuenta, y tiene que decir cuál.** Junto a su
+token va `CONSUMIDOR_CUENTA_<ID>=<alias>`, con el alias de la cuenta de cobro
+—un rótulo, nunca el número de cuenta—. Cada cuenta se atiende con su propio
+proceso y su propio archivo de credenciales, así que el alias tiene que ser el
+de esa API. **La API no arranca** si a un consumidor le falta la cuenta, si el
+valor no es un alias válido, si es el de otra cuenta, o si hay una cuenta
+declarada sin su token: no existe una cuenta por defecto a la que caer. El
+mensaje de error nunca repite el valor inválido, porque podría ser un número de
+cuenta pegado por error.
+
+**La cuenta sale de la identidad, jamás del pedido.** El consumidor no la elige
+ni la ve: ningún campo del cuerpo, de la ruta, de la query ni de una cabecera
+la fija, y la respuesta y el aviso no la nombran.
+
 Dos superficies separadas, no dos niveles de permiso de la misma:
 
 | Prefijo | Quién | Qué |
@@ -80,7 +94,9 @@ Dos superficies separadas, no dos niveles de permiso de la misma:
 Un token de consumidor no abre **ninguna** ruta del dueño, ni siquiera de
 lectura, y el dueño no entra por el contrato. El cruce responde **404**, no
 403: un 403 confirmaría que la ruta del otro lado existe. Por el mismo motivo,
-el cobro de otro consumidor responde 404 y no 403.
+el cobro de otro consumidor responde 404 y no 403. Lo mismo vale para un cobro
+del **mismo consumidor en otra cuenta**: por id, por referencia, en la imagen
+del QR, al anular y en el listado, no existe para quien lo pide.
 
 ## 4. Las cuatro operaciones
 
@@ -436,8 +452,9 @@ en su consola, y contarlo acá ataría el contrato al proveedor de hoy.
 - **Renovar un QR vencido desde el contrato**: hoy la renovación la hace el
   dueño desde su consola. Un consumidor que quiera volver a cobrar usa una
   referencia externa nueva.
-- **Una cuenta de cobro por consumidor** (bloque 3): hoy todos los cobros van a
-  la única cuenta configurada.
+- **Elegir la cuenta por pedido**, o más de una cuenta por consumidor: cada
+  consumidor cobra en la suya, fija en su configuración. Aceptar la cuenta en el
+  cuerpo sería el camino para que un consumidor cobre en la de otro.
 - **Paginación por cursor**: el listado se acota por rango y límite.
 - **Reciclar una referencia externa**: una vez usada, identifica ese cobro para
   siempre. Para volver a cobrarle lo mismo a alguien, usá otra.

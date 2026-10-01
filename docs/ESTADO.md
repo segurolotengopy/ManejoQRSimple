@@ -4,7 +4,14 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-10-01, sesión «prueba intermitente de AES». El test de
+**Última actualización:** 2026-10-01, sesión «bloque 3: una cuenta de cobro por consumidor».
+Cada consumidor de `/api/v1` queda atado a **una** cuenta de cobro, y cada cobro y cada abono sin
+conciliar guardan la suya (decisión 24, ADR-010). Está en una rama con **PR abierto, sin
+fusionar**: 993 pruebas y 66 del emulador en verde, revisión de código, y **dos** auditorías de
+seguridad sin bloqueantes. Antes de usarlo hay una decisión del dueño sobre los datos ya
+guardados (D-A, abajo) y el consumidor de ensayo necesita una línea nueva para arrancar.
+
+Antes, el mismo día, sesión «prueba intermitente de AES». El test de
 `descifrar()` con otra llave fallaba una de cada ~250 corridas; se hizo determinista con un
 vector fijo, **PR #67 mergeado** (squash `fe4cf62`), y no se tocó `aes.ts` (decisión 23).
 
@@ -232,6 +239,29 @@ Además se cerró **C9: no hay comisión bancaria** (decisión 17).
     la **estructura** del resultado con Zod (regla 11) y nunca toma «descifró» como
     «era la llave correcta». Hoy los únicos llamadores fuera de `aes.ts` son dos tests de
     `adaptadores.test.ts`, con la llave correcta: nada en producción confía en lo contrario.
+24. **Una cuenta de cobro por consumidor (Andres, 2026-10-01, bloque 3, ADR-010).** Se mantiene un
+    proceso por cuenta (decisión 16) y el vínculo pasa a ser explícito y persistido:
+    - `CONSUMIDOR_CUENTA_<ID>=<alias>` va junto al token, en el archivo de la cuenta. **La API no
+      arranca** si falta, si no es un alias válido, si es el de otra cuenta, o si hay una cuenta
+      sin token. No hay cuenta por defecto para un consumidor.
+    - **La cuenta sale de la identidad, nunca del pedido.** Lo ajeno responde 404, también un
+      cobro del mismo consumidor en otra cuenta. El consumidor no ve el alias.
+    - `Cobro.cuentaCobro` y `AbonoSinConciliar.cuentaCobro` guardan el **alias**, que empieza con
+      letra y por eso no puede ser un número de cuenta. No se renombra mientras existan cobros con él.
+    - **El cierre diario no concilia lo de otra cuenta:** un abono cuyo QR es de un cobro de otra
+      cuenta va a revisión manual, y se resuelve antes de `verificarPago`.
+    - **La API y el satélite se niegan a arrancar si queda un documento sin cuenta o con una
+      inválida, o un cobro pendiente de otra cuenta.** Es la defensa contra T10: sin ella, un cobro
+      pendiente sin cuenta queda fuera de la consulta por cuenta y el satélite dejaría de vigilar
+      un QR todavía pagable, sin ningún error.
+    - **La migración de datos viejos se autoriza solo con una marca de emulador que ya existía.**
+      Una marca recién puesta por el mismo proceso no dice de quién son los datos: aborta y espera
+      al dueño. Lo encontraron las dos revisiones independientes.
+    Supuestos asumidos, a la espera de la confirmación del dueño: **D-B** una cuenta puede atender
+    a varios consumidores y a la consola del dueño; **D-C** el alias es la identidad persistida;
+    **D-D** una API o un satélite para varias cuentas se pospone al bloque 4; **D-F** la cuenta
+    nunca es entrada del contrato, aunque la tabla del prompt la listaba, y se corrigió `docs/01` §7.
+    **D-A queda abierta:** qué hacer con los datos ya guardados en los emuladores (ver «Próximo paso»).
 
 ## Estado actual
 
@@ -538,6 +568,20 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       sin fallos, actionlint limpio. En `main`, cero alertas abiertas de Code Scanning. Las
       categorías nuevas (`semgrep`, `trivy-fs`, `checkov-workflows`) no dejan categorías
       viejas que borrar y no apareció ningún Environment solo.
+- [ ] **2026-10-01 — Bloque 3: una cuenta de cobro por consumidor (PR abierto, rama
+      `feat/cuentas-por-consumidor`).** Un proceso por cuenta, con el vínculo explícito (decisión 24).
+      - `qr-core`: `Cobro.cuentaCobro`, `PropietarioConsumidor`, `esDelConsumidor` exige consumidor
+        **y** cuenta, `listarPendientes(cuenta)`, y en `conciliarDia` el destino `deOtraCuenta`.
+      - `firestore-store`: el campo, dos índices nuevos, `atribuirCuentaALoAnterior` y
+        `contarSinCuentaDeCobro`. `composicion`: `prepararDatosDeLaCuenta`, común a la API y al satélite.
+      - API: `leerConsumidores` con las cuatro variantes nuevas de error, 401 como segunda barrera,
+        `buscar` y `cerrarPrueba` del dueño filtrados por cuenta. Satélite: pasada y cierre por cuenta,
+        con `cuenta=` en la bitácora. `tools/cuentas`: la plantilla y el aviso por nombre de lo que falta.
+      - 993 pruebas y 66 del emulador, typecheck, lint, `deps:check`, build y `security-local.sh`
+        aprobado con umbral MEDIUM. **Revisión de código y dos auditorías de seguridad.** La primera
+        encontró lo que obligó a rehacer la autorización de la migración y el control de arranque:
+        corregido en el cuarto commit, con pruebas.
+      - No se ensayó contra el banco real: el adaptador del banco no cambió.
 - [x] **2026-10-01 — Actualización a la versión 2.8 del estándar** (commit `0bf9b9d` de
       SeguridadGeneral). Reusable 2.7 a 2.8 y `gitleaks.toml` 2.1 a 2.2, ambos por fusión de tres
       vías, conservando mis SHAs de Dependabot y la sección de reglas propias; pre-commit 2.0 a
@@ -635,6 +679,16 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
   `gitleaks` propio, que se conserva a propósito (decisión 22). Si algún día se quita, hay que
   decidir antes cómo se cubre esa regla en los documentos.
 
+- **Bloque 3, lo que no cierra y es condición del bloque 4** (base compartida entre cuentas): la
+  consola del dueño no filtra por cuenta en `listarRecientes`, `listarPorEstado` ni
+  `buscarAbonoEnRevision`; el cupo de `reanudarCorrida` tampoco; los avisos los puede cerrar como
+  `SIN_DESTINO` el satélite equivocado; y `buscarPorReferenciaQr` es una búsqueda global. Hoy nada de
+  esto es alcanzable: hay un emulador por cuenta, y el control de arranque lo verifica.
+- **Los dos índices de Firestore tienen que desplegarse antes que el código** (bloque 4). El emulador no
+  los exige; Firestore real rechazaría `listarPendientes` y el satélite quedaría sin vigilancia.
+- Deuda menor del bloque 3: el índice `(consumidor.consumidorId, creadoEn desc)` ya no lo usa ninguna
+  consulta, y la API lee la cuenta del proceso dos veces.
+
 ### Notas de entorno (no obvias)
 
 - Node 22+ por nvm (hay v24): `export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use 24`.
@@ -666,6 +720,20 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
 
 **Dueño:**
 
+0. **Bloque 3, antes de fusionarlo o de arrancar la API con él:**
+   - **D-A, los datos ya guardados en `~/.manejoqr/emulador-prod` y `emulador-cuenta-2`.** Opciones:
+     (a) atribuirlos solos a su cuenta al arrancar, solo si el emulador ya tiene la marca de esa
+     cuenta, con un respaldo previo de cada carpeta; (b) borrarlos y empezar de cero, que `ESTADO` ya
+     permitía; (c) dejarlos ilegibles. Recomendación: **(a)**, pero no se ejecuta nada sin el OK. Un
+     emulador sin marca con datos viejos **siempre aborta**, porque una marca recién puesta no dice de
+     quién son.
+   - **Aprobar o corregir los supuestos de la decisión 24** (D-B, D-C, D-D y D-F).
+   - **El consumidor de ensayo se conserva** (pedido del dueño): para que la API de `prod` siga
+     arrancando, su archivo necesita `CONSUMIDOR_CUENTA_ENSAYO=prod`. Lo agrega un script que no muestra
+     valores, con el OK del dueño. Su certificado local venció (se emitió con vigencia de dos días) y hay
+     que regenerarlo antes de la próxima prueba del aviso.
+   - **`.env.example`** necesita sumar `CONSUMIDOR_CUENTA_<ID>`: Claude Code no tiene permiso sobre
+     `.env.*`, así que se hace con el mismo método de script del PR #44, con el OK del dueño.
 1. **Decidir la opción de WhatsAppModular en `docs/04` §2.3.** Es lo que más destraba: sin
    `wa-bridge` ningún cobro real pasa de `QR_ACTIVO`.
 2. **Revisar los cambios sin commitear del checkout principal** (`~/ManejoQRSimple`): hay
@@ -683,8 +751,9 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
 6. Persistir el límite de inotify (archivo en `/etc/sysctl.d/`, ver «Notas de entorno»).
 7. Comercial, al acercarse producción: pedir la llave de producción por un canal que no sea un
    adjunto de correo (B3).
-8. Si se abre un PR nuevo, dar el OK en el chat PR por PR (decisión 11): Claude Code aprueba y
-   fusiona con ese OK.
+8. Si se abre un PR nuevo, dar el OK en el chat PR por PR (decisión 11). Con el ruleset de la
+   decisión 22, Claude Code aprueba con la cuenta `segurolotengopy`, pero **la fusión la hace el
+   dueño desde GitHub**: el clasificador de permisos bloquea que una misma sesión apruebe y fusione.
 
 **Claude Code:**
 
@@ -694,10 +763,9 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
    las fixtures derivadas de la espec. y ajustar el adaptador a los `responseCode` observados
    (por ejemplo, anular un QR pagado). Necesita que el dueño pague un QR de monto mínimo.
 2. **Contrato para consumidores, bloque 3**
-   (`Prompts/cobrador-contrato-para-consumidores.md`): una cuenta de cobro por consumidor. Hoy
-   cada cuenta es un **proceso** con su alias (decisión 16); falta que un consumidor solo use la
-   suya y que los cobros queden atribuidos por cuenta para el cierre diario. Los bloques 1 y 2
-   están cerrados y ensayados (PR #38 y #40; `02-hallazgos-produccion.md` §6).
+   (`Prompts/cobrador-contrato-para-consumidores.md`): **hecho y en PR abierto** (decisión 24); queda
+   la decisión del dueño de arriba. Los bloques 1 y 2 están cerrados y ensayados (PR #38 y #40;
+   `02-hallazgos-produccion.md` §6).
 3. **Contrato para consumidores, bloque 4:** pase a producción con el checklist del estándar
    DevSecOps (skill `pase-a-produccion`). No espera una cuenta de pruebas. Lo aprueba el dueño.
 4. `wa-bridge`, cuando el dueño decida el punto 1; con él, el aviso por WhatsApp de los casos

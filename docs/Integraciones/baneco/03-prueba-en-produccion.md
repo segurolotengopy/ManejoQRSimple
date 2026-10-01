@@ -75,6 +75,21 @@ P1–P9 ok; hallazgos en `02-hallazgos-produccion.md`.
    `BANECO_PROD_AES_KEY` y `BANECO_PROD_ACCOUNT_CREDIT`— más `API_TOKEN_LOCAL` (el mismo
    valor que `VITE_API_TOKEN` en `packages/demo-web/.env.local`).
 
+   **Si esta cuenta atiende a un consumidor del contrato** (`docs/10`), su archivo lleva,
+   además, `CONSUMIDOR_TOKEN_<ID>` y `CONSUMIDOR_CUENTA_<ID>=<alias de esta cuenta>`. El alias
+   es el mismo del nombre del archivo, y la API **no arranca** sin esa línea ni con el alias
+   de otra cuenta. Es un rótulo, no un número de cuenta, y `npm run prueba:cuenta -- <alias>
+   --revisar` avisa por nombre cuál falta, sin mostrar valores.
+
+   **El alias es la identidad de la cuenta en los datos:** cada cobro lo guarda, y no se
+   renombra mientras existan cobros con él. Al arrancar por primera vez después del bloque 3,
+   la API y el satélite se niegan a seguir si el emulador tiene cobros anteriores sin cuenta, o
+   con una inválida, o pendientes de otra cuenta. En modo prueba **solo** los atribuyen solos a
+   esta cuenta si el emulador **ya tenía** la marca de esa misma cuenta: una marca recién puesta
+   por ese mismo arranque no dice de quién son los datos viejos, y entonces aborta sin escribir
+   nada y espera la decisión del dueño. Conviene respaldar la carpeta
+   `~/.manejoqr/emulador-<alias>` antes de esa primera corrida.
+
    **La URL del API Gateway no va en el archivo** (dato del dueño, 2026-09-18): es del
    banco y la misma para toda cuenta de cobro, así que vive en el código
    (`baneco-gateway/src/config.ts`, `URL_PRODUCCION`). Si algún día el banco la mueve,

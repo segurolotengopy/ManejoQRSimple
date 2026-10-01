@@ -4,21 +4,26 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-09-20, sesión "contrato para consumidores" (bloques 1 y 2
-**mergeados y ensayados contra el banco real**; el banco no tiene cuenta de pruebas:
-decisión 21) — **bloques 1
-y 2** del frente `Prompts/cobrador-contrato-para-consumidores.md`. El cobro por QR se
-abre a otros productos con cuatro operaciones en `/api/v1/…` y **ninguna que confirme un
-pago** (`docs/10-contrato-consumidores.md`), más el **aviso de confirmación firmado**,
-que es un acelerador y no la fuente de verdad. Bloque 1: **PR #38 mergeado**. Bloque 2:
-**PR #40 mergeado** (2026-09-20, con el OK del dueño en el chat).
-Antes, el mismo día: **PR #36 mergeado**, la prueba en producción admite **varias
-cuentas**, cada una con su alias, sus credenciales y sus datos, y la **segunda cuenta
-corrió P1–P9 ok** (`02-hallazgos-produccion.md` §5). Además se cerró **C9: no hay
-comisión bancaria** (decisión 17).
-Antes: prueba con Baneco P1–P9 ok, hallazgos en
-`docs/Integraciones/baneco/02-hallazgos-produccion.md`; el banco no tiene cuenta de pruebas,
-así que B0 queda limitado al login y los ensayos se hacen en producción: decisión 21)
+**Última actualización:** 2026-10-01, sesión «adopción del estándar DevSecOps v2».
+El repositorio quedó en el estándar de SeguridadGeneral, **stack `solo-ci`, reusable 2.7**
+(commit `0ab6e88` de SeguridadGeneral), con **PRs #54, #55 y #56** mergeados; el run que lo
+prueba es el 36890902794, CI verde en `main`, head `d0cdc6e`. Antes se resolvieron los
+**diez PRs de Dependabot**: #42 se fusionó tal cual y los otros nueve se reemplazaron por
+tres PRs propios, #48, #52 y #53, que juntan los que se pisaban en el `package-lock.json`.
+`npm audit` quedó en cero. **Falta un paso, que
+necesita el OK del dueño:** cambiar el ruleset de `main` para exigir `compuerta-pr` y una
+aprobación (decisión 22).
+
+Antes, el 2026-09-20, sesión «contrato para consumidores»: bloques 1 y 2 del frente
+`Prompts/cobrador-contrato-para-consumidores.md`, **mergeados y ensayados contra el banco
+real** (PR #38 y #40; `02-hallazgos-produccion.md` §6). El cobro por QR se abre a otros
+productos con cuatro operaciones en `/api/v1/…` y **ninguna que confirme un pago**
+(`docs/10-contrato-consumidores.md`), más el **aviso de confirmación firmado**, que es un
+acelerador y no la fuente de verdad. El banco no tiene cuenta de pruebas, así que B0 queda
+limitado al login y los ensayos se hacen en producción (decisión 21).
+Antes, el mismo día: **PR #36**, la prueba en producción admite **varias cuentas**, cada una
+con su alias, y la **segunda cuenta corrió P1–P9 ok** (`02-hallazgos-produccion.md` §5).
+Además se cerró **C9: no hay comisión bancaria** (decisión 17).
 
 ---
 
@@ -188,6 +193,24 @@ así que B0 queda limitado al login y los ensayos se hacen en producción: decis
       propósito: hace falta una captura saneada en ese modo (pendiente de Claude Code).
     - El bloque 4 (pase a producción) ya no espera al banco: queda el checklist del
       estándar DevSecOps y la aprobación del dueño.
+22. **Adopción del estándar DevSecOps v2 (Andres, 2026-10-01).** El repositorio sigue el
+    estándar de SeguridadGeneral con el stack `solo-ci`: no despliega, y su calidad de
+    TypeScript es el job `verify` de `ci.yml`, propio. Lo que se decidió:
+    - **`ci-solo-ci.yml` no se copia:** su calidad es de Python. Se agregaron a `ci.yml` solo
+      los jobs que faltaban, `seguridad-estatica`, `actionlint y ShellCheck` y `compuerta-pr`.
+    - **El job `gitleaks` propio se conserva** junto al del estándar. La allowlist del
+      estándar excluye todos los `docs/**/*.md`, y aquí los informes de la prueba en
+      producción viven en `docs/`; el job propio, con su `.gitleaks.toml`, los sigue
+      escaneando. Las cuatro reglas propias (credencial bancaria, `storageState`, token de
+      WhatsAppModular y secreto HMAC) también viven ahora en `.github/gitleaks.toml`, que es
+      lo único que lee el reusable.
+    - **Las excepciones viven solo en `.devsecops.yml`:** hoy no hay ninguna.
+    - **Dependabot con `cooldown`** de 7 días, sin retrasar las de seguridad (#56).
+    - **El ruleset de `main` pasa a exigir `compuerta-pr` y una aprobación de un code
+      owner, con solo squash, hilos resueltos y rama al día.** Hace falta una segunda cuenta:
+      los PRs los abre `AndresAlberdi` y los aprueba `segurolotengopy`. **Está preparado y
+      sin aplicar, a la espera del OK del dueño.** Hasta entonces `compuerta-pr` corre pero no
+      es obligatoria.
 
 ## Estado actual
 
@@ -464,6 +487,21 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
           divergencia menos.
       - 880 tests (67 nuevos), typecheck, lint, `deps:check` y build en verde.
         **Sin ensayo contra el banco todavía** — ver "Próximo paso".
+- [x] **2026-10-01 — Adopción del estándar DevSecOps v2 (stack `solo-ci`, reusable 2.7).**
+      Un PR por tema, todos con el CI verde sobre el `main` vigente: **#54** el reusable, el
+      manifiesto `.devsecops.yml`, las copias de `.github/` y los dos jobs nuevos del CI;
+      **#55** CODEOWNERS con los dos logins reales, `security-local.sh`, `.pre-commit-config.yaml`
+      (sin instalar) y el job de actionlint y ShellCheck; **#56** el `cooldown` de Dependabot.
+      Medido en local antes de subir: `security-local.sh` aprobado, Checkov 328 comprobaciones
+      sin fallos, actionlint limpio. En `main`, cero alertas abiertas de Code Scanning. Las
+      categorías nuevas (`semgrep`, `trivy-fs`, `checkov-workflows`) no dejan categorías
+      viejas que borrar y no apareció ningún Environment solo.
+- [x] **2026-10-01 — Dependabot, a cero.** #42 (seis dev-menores), #48 (`codeql-action` init y
+      analyze juntas: por separado fallaban las dos), #52 (vitest 5 con su coverage-v8, @eslint/js
+      10, plugin-react 6 y zod 4.6) y #53 (`grpc-js`, `brace-expansion`, `firebase-admin` y
+      `uuid`, con `npm audit` de dos avisos a cero). Verificado además con las 28 pruebas del
+      emulador de Firestore. Decisión a revisar: para quitar `uuid`, `npm audit fix` bajó
+      `gaxios` de 6.7.1 a 6.3.0, dentro del rango de sus paquetes padre.
 - [x] **2026-09-20 — Ensayo de los bloques 1 y 2 contra el banco real.** Cobro creado
       por el contrato, QR de Bs 1 pagado desde una cuenta propia, confirmado 1 s después
       del pago, y el aviso entregado al primer intento a un receptor local que verifica
@@ -529,6 +567,17 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
   suyo. Hoy la API es un proceso local y alcanza; al desplegarla en serio hay que
   pasarlo a un contador compartido.
 
+- **Prueba intermitente de AES (`baneco-gateway/src/crypto/aes.test.ts`).** «Rechaza el
+  payload cifrado con otra llave» falló una vez en el CI de `main` (2026-10-01) y pasó al
+  relanzar. AES-CBC no autentica: con otra llave, el relleno valida por azar una de cada unas
+  256 veces. No es un defecto de la adopción ni del código de producción, sino de un test que
+  afirma más de lo que la función garantiza. Hay una tarea abierta para hacerlo determinista.
+  Mientras tanto, un CI rojo en ese test se relanza.
+- **El estándar no escanea los `.md` de `docs/`.** Su allowlist de Gitleaks los excluye, y aquí
+  ahí se escriben los informes de la prueba en producción. Lo cubre el job `gitleaks` propio,
+  que se conserva a propósito (decisión 22). Si algún día se quita, hay que decidir antes cómo
+  se cubren los documentos. Anotado para SeguridadGeneral.
+
 ### Notas de entorno (no obvias)
 
 - Node 22+ por nvm (hay v24): `export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use 24`.
@@ -566,6 +615,13 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
 
 **Dueño — lo demás:**
 
+0. **Autorizar el cambio del ruleset de `main`** (decisión 22): exigir `compuerta-pr` como único
+   check, una aprobación de un code owner, solo squash, hilos resueltos y rama al día. Desde
+   ese momento ningún PR se fusiona sin la aprobación de la otra cuenta, que da Claude Code
+   con el OK del dueño en el chat. Reversible: se vuelve al ruleset anterior con una sola
+   llamada.
+0bis. Quitar el consumidor de ensayo del archivo de credenciales de la cuenta `prod`, y
+   borrar `~/.manejoqr/ensayo`, cuando ya no haga falta.
 1. ~~Autorizar #21, #24 y #25~~ — mergeados el 2026-09-12.
 2. Cuando llegue el catálogo de bancos (D9), guardarlo en `privado-no-gh/`. Si
    interesa, pedir los manuales de **Bec QR Connect** (G2). ~~Correr el B0 con la

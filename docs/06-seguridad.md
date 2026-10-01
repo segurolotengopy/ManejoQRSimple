@@ -21,6 +21,8 @@
 
 | T15 | **Aviso de confirmación falsificado** | Un tercero que descubre la URL de aviso de un consumidor le manda un «te pagaron» inventado y le hace entregar lo que vendió | Es T9 en la dirección opuesta, y se resuelve igual: **HMAC-SHA256 sobre el cuerpo crudo** con un secreto por consumidor, comparado en tiempo constante, y la marca de tiempo **dentro** de lo firmado para que un aviso interceptado no se pueda reenviar. La URL tiene que ser https o la API no arranca: firmar no sirve si el canal no es privado. Y el contrato le dice al consumidor, en letra grande, que el aviso es un acelerador y `estadoCobro` la fuente de verdad (docs/10 §4.6). |
 
+| T16 | **Dependencia o acción de CI comprometida** | Un paquete de npm o una acción de GitHub publica una versión maliciosa, o un workflow queda con más permisos de los que necesita | Acciones fijadas por SHA, `permissions: contents: read`, Dependabot con `cooldown` de 7 días (que no retrasa las actualizaciones de seguridad), `dependency-review` en los PRs, Trivy y `npm audit` con bloqueo en CRITICAL y HIGH, y Checkov, actionlint y ShellCheck sobre los workflows y scripts. §4 dice qué mide cada uno. |
+
 ## 2. Gestión de secretos
 
 | Secreto | Dónde vive | Dónde JAMÁS |
@@ -69,16 +71,39 @@ variables sin valores. Variable nueva ⇒ actualizar `.env.example` en el mismo 
 
 ## 4. Seguridad en el pipeline
 
-Heredado del procedimiento de segurolotengo-demo / WhatsApp-Modular:
+Desde el 2026-10-01 el repositorio sigue el **estándar DevSecOps de SeguridadGeneral**, stack
+`solo-ci` (ESTADO, decisión 22). La calidad de TypeScript es el job `verify` de `ci.yml`, propio;
+lo que agrega el estándar es la seguridad estática, y todo junto lo agrega `compuerta-pr`.
 
-- CI bloqueante: lint, typecheck, tests, deps:check + **gitleaks** (binario,
-  historial completo con `fetch-depth: 0`).
-- `permissions: contents: read` en los workflows.
-- Dependabot activo; majors de runtime fijados (Node 22 LTS).
-- Branch protection en `main`: checks obligatorios, historia lineal, sin force
-  push, squash-merge.
-- Secret scanning nativo de GitHub no aplica a repos privados personales → lo
-  cubre gitleaks en CI (lección registrada en WhatsApp-Modular).
+**Qué mide cada control, y qué amenaza de §1 cubre:**
+
+| Control | Qué mira | Cubre |
+|---|---|---|
+| Gitleaks del estándar, con `.github/gitleaks.toml` | Secretos en todo el historial, con cuatro reglas propias: credencial bancaria, `storageState`, token de WhatsAppModular y secreto HMAC | T7, y la parte de T2, T5, T14 y T15 que es «el secreto no está en el repo» |
+| Gitleaks propio (job `gitleaks`, `.gitleaks.toml`) | Lo mismo, **pero también `docs/`**, que el estándar excluye | T6 y T7 en los informes de producción |
+| Semgrep CE y CodeQL | SAST sobre el código | Código inseguro en general; ninguna amenaza propia |
+| Trivy fs, `npm audit` y `dependency-review` | Vulnerabilidades conocidas en dependencias; bloquean en CRITICAL y HIGH | T16 |
+| Checkov, actionlint y ShellCheck | Permisos e inyección en workflows, y errores en scripts | T16 |
+
+Las excepciones viven **solo** en `.devsecops.yml`, con vencimiento de 90 días o menos para
+CRITICAL y HIGH. Hoy no hay ninguna.
+
+**Lo que ningún escáner mide.** T1, T4, T5, T9, T12, T13, T14 y T15 no son un patrón que una
+herramienta reconozca, sino una propiedad del dominio: que ningún camino confirme un cobro sin la
+consulta autenticada, que un consumidor no vea lo ajeno, que la firma se compare en tiempo
+constante. Las cubren las reglas inviolables de CLAUDE.md, los tests del dominio y el checklist de
+§5. Que el CI esté en verde no demuestra ninguna de ellas.
+
+**Lo demás del pipeline:**
+
+- `permissions: contents: read` en los workflows, y acciones fijadas por SHA.
+- Dependabot con `cooldown`; los majors de runtime, fijados (Node 22 LTS).
+- Secret scanning nativo y push protection de GitHub, activos: el repositorio es público.
+  Gitleaks los complementa con las reglas propias del proyecto.
+- Protección de `main`: sin force push, historia lineal y squash-merge. Hoy exige los checks
+  `Lint · Types · Tests · Build` y `Secretos en el historial`, sin aprobaciones. El cambio
+  preparado, pendiente del OK del dueño, pasa a exigir solo `compuerta-pr` y una aprobación de un
+  code owner (decisión 22).
 
 ## 5. Checklist previo a cada merge
 

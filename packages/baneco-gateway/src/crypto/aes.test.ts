@@ -113,8 +113,21 @@ describe('descifrar() rechaza payloads inválidos', () => {
   });
 
   it('rechaza el payload cifrado con otra llave, sin decir por qué', () => {
+    // AES-CBC con PKCS#7 no autentica: descifrar con una llave equivocada da
+    // bytes basura, y la basura pasa la validación del relleno por azar con
+    // probabilidad ≈ 1/256 (medido: 0,43 % sobre 100 000 corridas). Con el IV
+    // aleatorio de `cifrar()`, este test fallaba en 1 de cada ~250 corridas con
+    // ok: true y texto basura. La función no puede garantizar el rechazo (el
+    // esquema lo dicta el banco y no tiene MAC), así que el test fija un vector
+    // concreto. Con este IV, llave y texto, el bloque descifrado con la llave
+    // equivocada es 5d4b76198d24e465ab7fb18e380cdb09: termina en 0x09 y sus
+    // últimos 9 bytes no son todos 0x09, luego el relleno no valida. Si se
+    // cambia cualquiera de los tres, hay que volver a comprobarlo.
     const otra = llave('ffffffffffffffffffffffffffffffff');
-    const payload = cifrar('secreto', otra);
+    const ivFijo = Buffer.alloc(16, 0);
+    const cipher = createCipheriv('aes-256-cbc', otra, ivFijo);
+    const cifrado = Buffer.concat([cipher.update('secreto', 'utf8'), cipher.final()]);
+    const payload = Buffer.concat([ivFijo, cifrado]).toString('base64');
     expect(descifrar(payload, llave())).toEqual({
       ok: false,
       error: { tipo: 'PAYLOAD_INVALIDO', motivo: 'no descifra con esta llave' },

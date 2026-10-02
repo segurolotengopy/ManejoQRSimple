@@ -25,6 +25,7 @@ function unAviso(sobrescribir: Partial<AvisoDeConfirmacion> = {}): AvisoDeConfir
     confirmadoEn: AHORA,
     ocurridoEn: new Date(AHORA.getTime() - 10_000),
     riel: 'watcher-baneco',
+    confirmadoPor: 'sistema',
     ...sobrescribir,
   };
 }
@@ -34,7 +35,7 @@ function transporteQueResponde(status: number) {
   const pedidos: { url: string; headers: Record<string, string>; body: string }[] = [];
   const transporte: Transporte = (url, opciones) => {
     pedidos.push({ url, headers: { ...opciones.headers }, body: opciones.body });
-    return Promise.resolve({ status, text: () => Promise.resolve('lo que conteste el consumidor') });
+    return Promise.resolve({ status, descartarCuerpo: () => Promise.resolve() });
   };
   return { transporte, pedidos };
 }
@@ -54,6 +55,7 @@ describe('cuerpoDelAviso()', () => {
         confirmadoEn: AHORA.toISOString(),
         ocurridoEn: new Date(AHORA.getTime() - 10_000).toISOString(),
         riel: 'api-baneco',
+        confirmadoPor: 'automatico',
       },
     });
   });
@@ -142,6 +144,30 @@ describe('NotificadorHttp', () => {
     expect(esExito(r)).toBe(false);
     // El texto de la excepción puede traer cualquier cosa; no llega al error.
     expect(JSON.stringify(r)).not.toContain('ENOTFOUND');
+    expect(!esExito(r) && r.error.reintentable).toBe(true);
+  });
+
+  it('no sigue redirecciones: pide `redirect: error` al transporte', async () => {
+    // El servidor del consumidor es ajeno. Un 307 hacia 127.0.0.1 haría que el
+    // POST salga desde adentro de la máquina del dueño, cruzando el loopback
+    // en el que se apoya "la API escucha solo en 127.0.0.1".
+    let pedido: Parameters<Transporte>[1] | undefined;
+    const transporte: Transporte = (_url, opciones) => {
+      pedido = opciones;
+      return Promise.resolve({ status: 200, descartarCuerpo: () => Promise.resolve() });
+    };
+    const notificador = new NotificadorHttp(new Map([['novuchat', DESTINO]]), () => AHORA, transporte);
+
+    await notificador.entregar(unAviso());
+    expect(pedido?.redirect).toBe('error');
+  });
+
+  it('una redirección rechazada por el transporte es un fallo reintentable', async () => {
+    const transporte: Transporte = () => Promise.reject(new TypeError('redirect mode is set to error'));
+    const notificador = new NotificadorHttp(new Map([['novuchat', DESTINO]]), () => AHORA, transporte);
+
+    const r = await notificador.entregar(unAviso());
+    expect(esExito(r)).toBe(false);
     expect(!esExito(r) && r.error.reintentable).toBe(true);
   });
 

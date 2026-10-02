@@ -11,7 +11,7 @@ describe('leerDestinos()', () => {
       CONSUMIDOR_AVISO_URL_NOVUCHAT: URL_OK,
       CONSUMIDOR_AVISO_SECRETO_NOVUCHAT: SECRETO,
       CONSUMIDOR_AVISO_URL_OTRA_APP: 'https://otra.example/hook',
-      CONSUMIDOR_AVISO_SECRETO_OTRA_APP: SECRETO,
+      CONSUMIDOR_AVISO_SECRETO_OTRA_APP: 'otro-secreto-de-mentira-de-32-car',
       OTRA_VARIABLE: 'no es de acá',
     });
     expect(r.ok).toBe(true);
@@ -63,6 +63,46 @@ describe('leerDestinos()', () => {
     });
     expect(r.ok).toBe(false);
     expect(!r.ok && r.error.tipo).toBe(tipo);
+  });
+
+  it('dos variables que dan el mismo consumidor se rechazan, no se pisan', () => {
+    // El guion bajo y el guion medio se equiparan. Sin esto, la segunda pisaría
+    // a la primera según el orden del entorno, y los avisos de un consumidor
+    // —con su referencia y su monto— saldrían hacia la URL de otro.
+    const r = leerDestinos({
+      CONSUMIDOR_AVISO_URL_MI_APP: URL_OK,
+      'CONSUMIDOR_AVISO_URL_MI-APP': 'https://otra.example/hook',
+      CONSUMIDOR_AVISO_SECRETO_MI_APP: SECRETO,
+    });
+    expect(r).toEqual({ ok: false, error: { tipo: 'ID_REPETIDO', consumidorId: 'mi-app' } });
+  });
+
+  it('un identificador que no es un identificador se rechaza', () => {
+    const r = leerDestinos({ 'CONSUMIDOR_AVISO_URL_MI APP': URL_OK, 'CONSUMIDOR_AVISO_SECRETO_MI APP': SECRETO });
+    expect(!r.ok && r.error.tipo).toBe('ID_INVALIDO');
+  });
+
+  it('dos consumidores con el mismo secreto no arrancan', () => {
+    // Con un secreto compartido, un consumidor le fabricaría avisos válidos a
+    // otro que conozca su URL (T15).
+    const r = leerDestinos({
+      CONSUMIDOR_AVISO_URL_NOVUCHAT: URL_OK,
+      CONSUMIDOR_AVISO_SECRETO_NOVUCHAT: SECRETO,
+      CONSUMIDOR_AVISO_URL_OTRA_APP: 'https://otra.example/hook',
+      CONSUMIDOR_AVISO_SECRETO_OTRA_APP: SECRETO,
+    });
+    expect(!r.ok && r.error.tipo).toBe('SECRETO_COMPARTIDO');
+  });
+
+  it('el secreto de firma no puede ser igual al token de la API del mismo consumidor', () => {
+    // Con el token se llama a la API; con el secreto se verifica lo que sale.
+    // Que sean el mismo junta las dos cosas en una sola credencial.
+    const r = leerDestinos({
+      CONSUMIDOR_TOKEN_NOVUCHAT: SECRETO,
+      CONSUMIDOR_AVISO_URL_NOVUCHAT: URL_OK,
+      CONSUMIDOR_AVISO_SECRETO_NOVUCHAT: SECRETO,
+    });
+    expect(r).toEqual({ ok: false, error: { tipo: 'SECRETO_COMPARTIDO', consumidorId: 'novuchat' } });
   });
 
   it('ningún error transporta la URL ni el secreto, solo el consumidor', () => {

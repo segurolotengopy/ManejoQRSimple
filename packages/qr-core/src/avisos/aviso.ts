@@ -21,6 +21,7 @@
  */
 
 import type { Cobro } from '../cobro/cobro.js';
+import type { OrigenTransicion } from '../cobro/estados.js';
 import type { Centavos } from '../comun/dinero.js';
 import type { OrigenDeteccion } from '../conciliacion/deteccion.js';
 
@@ -66,12 +67,26 @@ export type AvisoDeConfirmacion = {
   readonly consumidorId: string;
   readonly cobroId: string;
   readonly referenciaExterna: string;
+  /**
+   * **El monto del abono que entró al banco**, no el que pedía el cobro.
+   *
+   * Coinciden en el camino normal, porque conciliar exige monto exacto. Pero un
+   * abono por menos que no concilió y que el dueño resolvió a mano deja un
+   * cobro `CONFIRMADO` con menos plata de la pedida: anunciar el monto del
+   * cobro haría que el consumidor entregue contra algo que no entró. Es la
+   * regla #1 aplicada a este canal, y es lo que ya dice `estadoCobro`.
+   */
   readonly montoCentavos: Centavos;
   /** Cuándo este sistema lo dio por confirmado. */
   readonly confirmadoEn: Date;
   /** Cuándo ocurrió el abono según el banco, si consta. */
   readonly ocurridoEn: Date | null;
   readonly riel: OrigenDeteccion | null;
+  /**
+   * `accion-manual` si lo resolvió una persona. Cambia lo que el consumidor
+   * debería hacer: una resolución manual pudo aceptar un abono que no conciliaba.
+   */
+  readonly confirmadoPor: OrigenTransicion;
 };
 
 /**

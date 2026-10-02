@@ -71,6 +71,7 @@ export type MotivoRevision =
   | 'MONTO_NO_COINCIDE'
   | 'FUERA_DE_VIGENCIA'
   | 'DUPLICADO'
+  | 'RIEL_NO_CORRESPONDE'
   | 'ABONO_TARDIO'
   | 'VENTANA_AGOTADA'
   | 'OTRO';

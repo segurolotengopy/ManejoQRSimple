@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { ESTADOS } from '../cobro/estados.js';
+import { ORIGENES_QR } from '../cobro/cobro.js';
+import { ESTADOS, ORIGENES } from '../cobro/estados.js';
 import { esExito } from '../comun/resultado.js';
 import { bs, enMinutos, T0, unCobroEn, unQr } from '../pruebas/fixtures.js';
 import { conciliar, POLITICA_POR_DEFECTO, type PoliticaConciliacion } from './conciliar.js';
-import { claveBaneco, claveHash, registrarDeteccion } from './deteccion.js';
+import {
+  claveBaneco,
+  claveHash,
+  ORIGENES_DETECCION,
+  QRS_DEL_RIEL,
+  registrarDeteccion,
+  rielCorresponde,
+  type OrigenDeteccion,
+} from './deteccion.js';
 
 const MONTO = 12_345;
 
@@ -188,5 +197,106 @@ describe('el QR vencido no bloquea por sí solo', () => {
       ahora: enMinutos(60),
     });
     expect(esExito(r)).toBe(true);
+  });
+});
+
+describe('el riel de la detección corresponde al QR (regla #1)', () => {
+  /** La clave que produciría ese riel: solo el banco usa el espacio `baneco:`. */
+  const claveDe = (riel: OrigenDeteccion): string =>
+    riel === 'watcher-baneco' ? 'baneco:qr-000001:tx-1' : `${riel}:qr-000001:tx-1`;
+
+  function conRiel(
+    origenDeteccion: OrigenDeteccion,
+    origenQr: (typeof ORIGENES_QR)[number],
+    previas: readonly string[] = [],
+    idDeduplicacion: string = claveDe(origenDeteccion),
+  ) {
+    return conciliar({
+      cobro: unCobroEn('PAGO_DETECTADO', {
+        montoCentavos: bs(MONTO),
+        qrVigente: unQr({ origen: origenQr }),
+      }),
+      deteccion: registrarDeteccion({
+        idDeduplicacion,
+        montoCentavos: bs(MONTO),
+        ocurridoEn: enMinutos(30),
+        origen: origenDeteccion,
+        referencia: null,
+      }),
+      deteccionesPrevias: previas,
+      politica: POLITICA_POR_DEFECTO,
+      ahora: enMinutos(31),
+    });
+  }
+
+  const PARES = ORIGENES_DETECCION.flatMap((riel) => ORIGENES_QR.map((qr) => [riel, qr] as const));
+
+  it.each(PARES)('detección %s sobre QR %s: monto exacto y vigente', (riel, qr) => {
+    const r = conRiel(riel, qr);
+    if (QRS_DEL_RIEL[riel].includes(qr)) {
+      expect(esExito(r)).toBe(true);
+    } else {
+      expect(r).toEqual({
+        ok: false,
+        error: { tipo: 'RIEL_NO_CORRESPONDE', origenDeteccion: riel, origenQr: qr },
+      });
+    }
+  });
+
+  it('solo concilian los pares de la tabla: banco con QR del banco, simulado con QR simulado', () => {
+    const aprobados = PARES.filter(([riel, qr]) => esExito(conRiel(riel, qr)));
+    expect(aprobados).toEqual([
+      ['watcher-baneco', 'api-baneco'],
+      ['scraper-yape', 'carga-manual'],
+      ['scraper-yape', 'consola-asistida'],
+      ['watcher-simulado', 'simulado'],
+    ]);
+  });
+
+  it('un detector simulado no confirma un QR del banco, ni al revés', () => {
+    expect(conRiel('watcher-simulado', 'api-baneco')).toMatchObject({ ok: false });
+    expect(conRiel('watcher-baneco', 'simulado')).toMatchObject({ ok: false });
+  });
+
+  it('el duplicado se informa antes que el riel', () => {
+    expect(conRiel('watcher-simulado', 'api-baneco', [claveDe('watcher-simulado')])).toEqual({
+      ok: false,
+      error: { tipo: 'DUPLICADO', idDeduplicacion: claveDe('watcher-simulado') },
+    });
+  });
+
+  it('el riel se comprueba antes que el monto', () => {
+    const r = conciliar({
+      cobro: unCobroEn('PAGO_DETECTADO', { montoCentavos: bs(MONTO), qrVigente: unQr({ origen: 'api-baneco' }) }),
+      deteccion: registrarDeteccion({
+        idDeduplicacion: 'x',
+        montoCentavos: bs(MONTO + 1),
+        ocurridoEn: enMinutos(30),
+        origen: 'watcher-simulado',
+        referencia: null,
+      }),
+      deteccionesPrevias: [],
+      politica: POLITICA_POR_DEFECTO,
+      ahora: enMinutos(31),
+    });
+    expect(!esExito(r) && r.error.tipo).toBe('RIEL_NO_CORRESPONDE');
+  });
+
+  it('exhaustividad: cada riel tiene su fila, con QRs conocidos, y es un origen de transición', () => {
+    expect(Object.keys(QRS_DEL_RIEL).sort()).toEqual([...ORIGENES_DETECCION].sort());
+    for (const riel of ORIGENES_DETECCION) {
+      expect(QRS_DEL_RIEL[riel].length).toBeGreaterThan(0);
+      for (const qr of QRS_DEL_RIEL[riel]) {
+        expect(ORIGENES_QR).toContain(qr);
+      }
+      expect(ORIGENES).toContain(riel);
+      expect(rielCorresponde(riel, QRS_DEL_RIEL[riel][0] ?? 'simulado')).toBe(true);
+    }
+  });
+
+  it('todo QR tiene al menos un riel que lo paga: no hay QR imposible de confirmar', () => {
+    for (const qr of ORIGENES_QR) {
+      expect(ORIGENES_DETECCION.some((riel) => rielCorresponde(riel, qr))).toBe(true);
+    }
   });
 });

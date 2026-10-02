@@ -16,6 +16,33 @@
 > staging** (un staging solo puede usar `mock` o `simulado`), que la rotación del checklist (SEC-10)
 > no es posible y queda como riesgo aceptado con custodia explícita, y que el plan de rollback debe
 > decir qué hacer ante una sospecha de filtración. El resto del análisis sigue como se escribió.
+>
+> **Actualización posterior del 2026-10-02: 4B2 está cerrado.** Un detector simulado ya no confirma
+> un QR real: la conciliación exige que el riel de la detección corresponda al origen del QR (los QRs
+> del demo son de origen `simulado`), el origen de lo que se lee en `abonos/*` lo fija el adaptador, y
+> la base marcada de la prueba solo la usan los procesos de la prueba real (ESTADO, «Hecho», y
+> `docs/06` T1 y T11). `MODO_PRUEBA_PRODUCCION=1` pasó a exigir `BANECO_ENV=prod` y los dos adaptadores
+> `baneco`. Queda pendiente 4B3.
+>
+> **Límites conocidos de 4B2 (residuales, junto a 4B2-bis).**
+> (1) El filtro de riel de la revisión manual compara contra el **QR vigente** del cobro, no contra el
+> QR que pagó la detección: si un proceso simulado renueva un cobro real, un abono real del QR anterior
+> queda filtrado. Es la dirección segura (no se acepta nada de más), pero deja plata sin poder
+> aceptarse a mano hasta que el cierre del día la ate. (2) `contarDatosSimulados` cuenta los abonos de
+> `abonos/*` y los cobros con QR simulado, **no** la evidencia heredada del incidente (registros con
+> `origenDeteccion: 'watcher-baneco'` y clave `simulado:…`): contarla exigiría un índice de grupo de
+> colección sobre `evidencia`. Esa evidencia no confirma nada: `aceptarAbono` y `ultimaDeteccion` ya
+> la ignoran porque ata la clave al riel. (3) `MODO_PRUEBA_PRODUCCION`/`prueba:*` marcan la base
+> **antes** de comprobar que no trae datos simulados: si la prueba se rechaza por `DATOS_SIMULADOS`, la
+> marca queda puesta (es la marca de la prueba real y es inocua). (4) La conciliación (`conciliar`)
+> comprueba el par riel/QR, no el formato de la clave; la clave se ata al riel en la lectura de
+> `abonos/*` y en la revisión manual. (5) **La API del demo comprueba la marca solo al arrancar**
+> (`functions/src/main.ts`), no en cada petición: una API simulada que arrancó antes de que se marcara
+> la base puede seguir escribiendo contra ella, y su QR simulado «anular» uno real hasta que se la
+> reinicie. Queda sin construir: la propuesta es releer la marca con `decidirSobreLaBase(…, 'PASADA')`
+> antes de cada operación que escriba y responder 503; falta evaluar el costo en lecturas por
+> petición. Lo respaldan la capa de conciliación (un abono simulado sobre un QR real va a revisión) y
+> el rechazo de `QrProviderSimulado.anular` sobre referencias que no emitió.
 
 # Bloque 4 «pase a producción»: análisis de brechas (ManejoQRSimple, 2026-10-01)
 

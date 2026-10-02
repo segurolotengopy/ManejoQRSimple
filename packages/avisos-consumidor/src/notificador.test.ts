@@ -70,6 +70,10 @@ describe('cuerpoDelAviso()', () => {
     expect(cuerpoDelAviso(unAviso())).toContain('"riel":"api-baneco"');
     expect(cuerpoDelAviso(unAviso({ riel: null }))).toContain('"riel":null');
   });
+
+  it('un riel simulado sale como «simulado»: solo existe en el demo', () => {
+    expect(cuerpoDelAviso(unAviso({ riel: 'watcher-simulado' }))).toContain('"riel":"simulado"');
+  });
 });
 
 describe('NotificadorHttp', () => {

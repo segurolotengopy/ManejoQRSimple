@@ -17,9 +17,11 @@
 
 import {
   centavos,
+  claveDelRiel,
   esExito,
   exito,
   fallo,
+  ORIGENES_DETECCION,
   registrarDeteccion,
   type DeteccionDePago,
   type ErrorPuerto,
@@ -30,6 +32,18 @@ import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { z } from 'zod';
 
 export const COLECCION_ABONOS = 'abonos';
+
+/**
+ * El riel de toda detección que sale de `abonos/*`: simulado.
+ *
+ * Lo fija el adaptador y no el documento (D3): cualquiera que pueda escribir
+ * en la colección —el simulador de `tools/demo-local`, un script, la consola
+ * de Firebase— podría declarar `watcher-baneco` y hacerse pasar por el banco.
+ * Con un origen fijo, un abono de acá solo puede pagar un QR simulado (regla
+ * #1, `QRS_DEL_RIEL`). Cuando exista el riel Yape, necesitará su propio lector
+ * con su propio origen, no este.
+ */
+export const ORIGEN_ABONOS = 'watcher-simulado' as const;
 
 /**
  * Forma del documento de abono. Validada con Zod aunque la escribamos nosotros
@@ -43,7 +57,12 @@ const abonoDoc = z.object({
   ocurridoEn: z.custom<Timestamp>((v) => v instanceof Timestamp, {
     message: 'se esperaba un Timestamp',
   }),
-  origen: z.enum(['watcher-baneco', 'scraper-yape']),
+  /**
+   * Se valida y **se ignora**: el origen de una detección lo pone este
+   * adaptador (`ORIGEN_ABONOS`), no el documento. Quien escribe en `abonos/*`
+   * podría poner cualquier riel y falsificar el del banco.
+   */
+  origen: z.enum(ORIGENES_DETECCION).optional(),
   referencia: z.string().nullable(),
 });
 
@@ -57,10 +76,11 @@ export class PaymentWatcherAbonosFirestore implements PaymentWatcher {
       const snapshot = await this.db
         .collection(COLECCION_ABONOS)
         .where('referenciaProveedor', '==', referenciaProveedor)
-        .limit(1)
         .get();
 
-      const doc = snapshot.docs[0];
+      // Sin `limit(1)`: un documento descartado (`esDelRiel`) no puede tapar a
+      // uno válido que comparta la referencia.
+      const doc = snapshot.docs.find((d) => esDelRiel(d.id));
       if (doc === undefined) {
         // Todavía no hay abono. No es una falla: el contrato del puerto lo exige.
         return exito(null);
@@ -86,7 +106,7 @@ export class PaymentWatcherAbonosFirestore implements PaymentWatcher {
         .get();
 
       const detecciones: DeteccionDePago[] = [];
-      for (const doc of snapshot.docs) {
+      for (const doc of snapshot.docs.filter((d) => esDelRiel(d.id))) {
         const deteccion = aDeteccion(doc.id, doc.data());
         if (!esExito(deteccion)) {
           return deteccion;
@@ -100,6 +120,17 @@ export class PaymentWatcherAbonosFirestore implements PaymentWatcher {
       return fallo(errorDeFirestore(causa, 'listarAbonosDelDia'));
     }
   }
+}
+
+/**
+ * ¿Este documento puede ser una detección **simulada**? No si su id es de la
+ * forma de las claves del banco (`baneco:…`): el id del documento es la clave
+ * de deduplicación, y un simulado que reclamara una clave real haría que el
+ * abono del cierre del día —el del banco, con esa misma clave— contara como
+ * «ya registrado» y no se atara a su cobro. Se descarta, no se devuelve.
+ */
+function esDelRiel(id: string): boolean {
+  return claveDelRiel(ORIGEN_ABONOS, id);
 }
 
 function aDeteccion(id: string, datos: unknown): Resultado<DeteccionDePago | null, ErrorPuerto> {
@@ -131,7 +162,7 @@ function aDeteccion(id: string, datos: unknown): Resultado<DeteccionDePago | nul
       idDeduplicacion: id,
       montoCentavos: monto.valor,
       ocurridoEn: validado.data.ocurridoEn.toDate(),
-      origen: validado.data.origen,
+      origen: ORIGEN_ABONOS,
       referencia: validado.data.referencia,
     }),
   );

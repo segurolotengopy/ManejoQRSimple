@@ -13,6 +13,7 @@ const MOTIVO: Readonly<Record<MotivoRevision, string>> = {
   MONTO_NO_COINCIDE: 'El monto pagado no coincide con el del cobro',
   FUERA_DE_VIGENCIA: 'El pago llegó después del vencimiento',
   DUPLICADO: 'El banco reporta un pago que ya se había usado',
+  RIEL_NO_CORRESPONDE: 'Lo reportó un simulador, no el banco',
   ABONO_TARDIO: 'Llegó un pago a un QR ya vencido',
   VENTANA_AGOTADA: 'Hay comprobante, pero el banco no registró el pago',
   OTRO: 'Caso atípico',
@@ -33,6 +34,11 @@ const RECOMENDACION: Readonly<Record<MotivoRevision, string>> = {
   DUPLICADO:
     'Es una doble lectura del mismo pago, no un segundo pago: no lo aceptes. Rechazalo y mirá el ' +
     'extracto en la app del banco; si de verdad hay dos créditos, el segundo se devuelve por fuera.',
+  RIEL_NO_CORRESPONDE:
+    'Un abono simulado sobre un QR real no es un pago: el banco nunca lo vio y no se puede aceptar. ' +
+    'No rechace el caso antes del cierre del día: si el cliente pagó de verdad, el cierre adjunta el ' +
+    'abono del banco y el caso pasa a ser confirmable. Averigüe qué proceso simulado apuntó a la base ' +
+    'de la prueba.',
   ABONO_TARDIO:
     'El QR ya estaba vencido y anulado, pero el cliente pagó de verdad: casi siempre corresponde ' +
     'aceptarlo. No renueves ni reenvíes el cobro: le estarías pidiendo que pague dos veces.',

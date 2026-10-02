@@ -1,4 +1,4 @@
-import { esExito } from '@mqs/qr-core';
+import { esExito, type Centavos } from '@mqs/qr-core';
 import { describe, expect, it } from 'vitest';
 
 import { MensajeriaNoConfigurada } from './mensajeria.js';
@@ -143,5 +143,24 @@ describe('MensajeriaNoConfigurada', () => {
 
     expect(m.drenar()).toEqual(['confirmación del cobro c1', 'confirmación del cobro c2']);
     expect(m.drenar()).toEqual([]);
+  });
+});
+
+describe('el QR de los modos mock y simulado se declara simulado', () => {
+  it.each(['mock', 'simulado'])('con QR_PROVIDER=%s, el QR emitido es de origen simulado', async (modo) => {
+    // El dominio no deja que una detección simulada confirme un QR que no sea
+    // simulado: por eso el proveedor falso tiene que decir que lo es.
+    const r = armar({ QR_PROVIDER: modo, PAYMENT_WATCHER: 'mock' });
+    expect(esExito(r)).toBe(true);
+    if (!esExito(r)) return;
+    const emitido = await r.valor.deps.qr.emitir({
+      cobroId: 'cobro-1',
+      montoCentavos: 1_000 as Centavos,
+      venceEn: new Date(Date.now() + 3_600_000),
+      concepto: 'Prueba',
+      qrVersion: 1,
+      origenEsperado: 'api-baneco',
+    });
+    expect(esExito(emitido) && emitido.valor.origen).toBe('simulado');
   });
 });

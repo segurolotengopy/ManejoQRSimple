@@ -17,6 +17,7 @@ import {
   esExito,
   exito,
   fallo,
+  ORIGENES_QR,
   type Cobro,
   type EstadoCobro,
   type OrigenQr,
@@ -44,7 +45,7 @@ const qrEmitidoDoc = z.object({
   referenciaProveedor: z.string().min(1),
   emitidoEn: marcaDeTiempo,
   venceEn: marcaDeTiempo,
-  origen: z.enum(['api-baneco', 'carga-manual', 'consola-asistida']),
+  origen: z.enum(ORIGENES_QR),
   imagenRef: z.string().nullable(),
   hashImagen: z.string().nullable(),
 });

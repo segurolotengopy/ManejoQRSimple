@@ -11,7 +11,7 @@
  * dominio no puede tener.
  */
 
-import { exito, fallo, type Resultado } from '../comun/resultado.js';
+import { esExito, exito, fallo, type Resultado } from '../comun/resultado.js';
 import type { Cobro, PropietarioConsumidor, QrEmitido } from '../cobro/cobro.js';
 import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
@@ -33,6 +33,9 @@ import type {
 } from './puertos.js';
 
 type Ok<T> = Promise<Resultado<T, ErrorPuerto>>;
+
+/** Prefijo de las referencias que emite `QrProviderEnMemoria` (y por tanto `QrProviderSimulado`). */
+const PREFIJO_QR_SIMULADO = 'mock-qr-';
 
 export class QrProviderEnMemoria implements QrProvider {
   private secuencia = 0;
@@ -68,6 +71,51 @@ export class QrProviderEnMemoria implements QrProvider {
 
   estaAnulado(referencia: string): boolean {
     return this.anulados.has(referencia);
+  }
+}
+
+/**
+ * El QR del demo: **no es de ningún banco**. Emite siempre con origen
+ * `simulado`, pida lo que pida la solicitud, para que el dominio lo distinga
+ * de un QR real y una detección simulada nunca pueda confirmar uno real (ni al
+ * revés). Es el proveedor de los modos `mock` y `simulado` de la composición.
+ */
+export class QrProviderSimulado implements QrProvider {
+  private readonly interno: QrProviderEnMemoria;
+
+  constructor(reloj: () => Date = () => new Date()) {
+    this.interno = new QrProviderEnMemoria(reloj);
+  }
+
+  async emitir(solicitud: SolicitudQr): Ok<QrEmitido> {
+    const emitido = await this.interno.emitir({ ...solicitud, origenEsperado: 'simulado' });
+    return esExito(emitido) ? exito({ ...emitido.valor, origen: 'simulado' }) : emitido;
+  }
+
+  /**
+   * Solo anula lo que un simulador emitió (`mock-qr-…`). Una referencia ajena
+   * —la de un QR real del banco, por ejemplo— se **rechaza** sin delegar: si
+   * este proveedor «anulara con éxito» un QR que no es suyo, el cobro pasaría
+   * a `VENCIDO` o `ANULADO` con el QR todavía pagable en el banco (regla de la
+   * constancia de anulación). Rechazado y no reintentable: reintentar no lo
+   * arregla, y el cobro no cambia de estado.
+   */
+  anular(referenciaProveedor: string): Ok<void> {
+    if (!referenciaProveedor.startsWith(PREFIJO_QR_SIMULADO)) {
+      return Promise.resolve(
+        fallo({
+          tipo: 'RECHAZADO_POR_PROVEEDOR',
+          mensaje: 'El proveedor simulado no emitió ese QR y no puede anularlo.',
+          reintentable: false,
+          codigoProveedor: null,
+        }),
+      );
+    }
+    return this.interno.anular(referenciaProveedor);
+  }
+
+  estaAnulado(referencia: string): boolean {
+    return this.interno.estaAnulado(referencia);
   }
 }
 

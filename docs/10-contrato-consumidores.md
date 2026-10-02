@@ -203,8 +203,10 @@ es tuya y no tenés que guardar nuestro id si no querés.
 - `pago` es `null` mientras el cobro no esté `CONFIRMADO`.
 - `ocurridoEn` es cuándo lo dice el banco; `confirmadoEn`, cuándo lo dio por
   bueno este sistema. En la prueba en producción la diferencia fue de segundos.
-- `riel`: `api-baneco` (la consulta autenticada a la API del banco) o
-  `scraping-yape` (el riel diferido). `null` si la evidencia no lo registra.
+- `riel`: `api-baneco` (la consulta autenticada a la API del banco),
+  `scraping-yape` (el riel diferido) o `simulado` (solo en el demo: un cobro cuyo QR y
+  cuyo detector son simulados; nunca aparece contra el banco real). `null` si la
+  evidencia no lo registra.
 - `confirmadoPor`: `automatico` (concilió solo) o `revision-manual` (lo resolvió
   una persona, sobre un abono que el banco igualmente reportó — sin detección
   del banco no hay confirmación, tampoco manual).

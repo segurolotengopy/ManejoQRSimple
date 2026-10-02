@@ -55,6 +55,18 @@ Los abonos simulados se escriben en `abonos/*`, que es **el mismo lugar** donde 
 dejará el `yape-scraper` (docs/05 §2). El watcher que los lee
 (`PAYMENT_WATCHER=simulado`) no es un mock: es el lado lector de ese diseño.
 
+## Un emulador del demo, no el de la prueba
+
+Las herramientas del demo (`demo:sembrar`, `demo:pagar`) y `satelite:demo` **se niegan a
+arrancar** contra un emulador que tenga la marca de la prueba en producción
+(`configuracion/cuentaDePrueba`): ese emulador guarda cobros con QRs reales, y un abono
+simulado o un QR de mentira mezclados con ellos son justo lo que la regla #1 prohíbe. Si se
+niegan, hay que detener el emulador de la prueba (exporta sus datos al salir) o usar otro puerto
+para el demo: `npm run demo` y `prueba:emulador` comparten el puerto 8080 (`firebase.demo.json`) y
+**no conviven**. No exporte el `FIRESTORE_EMULATOR_HOST` de la prueba. Aun así, el dominio lo respalda: el QR del demo es de
+origen `simulado`, el watcher de `abonos/*` es `watcher-simulado` aunque el documento diga otra
+cosa, y un abono simulado sobre un QR real va a `EN_REVISION` (`RIEL_NO_CORRESPONDE`).
+
 ## Una diferencia deliberada con el satélite en producción
 
 El sembrador usa el mock de mensajería; el satélite en producción usa

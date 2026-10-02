@@ -872,11 +872,20 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
      dos capas: que la API, el satélite y `tools/demo-local` se nieguen a arrancar contra una base que
      tiene la marca de cuenta de la prueba, y que el watcher y el QR simulados lleven un origen propio
      que la conciliación mande a `EN_REVISION`.
-   - **4B3, baja: el riel que impide usar el host de producción desde certificación distingue
-     mayúsculas** (`baneco-gateway/src/config.ts:121`, `includes(HOST_PRODUCCION)`). Con un host en
-     mayúsculas y las credenciales de producción puestas en `BANECO_CERT_*`, el riel no lo detecta, la
-     llamada llega a producción y la barrera da falso. Corrección: comparar el `hostname` de un
-     `new URL()` contra el de certificación, con una lista de permitidos y no de bloqueados.
+   - **4B3, baja: HECHO.** El riel que impide usar el host de producción desde certificación
+     comparaba con `includes(HOST_PRODUCCION)` y distinguía mayúsculas: con un host en mayúsculas y las
+     credenciales de producción en `BANECO_CERT_*`, la llamada llegaba a producción. Ahora
+     `baneco-gateway/src/config.ts` interpreta la URL con `new URL()` y, en certificación, **solo
+     admite una lista de permitidos**: `apimktdesa.baneco.com.bo` por `https`, `localhost` y el
+     loopback (bancos simulados y pruebas; no `.test` ni `.localhost`, que salen al DNS). El host de
+     producción da `URL_DE_PRODUCCION_EN_CERT`; cualquier otro host, `HOST_NO_PERMITIDO_EN_CERT`; una
+     URL ilegible o con usuario o clave, `VARIABLE_INVALIDA`. Los errores llevan el host y nunca la URL
+     completa. Además `transporteFetch` ya **no sigue redirecciones** (`redirect: 'error'`): un 307/308
+     repetía el POST del login en el host de `Location`, saltando el riel (hallazgo de la auditoría;
+     vale también en `prod`). Cambio de contrato: un `BANECO_CERT_BASE_URL` que apunte a otro host real
+     (un alias del banco, una IP) ya no arranca. Queda pendiente, como **4B3-bis (baja)**: en
+     `prod` la URL (`BANECO_PROD_BASE_URL`) tampoco se valida contra el host de producción, así que
+     alguien con control del entorno podría mandar las credenciales de producción a otro host.
    El resto del bloque 4 se puede avanzar ya, sin esperar decisiones, con los bloques 4C a 4G y 4K de
    `docs/11` §4: el endpoint de salud y la robustez de los procesos, la cuenta obligatoria, el
    registro persistente del cierre, el latido y lease del satélite, el cupo compartido, los tiempos

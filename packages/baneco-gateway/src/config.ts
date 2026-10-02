@@ -29,7 +29,10 @@ export type ConfigBaneco = {
 export type ErrorConfig =
   | { readonly tipo: 'FALTA_VARIABLE'; readonly variable: string }
   | { readonly tipo: 'VARIABLE_INVALIDA'; readonly variable: string; readonly motivo: string }
-  | { readonly tipo: 'URL_DE_PRODUCCION_EN_CERT'; readonly baseUrl: string };
+  /** El host es el de producción. Solo el host: la URL puede traer usuario y clave. */
+  | { readonly tipo: 'URL_DE_PRODUCCION_EN_CERT'; readonly host: string }
+  /** En certificación solo se habla con el host de certificación o con uno local. */
+  | { readonly tipo: 'HOST_NO_PERMITIDO_EN_CERT'; readonly host: string };
 
 /**
  * Host de producción. Se usa **solo** para negarse a hablarle desde `cert`.
@@ -38,6 +41,30 @@ export type ErrorConfig =
  * más fácil de que eso pase sin que nadie se dé cuenta.
  */
 const HOST_PRODUCCION = 'apimkt.baneco.com.bo';
+
+/** El único host del banco con el que `cert` puede hablar (verificación V1). */
+const HOST_CERTIFICACION = 'apimktdesa.baneco.com.bo';
+
+/**
+ * ¿Puede `cert` hablarle a este host? **Lista de permitidos, no de bloqueados**:
+ * un host que no se reconoce no se llama, así que un alias, una IP, un punto
+ * final o un usuario antes de la arroba (`https://apimktdesa…@apimkt…`) no
+ * llegan a producción. Se compara el `hostname` que entiende `new URL()`, ya
+ * en minúsculas, y no un texto que «contenga» el host.
+ *
+ * Permitidos: el host de certificación, por `https`; y `localhost` y el
+ * loopback, para los bancos simulados y las pruebas. **No** los dominios
+ * `.test` ni `.localhost`: salen al resolver de DNS, y en una red hostil (o sin
+ * `systemd-resolved`) pueden apuntar a un tercero que recibiría el login.
+ */
+function hostPermitidoEnCert(url: URL): boolean {
+  const host = url.hostname;
+  if (host === HOST_CERTIFICACION) {
+    return url.protocol === 'https:';
+  }
+  const loopback = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+  return loopback && (url.protocol === 'https:' || url.protocol === 'http:');
+}
 
 /**
  * URL de producción del API Gateway de Baneco.
@@ -117,9 +144,35 @@ export function leerConfig(
       : leida;
   if (!esExito(baseUrl)) return baseUrl;
 
-  // Rail de seguridad: en certificación no se le habla al host de producción.
-  if (ambiente === 'cert' && baseUrl.valor.includes(HOST_PRODUCCION)) {
-    return fallo({ tipo: 'URL_DE_PRODUCCION_EN_CERT', baseUrl: baseUrl.valor });
+  // Rail de seguridad: en certificación solo se le habla a hosts permitidos.
+  // Los errores llevan el host y nunca la URL: puede traer usuario y clave.
+  if (ambiente === 'cert') {
+    let url: URL;
+    try {
+      url = new URL(baseUrl.valor);
+    } catch {
+      return fallo({
+        tipo: 'VARIABLE_INVALIDA',
+        variable: `${prefijo}BASE_URL`,
+        motivo: 'no es una URL válida',
+      });
+    }
+    if (url.hostname === HOST_PRODUCCION) {
+      return fallo({ tipo: 'URL_DE_PRODUCCION_EN_CERT', host: url.hostname });
+    }
+
+    // Un usuario o una clave dentro de la URL acabarían en los logs y en los
+    // mensajes de B0: la URL base no los lleva.
+    if (url.username !== '' || url.password !== '') {
+      return fallo({
+        tipo: 'VARIABLE_INVALIDA',
+        variable: `${prefijo}BASE_URL`,
+        motivo: 'la URL no puede traer usuario ni clave',
+      });
+    }
+    if (!hostPermitidoEnCert(url)) {
+      return fallo({ tipo: 'HOST_NO_PERMITIDO_EN_CERT', host: url.hostname });
+    }
   }
 
   const usuario = requerida('USERNAME');

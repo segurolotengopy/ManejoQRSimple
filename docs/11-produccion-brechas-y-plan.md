@@ -9,8 +9,8 @@
 > **Actualización del 2026-10-02.** (1) **G2 está cerrado dentro de un proceso:** la barrera exige
 > los dos adaptadores del banco (ESTADO, «Hecho»). La auditoría de ese cambio encontró dos hallazgos
 > anteriores, 4B2 (un watcher simulado de otro proceso confirma un QR real del emulador compartido)
-> y 4B3 (el riel de certificación distingue mayúsculas en el host), descritos en ESTADO, «Próximo
-> paso». (2) **El banco no va a dar otra llave de producción** (Andres,
+> y 4B3 (el riel de certificación distingue mayúsculas en el host; **corregido**, ver ESTADO), descritos
+> en ESTADO, «Próximo paso». (2) **El banco no va a dar otra llave de producción** (Andres,
 > ESTADO, decisión 26): la «llave definitiva» del §2.2 y la gestión T1 del §3.3 ya no aplican; la
 > llave que circuló por correo es la de producción y no se rotará. Eso implica que **no hay llave de
 > staging** (un staging solo puede usar `mock` o `simulado`), que la rotación del checklist (SEC-10)

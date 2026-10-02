@@ -740,12 +740,14 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
      Recomendación: **(a)**, pero no se ejecuta nada sin el OK. Un emulador sin marca con datos viejos
      **aborta y no crea la marca** hasta que el dueño decida.
    - **Aprobar o corregir los supuestos de la decisión 24** (D-B, D-C, D-D y D-F).
-   - **El consumidor de ensayo se conserva** (pedido del dueño): para que la API de `prod` siga
-     arrancando, su archivo necesita `CONSUMIDOR_CUENTA_ENSAYO=prod`. Lo agrega un script que no muestra
-     valores, con el OK del dueño. Su certificado local venció (se emitió con vigencia de dos días) y hay
-     que regenerarlo antes de la próxima prueba del aviso.
-   - **`.env.example`** necesita sumar `CONSUMIDOR_CUENTA_<ID>`: Claude Code no tiene permiso sobre
-     `.env.*`, así que se hace con el mismo método de script del PR #44, con el OK del dueño.
+   - ~~**El consumidor de ensayo se conserva** (pedido del dueño)~~ — **hecho el 2026-10-01**, con el
+     OK del dueño: un script, sin mostrar valores, agregó `CONSUMIDOR_CUENTA_ENSAYO=prod` al archivo de
+     la cuenta `prod` y regeneró el certificado local, ahora con vigencia de 30 días (vence el
+     2026-11-01). `npm run prueba:cuenta -- prod --revisar` lo da por completo. El receptor del aviso y
+     el cliente del consumidor de ensayo vivían en la carpeta temporal de otra sesión: hay que
+     reescribirlos antes de la próxima prueba.
+   - ~~**`.env.example`**~~ — **hecho el 2026-10-01**, con el OK del dueño y el mismo método de script del
+     PR #44: `CONSUMIDOR_CUENTA_<ID>` y `ATRIBUIR_DATOS_ANTERIORES_A`, comentadas y sin valores.
 1. **Decidir la opción de WhatsAppModular en `docs/04` §2.3.** Es lo que más destraba: sin
    `wa-bridge` ningún cobro real pasa de `QR_ACTIVO`.
 2. **Revisar los cambios sin commitear del checkout principal** (`~/ManejoQRSimple`): hay
@@ -757,9 +759,9 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
 4. Adoptar la rutina de `docs/09-revision-manual.md` §3: una revisión diaria de la pestaña
    Revisión.
 5. Limpieza cuando ya no haga falta: borrar `~/.manejoqr/emulador-prueba`, `~/.manejoqr/qrs`
-   y `~/.manejoqr/emulador-cuenta-2` (con `qrs/cuenta-2`); conservar `~/.manejoqr/logs/`. Quitar
-   el consumidor de ensayo del archivo de credenciales de la cuenta `prod` y borrar
-   `~/.manejoqr/ensayo`.
+   y `~/.manejoqr/emulador-cuenta-2` (con `qrs/cuenta-2`); conservar `~/.manejoqr/logs/`. El
+   consumidor de ensayo y `~/.manejoqr/ensayo` **se conservan** para las próximas pruebas (pedido
+   del dueño, 2026-10-01).
 6. Persistir el límite de inotify (archivo en `/etc/sysctl.d/`, ver «Notas de entorno»).
 7. Comercial, al acercarse producción: pedir la llave de producción por un canal que no sea un
    adjunto de correo (B3).

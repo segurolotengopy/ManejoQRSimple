@@ -25,7 +25,12 @@ export type Metodo = 'GET' | 'POST';
  */
 export type Identidad =
   | { readonly tipo: 'dueño'; readonly id: string }
-  | { readonly tipo: 'consumidor'; readonly consumidorId: string };
+  | {
+      readonly tipo: 'consumidor';
+      readonly consumidorId: string;
+      /** Alias de la cuenta de cobro del consumidor: sale de su configuración, nunca del pedido. */
+      readonly cuentaCobro: string;
+    };
 
 export type Peticion = {
   readonly metodo: Metodo;

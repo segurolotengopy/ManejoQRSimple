@@ -1,6 +1,14 @@
+import type { Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
 
-import { archivoDeCredenciales, esAliasDeCuenta, leerCuentaDePrueba } from './cuenta.js';
+import {
+  archivoDeCredenciales,
+  esAliasDeCuenta,
+  leerCuentaDeCobro,
+  leerAtribucionExplicita,
+  leerCuentaDePrueba,
+  prepararDatosDeLaCuenta,
+} from './cuenta.js';
 
 describe('esAliasDeCuenta()', () => {
   it.each(['prod', 'sucursal-2', 'a', `a${'b'.repeat(23)}`])('acepta %s', (alias) => {
@@ -44,9 +52,85 @@ describe('leerCuentaDePrueba()', () => {
   });
 });
 
+describe('leerCuentaDeCobro()', () => {
+  it('sin variable, la primera cuenta', () => {
+    expect(leerCuentaDeCobro({})).toBe('prod');
+    expect(leerCuentaDeCobro({ PRUEBA_CUENTA: '  ' })).toBe('prod');
+  });
+
+  it('con alias válido, ese alias', () => {
+    expect(leerCuentaDeCobro({ PRUEBA_CUENTA: ' sucursal-2 ' })).toBe('sucursal-2');
+  });
+
+  it('un alias que no sirve como nombre de archivo no se corrige solo', () => {
+    expect(leerCuentaDeCobro({ PRUEBA_CUENTA: '../otra' })).toBeNull();
+  });
+
+  it('un número de cuenta no es una cuenta de cobro', () => {
+    expect(leerCuentaDeCobro({ PRUEBA_CUENTA: '1234567890' })).toBeNull();
+  });
+
+  it('leerCuentaDePrueba sigue siendo la misma función', () => {
+    expect(leerCuentaDePrueba).toBe(leerCuentaDeCobro);
+  });
+});
+
 describe('archivoDeCredenciales()', () => {
   it('es la convención que arman los scripts prueba:*', () => {
     expect(archivoDeCredenciales('prod')).toBe('baneco-prod.env');
     expect(archivoDeCredenciales('sucursal-2')).toBe('baneco-sucursal-2.env');
   });
+});
+
+describe('prepararDatosDeLaCuenta() cuando Firestore falla', () => {
+  it('devuelve un fallo con mensaje claro en vez de lanzar', async () => {
+    // Un emulador caído: el `await` de nivel superior del arranque soltaría un
+    // stack trace en vez de «✖ …».
+    const db = {
+      collection: () => {
+        throw new Error('14 UNAVAILABLE: no se puede conectar');
+      },
+    } as unknown as Firestore;
+
+    const r = await prepararDatosDeLaCuenta({ db, cuenta: 'cuenta-a', modoPrueba: false });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.tipo).toBe('NO_SE_PUDO_COMPROBAR');
+    expect(r.error.mensaje).toContain('emulador');
+  });
+});
+
+describe('leerAtribucionExplicita()', () => {
+  it('sin la variable, no hay autorización ni aviso', () => {
+    expect(leerAtribucionExplicita({}, 'cuenta-a')).toEqual({ permitida: false, aviso: null });
+    expect(leerAtribucionExplicita({ ATRIBUIR_DATOS_ANTERIORES_A: '  ' }, 'cuenta-a')).toEqual({
+      permitida: false,
+      aviso: null,
+    });
+  });
+
+  it('con el alias exacto de la cuenta, sí', () => {
+    expect(leerAtribucionExplicita({ ATRIBUIR_DATOS_ANTERIORES_A: 'cuenta-a' }, 'cuenta-a')).toEqual({
+      permitida: true,
+      aviso: null,
+    });
+  });
+
+  it('con otro alias válido, no; el aviso lo dice y nombra el valor', () => {
+    const r = leerAtribucionExplicita({ ATRIBUIR_DATOS_ANTERIORES_A: 'cuenta-b' }, 'cuenta-a');
+    expect(r.permitida).toBe(false);
+    expect(r.aviso).toContain('no coincide');
+    expect(r.aviso).toContain('cuenta-b');
+  });
+
+  it.each(['1234567890', 'CUENTA-A', '<alias>', 'cuenta a'])(
+    'con un valor que no es un alias (%s), no, y el aviso no lo imprime',
+    (valor) => {
+      const r = leerAtribucionExplicita({ ATRIBUIR_DATOS_ANTERIORES_A: valor }, 'cuenta-a');
+      expect(r.permitida).toBe(false);
+      expect(r.aviso).toContain('no coincide');
+      expect(r.aviso).not.toContain(valor);
+    },
+  );
 });

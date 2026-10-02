@@ -14,6 +14,7 @@
  */
 
 import {
+  ALIAS_DE_CUENTA,
   centavos,
   esExito,
   exito,
@@ -45,6 +46,8 @@ const abonoDoc = z.object({
   montoCentavos: z.number().int().nonnegative(),
   ocurridoEn: marcaDeTiempo,
   origen: z.enum(['watcher-baneco', 'scraper-yape']),
+  // Obligatorio, como en el cobro: la cuenta en la que cayó el pago.
+  cuentaCobro: z.string().regex(ALIAS_DE_CUENTA),
   registradoEn: marcaDeTiempo,
   /** Campo aparte para poder consultar los abiertos con un índice simple. */
   abierto: z.boolean(),
@@ -67,6 +70,7 @@ export class AbonosSinConciliarFirestore implements AbonosSinConciliarStore {
         montoCentavos: abono.montoCentavos,
         ocurridoEn: Timestamp.fromDate(abono.ocurridoEn),
         origen: abono.origen,
+        cuentaCobro: abono.cuentaCobro,
         registradoEn: Timestamp.fromDate(abono.registradoEn),
         abierto: abono.resolucion === null,
         resolucion:
@@ -168,6 +172,7 @@ function aAbono(id: string, datos: unknown): Resultado<AbonoSinConciliar, ErrorP
     montoCentavos: monto.valor,
     ocurridoEn: d.ocurridoEn.toDate(),
     origen: d.origen,
+    cuentaCobro: d.cuentaCobro,
     registradoEn: d.registradoEn.toDate(),
     resolucion:
       d.resolucion === null ? null : { motivo: d.resolucion.motivo, resueltoEn: d.resolucion.resueltoEn.toDate() },

@@ -58,6 +58,11 @@ const HORA_MS = 3_600_000;
 
 export type ContextoApi = {
   readonly deps: Dependencias;
+  /**
+   * Alias de la cuenta de cobro de este proceso: la de sus credenciales. Se
+   * graba en cada cobro que se crea y acota lo que el proceso opera.
+   */
+  readonly cuentaCobro: string;
   readonly evidencia: EvidenceStore;
   /** Abonos que el cierre diario no pudo atar a un cobro: van a la cola de revisión. */
   readonly abonosSinConciliar: AbonosSinConciliarStore;
@@ -88,6 +93,8 @@ function aVista(cobro: Cobro): Record<string, unknown> {
     id: cobro.id,
     estado: cobro.estado,
     proveedor: cobro.proveedor,
+    // Solo un rótulo (nunca el número de cuenta) y solo en la superficie del dueño.
+    cuentaCobro: cobro.cuentaCobro,
     monto: aDecimalBob(cobro.montoCentavos),
     moneda: cobro.moneda,
     concepto: cobro.concepto,
@@ -145,6 +152,7 @@ function aVistaAbono(caso: CasoAbono): Record<string, unknown> {
     idDeduplicacion: abono.idDeduplicacion,
     motivo: abono.motivo,
     cobroId: abono.cobroId,
+    cuentaCobro: abono.cuentaCobro,
     // Cómo está ahora ese cobro y si ya registra este pago: un "sin
     // corroborar" que después se confirmó no es plata para devolver.
     cobroEstado: caso.cobro?.estado ?? null,
@@ -269,12 +277,21 @@ export function comoHttp(err: ErrorCasoUso): Respuesta {
   }
 }
 
+/**
+ * El cobro por id, o la respuesta de error. Un cobro de **otra cuenta** de
+ * cobro responde 404 como si no existiera: este proceso tiene las credenciales
+ * de la suya, y verificarlo, anularlo o renovarlo le pediría al banco
+ * equivocado. Es la misma regla que ya aplica `cerrarPrueba`.
+ */
 async function buscar(ctx: ContextoApi, id: string): Promise<Cobro | Respuesta> {
   const encontrado = await ctx.deps.cobros.obtener(id);
   if (!esExito(encontrado)) {
     return comoHttp({ tipo: 'PUERTO', error: encontrado.error });
   }
-  return encontrado.valor ?? noEncontrado();
+  if (encontrado.valor === null || encontrado.valor.cuentaCobro !== ctx.cuentaCobro) {
+    return noEncontrado();
+  }
+  return encontrado.valor;
 }
 
 const esRespuesta = (v: Cobro | Respuesta): v is Respuesta => 'status' in v;
@@ -312,6 +329,7 @@ export async function crearCobro(ctx: ContextoApi, cuerpo: unknown): Promise<Res
     // randomUUID usa el generador criptográfico, nunca Math.random (regla #10).
     id: randomUUID(),
     proveedor: 'baneco',
+    cuentaCobro: ctx.cuentaCobro,
     estado: 'BORRADOR',
     montoCentavos: monto.valor,
     moneda: 'BOB',
@@ -603,6 +621,7 @@ export async function generarQrDePrueba(ctx: ContextoApi, cuerpo: unknown): Prom
   const cobro: Cobro = {
     id: randomUUID(),
     proveedor: 'baneco',
+    cuentaCobro: ctx.cuentaCobro,
     estado: 'BORRADOR',
     montoCentavos: prueba.montoCentavos,
     moneda: 'BOB',
@@ -686,6 +705,11 @@ export async function cerrarPrueba(ctx: ContextoApi): Promise<Respuesta> {
 
   const resultados: { id: string; resultado: string }[] = [];
   for (const cobro of todos.valor) {
+    // Los cobros de otra cuenta se cierran con las credenciales de **su**
+    // cuenta: anularlos con las de esta le pediría al banco equivocado.
+    if (cobro.cuentaCobro !== ctx.cuentaCobro) {
+      continue;
+    }
     const id = cobro.id;
     if (cobro.estado === 'COMPROBANTE_RECIBIDO') {
       // No admite ANULADO: su QR sigue vivo hasta que el satélite lo venza.

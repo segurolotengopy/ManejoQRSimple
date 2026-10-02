@@ -663,6 +663,12 @@ export type ResumenConciliacionDiaria = {
   /** Abonos que no corresponden a ningún cobro que los espere: plata sin dueño. */
   readonly huerfanos: readonly string[];
   /**
+   * Abonos cuyo QR es de un cobro de **otra** cuenta (ids de deduplicación).
+   * No se verifican ni se concilian con las credenciales de esta cuenta: se
+   * guardan como `SIN_CORROBORAR` para que los mire una persona.
+   */
+  readonly deOtraCuenta: readonly string[];
+  /**
    * De los huérfanos y sin corroborar, los que se guardaron **en este cierre**.
    * Un cierre repetido vuelve a verlos todos, pero solo estos son novedad para
    * la pestaña Revisión.
@@ -680,7 +686,8 @@ type DestinoAbono =
   | 'enRevision'
   | 'yaRegistrado'
   | 'sinCorroborar'
-  | 'huerfano';
+  | 'huerfano'
+  | 'deOtraCuenta';
 
 /**
  * Cierre del día: contrasta los abonos que informa el banco contra los cobros.
@@ -700,6 +707,7 @@ type DestinoAbono =
  */
 export async function conciliarDia(
   deps: DepsCierre,
+  cuentaCobro: string,
   fecha: Date,
   ahora: Date,
 ): Promise<Resultado<ResumenConciliacionDiaria, ErrorCasoUso>> {
@@ -712,12 +720,13 @@ export async function conciliarDia(
   const enRevision: string[] = [];
   const sinCorroborar: string[] = [];
   const huerfanos: string[] = [];
+  const deOtraCuenta: string[] = [];
   const nuevosParaRevisar: string[] = [];
   const conError: { idDeduplicacion: string; error: ErrorCasoUso }[] = [];
   let yaRegistrados = 0;
 
   for (const abono of abonos.valor) {
-    const destino = await destinoDelAbono(deps, abono, ahora);
+    const destino = await destinoDelAbono(deps, cuentaCobro, abono, ahora);
     if (!esExito(destino)) {
       conError.push({ idDeduplicacion: abono.idDeduplicacion, error: destino.error });
       continue;
@@ -733,17 +742,19 @@ export async function conciliarDia(
         yaRegistrados += 1;
         break;
       case 'sinCorroborar':
+      case 'deOtraCuenta':
       case 'huerfano': {
-        const huerfano = destino.valor.destino === 'huerfano';
+        const tipo = destino.valor.destino;
         // Plata que ninguna regla explica: se guarda para una persona. Solo
         // cuenta como reportada si quedó guardada.
         const guardado = await deps.abonosSinConciliar.registrar({
           idDeduplicacion: abono.idDeduplicacion,
-          motivo: huerfano ? 'HUERFANO' : 'SIN_CORROBORAR',
+          motivo: tipo === 'huerfano' ? 'HUERFANO' : 'SIN_CORROBORAR',
           cobroId: destino.valor.cobroId === '' ? null : destino.valor.cobroId,
           montoCentavos: abono.montoCentavos,
           ocurridoEn: abono.ocurridoEn,
           origen: abono.origen,
+          cuentaCobro,
           registradoEn: ahora,
           resolucion: null,
         });
@@ -751,7 +762,7 @@ export async function conciliarDia(
           conError.push({ idDeduplicacion: abono.idDeduplicacion, error: dePuerto(guardado.error) });
           break;
         }
-        (huerfano ? huerfanos : sinCorroborar).push(abono.idDeduplicacion);
+        ({ huerfano: huerfanos, deOtraCuenta, sinCorroborar })[tipo].push(abono.idDeduplicacion);
         if (guardado.valor) {
           nuevosParaRevisar.push(abono.idDeduplicacion);
         }
@@ -767,6 +778,7 @@ export async function conciliarDia(
     yaRegistrados,
     sinCorroborar,
     huerfanos,
+    deOtraCuenta,
     nuevosParaRevisar,
     conError,
   });
@@ -775,6 +787,7 @@ export async function conciliarDia(
 /** Qué hacer con un abono del reporte diario, según el cobro al que pertenece. */
 async function destinoDelAbono(
   deps: DepsVerificacion,
+  cuentaCobro: string,
   abono: DeteccionDePago,
   ahora: Date,
 ): Promise<Resultado<{ readonly destino: DestinoAbono; readonly cobroId: string }, ErrorCasoUso>> {
@@ -789,6 +802,13 @@ async function destinoDelAbono(
     return exito({ destino: 'huerfano', cobroId: '' });
   }
   const cobroId = cobro.id;
+
+  // El QR es de un cobro de otra cuenta: verificarlo exigiría consultar el
+  // banco con credenciales que no son las suyas. Se resuelve antes de tocar
+  // `verificarPago` y antes de mirar el estado: no transiciona nada.
+  if (cobro.cuentaCobro !== cuentaCobro) {
+    return exito({ destino: 'deOtraCuenta', cobroId });
+  }
 
   switch (cobro.estado) {
     case 'QR_ACTIVO':

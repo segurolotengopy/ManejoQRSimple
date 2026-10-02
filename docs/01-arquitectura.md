@@ -256,10 +256,43 @@ Consecuencias:
   confirmados. No hay dónde anotar "ya avisado" sin inventar un estado igual,
   y el barrido crecería con el historial.
 
+**ADR-010 — La cuenta de cobro es un atributo del cobro y del consumidor, no un
+parámetro (2026-10-01).**
+Contexto: el bloque 3 del contrato pide que un consumidor solo vea y use su
+cuenta de cobro, y que el cierre diario atribuya cada pago a una cuenta. Hasta
+entonces la cuenta era implícita: la del proceso, sin rastro en el cobro.
+Decisión: **un proceso por cuenta, con el vínculo explícito y la cuenta
+persistida.** `Cobro.cuentaCobro` y `AbonoSinConciliar.cuentaCobro` guardan el
+alias; `CONSUMIDOR_CUENTA_<ID>` ata a cada consumidor a la suya y se verifica
+al arrancar.
+Consecuencias:
+- **La cuenta es un dato del dominio**, y `qr-core` sigue puro. El alias es la
+  identidad persistida de la cuenta y no puede ser un número de cuenta (regla
+  #4): empieza con letra. No se renombra mientras existan cobros con él.
+- **La cuenta nunca es entrada.** Sale de la identidad que resuelve el token.
+  Un campo `cuenta` en el cuerpo sería el vector para cobrar en la de otro.
+- **Se falla cerrado.** Un consumidor sin cuenta, con alias inválido o con la de
+  otro proceso corta el arranque. Y la API y el satélite se niegan a arrancar si
+  queda un documento sin cuenta: un cobro pendiente sin `cuentaCobro` quedaría
+  fuera de la consulta por cuenta, y el satélite dejaría de vigilar un QR
+  todavía pagable sin dar ningún error (amenaza T10).
+- **El cierre no concilia lo de otra cuenta.** Un abono cuyo QR es de un cobro
+  de otra cuenta no se verifica con estas credenciales: va a revisión manual.
+- Alternativa descartada: **una API y un satélite para todas las cuentas.**
+  Contradice la decisión 16 y concentra las llaves de todas las cuentas en un
+  proceso. Queda para el bloque 4, con una base compartida y sus condiciones.
+- Alternativa descartada: un repositorio con alcance de cuenta dentro del
+  adaptador. Escondería una regla de aislamiento donde cada mock tendría que
+  copiarla.
+- Alternativa descartada: guardar un hash del número de cuenta. Un número se
+  revierte por fuerza bruta: sería un dato bancario.
+
 
 ## 7. No-objetivos explícitos de la Fase 0–1
 
-- Multi-comerciante / multi-cuenta (el demo opera la billetera del dueño).
+- Una sola API o un solo satélite para varias cuentas a la vez: cada cuenta de
+  cobro se atiende con su propio proceso (ESTADO, decisión 16 y ADR-010). Lo que
+  sí existe desde el bloque 3 es que cada cobro y cada consumidor llevan su cuenta.
 - Devoluciones y contracargos automatizados.
 - OCR del comprobante (solo se archiva como evidencia).
 - Panel para el cliente final (el cliente solo interactúa por WhatsApp).

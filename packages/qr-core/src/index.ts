@@ -48,9 +48,11 @@ export {
   type Cobro,
   type DatosConsumidor,
   type OrigenQr,
+  type PropietarioConsumidor,
   type Proveedor,
   type QrEmitido,
 } from './cobro/cobro.js';
+export { ALIAS_DE_CUENTA, esAliasDeCuenta } from './cobro/cuenta-cobro.js';
 export {
   esTerminal,
   ESTADOS,

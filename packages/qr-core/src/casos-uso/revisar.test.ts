@@ -231,6 +231,7 @@ describe('abonos sin conciliar en la cola de revisión', () => {
       montoCentavos: bs(500),
       ocurridoEn: T0,
       origen: 'watcher-baneco',
+      cuentaCobro: 'cuenta-a',
       registradoEn,
       resolucion: null,
     };
@@ -299,6 +300,7 @@ describe('un abono sin corroborar que después se explica', () => {
       montoCentavos: bs(MONTO),
       ocurridoEn: enMinutos(30),
       origen: 'watcher-baneco',
+      cuentaCobro: 'cuenta-a',
       registradoEn: enMinutos(35),
       resolucion: null,
     });
@@ -325,6 +327,7 @@ describe('un abono sin corroborar que después se explica', () => {
       montoCentavos: bs(MONTO),
       ocurridoEn: enMinutos(30),
       origen: 'watcher-baneco',
+      cuentaCobro: 'cuenta-a',
       registradoEn: enMinutos(35),
       resolucion: null,
     });

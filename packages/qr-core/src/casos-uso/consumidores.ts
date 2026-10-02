@@ -25,7 +25,7 @@ import { createHash } from 'node:crypto';
 
 import { centavos, type Centavos } from '../comun/dinero.js';
 import { esExito, exito, fallo, type Resultado } from '../comun/resultado.js';
-import type { Cobro, Proveedor } from '../cobro/cobro.js';
+import type { Cobro, PropietarioConsumidor, Proveedor } from '../cobro/cobro.js';
 import type { OrigenTransicion } from '../cobro/estados.js';
 import type { RegistroEvidencia } from '../cobro/maquina-estados.js';
 import { esOrigenDeteccion, type OrigenDeteccion } from '../conciliacion/deteccion.js';
@@ -54,6 +54,11 @@ export function idDeCobroDeConsumidor(consumidorId: string, referenciaExterna: s
 
 export type SolicitudCobroConsumidor = {
   readonly consumidorId: string;
+  /**
+   * Cuenta de cobro del consumidor. Sale de su identidad autenticada, jamás
+   * del cuerpo del pedido: el consumidor no elige la cuenta.
+   */
+  readonly cuentaCobro: string;
   /** Opaca y única por consumidor. Nunca datos de su cliente (regla #9). */
   readonly referenciaExterna: string;
   readonly montoCentavos: Centavos;
@@ -103,6 +108,7 @@ export async function crearCobroDeConsumidor(
   const nuevo: Cobro = {
     id,
     proveedor: solicitud.proveedor,
+    cuentaCobro: solicitud.cuentaCobro,
     estado: 'BORRADOR',
     montoCentavos: solicitud.montoCentavos,
     moneda: 'BOB',
@@ -149,10 +155,12 @@ async function reintentoSobre(
   if (
     dueño === null ||
     dueño.consumidorId !== solicitud.consumidorId ||
-    dueño.referenciaExterna !== solicitud.referenciaExterna
+    dueño.referenciaExterna !== solicitud.referenciaExterna ||
+    existente.cuentaCobro !== solicitud.cuentaCobro
   ) {
-    // Colisión del hash: inverosímil, pero no se elige un cobro al azar para
-    // devolvérselo a quien no es su dueño.
+    // Colisión del hash —inverosímil— o la misma referencia que ya tiene un
+    // cobro propio en otra cuenta: no se elige un cobro al azar para
+    // devolvérselo a quien no es su dueño, ni se emite un QR en otra cuenta.
     return fallo({ tipo: 'REFERENCIA_EXTERNA_EN_USO', referenciaExterna: solicitud.referenciaExterna });
   }
   if (existente.montoCentavos !== solicitud.montoCentavos) {
@@ -196,9 +204,15 @@ async function emitirSobre(
     : exito({ cobro: ganador.valor, creado: false });
 }
 
-/** ¿Este cobro es de ese consumidor? Nadie ve ni toca el cobro de otro. */
-export function esDelConsumidor(cobro: Cobro, consumidorId: string): boolean {
-  return cobro.consumidor?.consumidorId === consumidorId;
+/**
+ * ¿Este cobro es de ese consumidor **y** de su cuenta? Nadie ve ni toca el
+ * cobro de otro consumidor ni el de otra cuenta.
+ */
+export function esDelConsumidor(cobro: Cobro, propietario: PropietarioConsumidor): boolean {
+  return (
+    cobro.consumidor?.consumidorId === propietario.consumidorId &&
+    cobro.cuentaCobro === propietario.cuentaCobro
+  );
 }
 
 /**

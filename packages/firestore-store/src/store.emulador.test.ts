@@ -18,10 +18,11 @@ import {
   type RegistroEvidencia,
 } from '@mqs/qr-core';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
-import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AbonosSinConciliarFirestore, COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
+import { atribuirCuentaALoAnterior, contarSinCuentaDeCobro } from './atribucion-de-cuenta.js';
 import { COLECCION_CONFIGURACION, explicarMarca, fijarCuentaDePrueba } from './cuenta-de-prueba.js';
 import { CobroRepositoryFirestore, EvidenceStoreFirestore } from './repositorio.js';
 
@@ -40,6 +41,7 @@ function unCobro(sobrescribir: Partial<Cobro> = {}): Cobro {
   return {
     id: 'cobro-emulador-1',
     proveedor: 'baneco',
+    cuentaCobro: 'cuenta-a',
     estado: 'BORRADOR',
     montoCentavos: bs(12_345),
     moneda: 'BOB',
@@ -78,6 +80,27 @@ function unaEvidencia(sobrescribir: Partial<RegistroEvidencia> = {}): RegistroEv
   };
 }
 
+/** Un cobro como lo guardaba la versión anterior: sin `cuentaCobro`. */
+function documentoDeCobroViejo(): Record<string, unknown> {
+  const { id: _id, cuentaCobro: _cuenta, ...resto } = unCobro();
+  return { ...resto, creadoEn: Timestamp.fromDate(T0) };
+}
+
+/** Un abono como lo guardaba la versión anterior: sin `cuentaCobro`. */
+function documentoDeAbonoViejo(): Record<string, unknown> {
+  return {
+    idDeduplicacion: 'baneco:qr-viejo:tx-1',
+    motivo: 'HUERFANO',
+    cobroId: null,
+    montoCentavos: 100,
+    ocurridoEn: Timestamp.fromDate(T0),
+    origen: 'watcher-baneco',
+    registradoEn: Timestamp.fromDate(T0),
+    abierto: true,
+    resolucion: null,
+  };
+}
+
 beforeAll(() => {
   // Barrera: si esta variable no está, `emulators:exec` no nos lanzó y estos
   // tests podrían terminar hablándole al proyecto real. No se corren.
@@ -105,22 +128,124 @@ beforeEach(async () => {
 
 describe('fijarCuentaDePrueba()', () => {
   it('marca el emulador vacío y deja pasar al mismo alias', async () => {
-    await expect(fijarCuentaDePrueba(db, 'prod', T0)).resolves.toEqual({ tipo: 'MARCADA', cuenta: 'prod' });
-    await expect(fijarCuentaDePrueba(db, 'prod', T0)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
+    await expect(fijarCuentaDePrueba(db, 'prod', T0, false)).resolves.toEqual({ tipo: 'MARCADA', cuenta: 'prod' });
+    await expect(fijarCuentaDePrueba(db, 'prod', T0, false)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
   });
 
   it('otra cuenta sobre los mismos datos no arranca', async () => {
-    await fijarCuentaDePrueba(db, 'prod', T0);
-    const marca = await fijarCuentaDePrueba(db, 'sucursal-2', T0);
+    await fijarCuentaDePrueba(db, 'prod', T0, false);
+    const marca = await fijarCuentaDePrueba(db, 'sucursal-2', T0, false);
     expect(marca).toEqual({ tipo: 'CONFLICTO', cuenta: 'sucursal-2', guardada: 'prod' });
     // El conflicto no pisa la marca: los datos siguen siendo de la primera.
-    await expect(fijarCuentaDePrueba(db, 'prod', T0)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
+    await expect(fijarCuentaDePrueba(db, 'prod', T0, false)).resolves.toEqual({ tipo: 'COINCIDE', cuenta: 'prod' });
     expect(explicarMarca(marca)).toContain('sucursal-2');
+  });
+
+  describe('sobre un emulador que ya trae datos sin cuenta', () => {
+    const marcaDe = async () => (await db.collection(COLECCION_CONFIGURACION).doc('cuentaDePrueba').get()).exists;
+    async function foto(): Promise<unknown> {
+      const leer = async (coleccion: string) =>
+        (await db.collection(coleccion).get()).docs.map((d) => [d.ref.path, d.data()]);
+      return { cobros: await leer('cobros'), abonos: await leer(COLECCION_ABONOS_SIN_CONCILIAR) };
+    }
+    async function sembrar(): Promise<void> {
+      await db.collection('cobros').doc('doc-x7q').set(documentoDeCobroViejo());
+      await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('doc-x7q').set(documentoDeAbonoViejo());
+    }
+    const sinMarcaConDatos = { tipo: 'SIN_MARCA_CON_DATOS', cuenta: 'cuenta-a', cobros: 1, abonos: 1 };
+
+    it('no crea la marca: devuelve SIN_MARCA_CON_DATOS y no escribe nada', async () => {
+      await sembrar();
+      const antes = await foto();
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual(sinMarcaConDatos);
+
+      expect(await marcaDe()).toBe(false);
+      expect(await foto()).toEqual(antes);
+    });
+
+    it('el reintento con la misma cuenta también aborta: la marca no quedó puesta', async () => {
+      await sembrar();
+      const antes = await foto();
+
+      await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual(sinMarcaConDatos);
+
+      expect(await marcaDe()).toBe(false);
+      expect(await foto()).toEqual(antes);
+    });
+
+    it('dos arranques simultáneos abortan los dos, sin marca y sin escribir', async () => {
+      await sembrar();
+      const antes = await foto();
+
+      const resultados = await Promise.all([
+        fijarCuentaDePrueba(db, 'cuenta-a', T0, false),
+        fijarCuentaDePrueba(db, 'cuenta-a', T0, false),
+      ]);
+
+      expect(resultados).toEqual([sinMarcaConDatos, sinMarcaConDatos]);
+      expect(await marcaDe()).toBe(false);
+      expect(await foto()).toEqual(antes);
+    });
+
+    it('con la autorización explícita crea la marca, y la siguiente vez coincide', async () => {
+      await sembrar();
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, true)).resolves.toEqual({
+        tipo: 'MARCADA',
+        cuenta: 'cuenta-a',
+      });
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual({
+        tipo: 'COINCIDE',
+        cuenta: 'cuenta-a',
+      });
+    });
+
+    it('un cobro con la cuenta inválida también cuenta como dato sin cuenta', async () => {
+      await db.collection('cobros').doc('doc-x7q').set({ ...documentoDeCobroViejo(), cuentaCobro: 'PROD' });
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual({
+        tipo: 'SIN_MARCA_CON_DATOS',
+        cuenta: 'cuenta-a',
+        cobros: 1,
+        abonos: 0,
+      });
+    });
+
+    it('los datos que ya tienen cuenta válida no impiden marcar', async () => {
+      await db.collection('cobros').doc('con-cuenta').set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a' });
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual({
+        tipo: 'MARCADA',
+        cuenta: 'cuenta-a',
+      });
+    });
+
+    it('con una marca de otra cuenta sigue siendo CONFLICTO, haya datos o no', async () => {
+      await fijarCuentaDePrueba(db, 'cuenta-b', T0, false);
+      await sembrar();
+
+      await expect(fijarCuentaDePrueba(db, 'cuenta-a', T0, false)).resolves.toEqual({
+        tipo: 'CONFLICTO',
+        cuenta: 'cuenta-a',
+        guardada: 'cuenta-b',
+      });
+    });
+
+    it('explicarMarca dice qué pasó y cómo decidir, sin ids ni datos', () => {
+      const texto = explicarMarca({ tipo: 'SIN_MARCA_CON_DATOS', cuenta: 'cuenta-a', cobros: 2, abonos: 1 });
+      expect(texto).toContain('2 cobro(s) y 1 abono(s)');
+      expect(texto).toContain('No se creó ninguna marca ni se escribió nada');
+      expect(texto).toContain('ATRIBUIR_DATOS_ANTERIORES_A=cuenta-a');
+      expect(texto).toContain('respalde');
+      expect(texto).not.toContain('doc-x7q');
+    });
   });
 
   it('una marca ilegible tampoco deja arrancar', async () => {
     await db.collection(COLECCION_CONFIGURACION).doc('cuentaDePrueba').set({ cuenta: 7 });
-    const marca = await fijarCuentaDePrueba(db, 'prod', T0);
+    const marca = await fijarCuentaDePrueba(db, 'prod', T0, false);
     expect(marca.tipo).toBe('ERROR');
     expect(explicarMarca(marca)).not.toBeNull();
   });
@@ -151,12 +276,36 @@ describe('AbonosSinConciliarFirestore', () => {
       montoCentavos: monto,
       ocurridoEn: T0,
       origen: 'watcher-baneco',
+      cuentaCobro: 'cuenta-a',
       registradoEn: T0,
       resolucion: null,
     });
     expect(esExito(r)).toBe(true);
     const abiertos = await store.listarAbiertos(10);
     expect(esExito(abiertos) && abiertos.valor.map((a) => a.idDeduplicacion)).toEqual(['baneco:qr/raro:tx-1']);
+  });
+
+  it('el abono conserva la cuenta en que cayó el pago', async () => {
+    const store = new AbonosSinConciliarFirestore(db);
+    await store.registrar({
+      idDeduplicacion: 'baneco:qr-cuenta:tx-1',
+      motivo: 'HUERFANO',
+      cobroId: null,
+      montoCentavos: bs(100),
+      ocurridoEn: T0,
+      origen: 'watcher-baneco',
+      cuentaCobro: 'cuenta-b',
+      registradoEn: T0,
+      resolucion: null,
+    });
+    const abiertos = await store.listarAbiertos(10);
+    expect(esExito(abiertos) && abiertos.valor.map((a) => a.cuentaCobro)).toEqual(['cuenta-b']);
+  });
+
+  it('un abono sin cuenta falla fuerte al leerse, no se lee como «sin cuenta»', async () => {
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+    const abiertos = await new AbonosSinConciliarFirestore(db).listarAbiertos(10);
+    expect(esExito(abiertos)).toBe(false);
   });
 });
 
@@ -189,7 +338,7 @@ describe('CobroRepositoryFirestore', () => {
     await repo.guardar(unCobro({ id: 'c4', estado: 'BORRADOR' }));
     await repo.guardar(unCobro({ id: 'c5', estado: 'QR_ACTIVO', qrVersion: 1, qrVigente: unQr() }));
 
-    const pendientes = await repo.listarPendientes();
+    const pendientes = await repo.listarPendientes('cuenta-a');
     expect(esExito(pendientes)).toBe(true);
     if (esExito(pendientes)) {
       // QR_ACTIVO también: su QR es pagable y al vencer hay que anularlo.
@@ -251,10 +400,261 @@ describe('CobroRepositoryFirestore', () => {
 
   it('un documento corrupto se reporta, no se saltea en silencio', async () => {
     // Saltear un cobro pendiente sería dejar de mirarlo sin que nadie se entere.
-    await db.collection('cobros').doc('roto').set({ estado: 'ENVIADO', basura: true });
+    await db.collection('cobros').doc('roto').set({ cuentaCobro: 'cuenta-a', estado: 'ENVIADO', basura: true });
 
-    const pendientes = await new CobroRepositoryFirestore(db).listarPendientes();
+    const pendientes = await new CobroRepositoryFirestore(db).listarPendientes('cuenta-a');
     expect(esExito(pendientes)).toBe(false);
+  });
+
+  it('la cuenta de cobro hace el viaje de ida y vuelta', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    await repo.guardar(unCobro({ cuentaCobro: 'sucursal-2' }));
+
+    const leido = await repo.obtener('cobro-emulador-1');
+    expect(esExito(leido) && leido.valor?.cuentaCobro).toBe('sucursal-2');
+    const crudo = await db.collection('cobros').doc('cobro-emulador-1').get();
+    expect(crudo.get('cuentaCobro')).toBe('sucursal-2');
+  });
+
+  it('un documento sin cuentaCobro es DOCUMENTO_INVALIDO, no un cobro «sin cuenta»', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
+
+    const leido = await repo.obtener('viejo');
+    expect(esExito(leido)).toBe(false);
+  });
+
+  it('un alias que parece un número de cuenta no se acepta al leer', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    await db.collection('cobros').doc('numerico').set({ ...documentoDeCobroViejo(), cuentaCobro: '1234567890' });
+
+    expect(esExito(await repo.obtener('numerico'))).toBe(false);
+  });
+
+  it('listarPendientes solo devuelve los de la cuenta pedida', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    await repo.guardar(unCobro({ id: 'a1', cuentaCobro: 'cuenta-a', estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr() }));
+    await repo.guardar(unCobro({ id: 'b1', cuentaCobro: 'cuenta-b', estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr(2) }));
+
+    const deB = await repo.listarPendientes('cuenta-b');
+    expect(esExito(deB) && deB.valor.map((c) => c.id)).toEqual(['b1']);
+  });
+
+  it('listarDeConsumidor filtra por consumidor y por cuenta', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    const consumidor = (ref: string) => ({ consumidorId: 'novuchat', referenciaExterna: ref });
+    await repo.guardar(unCobro({ id: 'a1', cuentaCobro: 'cuenta-a', telefonoCliente: null, consumidor: consumidor('r1') }));
+    await repo.guardar(unCobro({ id: 'b1', cuentaCobro: 'cuenta-b', telefonoCliente: null, consumidor: consumidor('r2') }));
+
+    const desde = new Date(T0.getTime() - 3_600_000);
+    const hasta = new Date(T0.getTime() + 3_600_000);
+    const deA = await repo.listarDeConsumidor({ consumidorId: 'novuchat', cuentaCobro: 'cuenta-a' }, desde, hasta, 10);
+    expect(esExito(deA) && deA.valor.map((c) => c.id)).toEqual(['a1']);
+  });
+});
+
+describe('atribuirCuentaALoAnterior()', () => {
+  async function sembrarAnterior(): Promise<void> {
+    await db.collection('cobros').doc('viejo-1').set({ ...documentoDeCobroViejo(), estado: 'ENVIADO' });
+    await db.collection('cobros').doc('viejo-2').set({ ...documentoDeCobroViejo(), estado: 'CONFIRMADO' });
+    await db.collection('cobros').doc('con-cuenta').set({ ...documentoDeCobroViejo(), cuentaCobro: 'otra' });
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+  }
+
+  async function sinCuenta(): Promise<string[]> {
+    const todos = await db.collection('cobros').get();
+    return todos.docs.filter((d) => d.get('cuentaCobro') === undefined).map((d) => d.id).sort();
+  }
+
+  it('sin marca de cuenta no hay con qué atribuir: no escribe nada', async () => {
+    await sembrarAnterior();
+
+    await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({ tipo: 'SIN_MARCA' });
+    expect(await sinCuenta()).toEqual(['viejo-1', 'viejo-2']);
+  });
+
+  it('con la marca de otra cuenta se niega y no escribe nada', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-b', T0, false);
+    await sembrarAnterior();
+
+    await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({
+      tipo: 'MARCA_DE_OTRA_CUENTA',
+      guardada: 'cuenta-b',
+    });
+    expect(await sinCuenta()).toEqual(['viejo-1', 'viejo-2']);
+    const abono = await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').get();
+    expect(abono.get('cuentaCobro')).toBeUndefined();
+  });
+
+  it('con la marca correcta atribuye solo lo que falta y no toca el estado', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
+    await sembrarAnterior();
+
+    await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({
+      tipo: 'HECHA',
+      cobros: 2,
+      abonos: 1,
+    });
+
+    const viejo1 = await db.collection('cobros').doc('viejo-1').get();
+    const viejo2 = await db.collection('cobros').doc('viejo-2').get();
+    expect([viejo1.get('cuentaCobro'), viejo1.get('estado')]).toEqual(['cuenta-a', 'ENVIADO']);
+    expect([viejo2.get('cuentaCobro'), viejo2.get('estado')]).toEqual(['cuenta-a', 'CONFIRMADO']);
+    // No pisa una cuenta que ya estaba, aunque sea distinta.
+    const conCuenta = await db.collection('cobros').doc('con-cuenta').get();
+    expect(conCuenta.get('cuentaCobro')).toBe('otra');
+    const abono = await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').get();
+    expect(abono.get('cuentaCobro')).toBe('cuenta-a');
+    // Y ahora los documentos se leen.
+    expect(esExito(await new CobroRepositoryFirestore(db).obtener('viejo-1'))).toBe(true);
+  });
+
+  it('la segunda corrida no encuentra nada que atribuir', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
+    await sembrarAnterior();
+    await atribuirCuentaALoAnterior(db, 'cuenta-a');
+
+    await expect(atribuirCuentaALoAnterior(db, 'cuenta-a')).resolves.toEqual({
+      tipo: 'HECHA',
+      cobros: 0,
+      abonos: 0,
+    });
+  });
+
+  it('no toca la evidencia ni el historial de QRs', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
+    const repo = new CobroRepositoryFirestore(db);
+    await repo.guardar(unCobro({ estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr() }));
+    await new EvidenceStoreFirestore(db).agregar(unaEvidencia());
+    await db.collection('cobros').doc('cobro-emulador-1').update({ cuentaCobro: FieldValue.delete() });
+    const contenidoDeSubcolecciones = async () => {
+      const leer = async (sub: string) =>
+        (await db.collection('cobros').doc('cobro-emulador-1').collection(sub).get()).docs.map((d) => [
+          d.id,
+          d.data(),
+        ]);
+      return { evidencia: await leer('evidencia'), qrs: await leer('qrs') };
+    };
+    const antes = await contenidoDeSubcolecciones();
+    expect(antes.evidencia).toHaveLength(1);
+    expect(antes.qrs).toHaveLength(1);
+
+    await atribuirCuentaALoAnterior(db, 'cuenta-a');
+
+    expect(await contenidoDeSubcolecciones()).toEqual(antes);
+    const cobro = await db.collection('cobros').doc('cobro-emulador-1').get();
+    expect(cobro.get('cuentaCobro')).toBe('cuenta-a');
+  });
+});
+
+describe('contarSinCuentaDeCobro()', () => {
+  async function fotoDeLaBase(): Promise<unknown> {
+    const leer = async (coleccion: string) =>
+      (await db.collection(coleccion).get()).docs.map((d) => [d.ref.path, d.data()]);
+    return { cobros: await leer('cobros'), abonos: await leer(COLECCION_ABONOS_SIN_CONCILIAR) };
+  }
+  const contado = (cobros: number, abonos: number, pendientesDeOtraCuenta = 0) => ({
+    tipo: 'CONTADO',
+    cobros,
+    abonos,
+    pendientesDeOtraCuenta,
+  });
+
+  it('una base vacía da 0, 0 y 0', async () => {
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0));
+  });
+
+  it('cuenta los cobros y los abonos que no tienen el campo', async () => {
+    await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(1, 1));
+  });
+
+  it.each([
+    ['null', null],
+    ['vacía', ''],
+    ['un número', 5],
+    ['mayúsculas', 'PROD'],
+    ['un número de cuenta', '1234567890'],
+    ['con espacios', 'otra cuenta'],
+  ])('un cobro y un abono con la cuenta inválida (%s) cuentan: el mapeo no los ve', async (_caso, valor) => {
+    // El filtro por cuenta los deja fuera de `listarPendientes` antes de que se
+    // lea el documento: el mapeo nunca llega a reportarlos.
+    await db.collection('cobros').doc('invalido').set({ ...documentoDeCobroViejo(), cuentaCobro: valor });
+    await db
+      .collection(COLECCION_ABONOS_SIN_CONCILIAR)
+      .doc('invalido')
+      .set({ ...documentoDeAbonoViejo(), cuentaCobro: valor });
+
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(1, 1));
+  });
+
+  it('con una cuenta válida en todos da 0 y 0', async () => {
+    await db.collection('cobros').doc('nuevo').set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a' });
+    await db
+      .collection(COLECCION_ABONOS_SIN_CONCILIAR)
+      .doc('nuevo')
+      .set({ ...documentoDeAbonoViejo(), cuentaCobro: 'cuenta-a' });
+
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0));
+  });
+
+  it.each(['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO'])(
+    'un cobro %s de otra cuenta cuenta aparte',
+    async (estado) => {
+      await db
+        .collection('cobros')
+        .doc('ajeno')
+        .set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-b', estado });
+
+      await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0, 1));
+    },
+  );
+
+  it('un cobro de otra cuenta que no está pendiente no cuenta', async () => {
+    for (const estado of ['CONFIRMADO', 'ANULADO', 'VENCIDO', 'EN_REVISION', 'BORRADOR']) {
+      await db
+        .collection('cobros')
+        .doc(`ajeno-${estado}`)
+        .set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-b', estado });
+    }
+
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0, 0));
+  });
+
+  it('un cobro pendiente de esta misma cuenta no cuenta', async () => {
+    await db
+      .collection('cobros')
+      .doc('propio')
+      .set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a', estado: 'ENVIADO' });
+
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0, 0));
+  });
+
+  it('después de atribuir vuelve a dar 0', async () => {
+    await fijarCuentaDePrueba(db, 'cuenta-a', T0, false);
+    await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+
+    await atribuirCuentaALoAnterior(db, 'cuenta-a');
+
+    await expect(contarSinCuentaDeCobro(db, 'cuenta-a')).resolves.toEqual(contado(0, 0));
+  });
+
+  it('es de solo lectura: no cambia ningún documento', async () => {
+    await db.collection('cobros').doc('viejo').set(documentoDeCobroViejo());
+    await db.collection('cobros').doc('nuevo').set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-a' });
+    await db
+      .collection('cobros')
+      .doc('ajeno')
+      .set({ ...documentoDeCobroViejo(), cuentaCobro: 'cuenta-b', estado: 'ENVIADO' });
+    await db.collection(COLECCION_ABONOS_SIN_CONCILIAR).doc('viejo').set(documentoDeAbonoViejo());
+    const antes = await fotoDeLaBase();
+
+    await contarSinCuentaDeCobro(db, 'cuenta-a');
+
+    expect(await fotoDeLaBase()).toEqual(antes);
   });
 });
 

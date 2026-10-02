@@ -27,6 +27,7 @@ import {
   type ErrorPuerto,
   type EstadoCobro,
   type EvidenceStore,
+  type PropietarioConsumidor,
   type RegistroEvidencia,
   type Resultado,
 } from '@mqs/qr-core';
@@ -46,7 +47,7 @@ export const SUBCOLECCION_QRS = 'qrs';
 export const SUBCOLECCION_EVIDENCIA = 'evidencia';
 
 /** Estados en los que el watcher todavía tiene que mirar el cobro. */
-const ESTADOS_PENDIENTES = ['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO'] as const;
+export const ESTADOS_PENDIENTES = ['QR_ACTIVO', 'ENVIADO', 'COMPROBANTE_RECIBIDO'] as const;
 
 /** Código gRPC de Firestore para "el documento ya existe". */
 const YA_EXISTE = 6;
@@ -225,9 +226,12 @@ export class CobroRepositoryFirestore implements CobroRepository {
     }
   }
 
-  async listarPendientes(): Promise<Resultado<readonly Cobro[], ErrorPuerto>> {
+  async listarPendientes(cuentaCobro: string): Promise<Resultado<readonly Cobro[], ErrorPuerto>> {
     try {
-      const snapshot = await this.cobros.where('estado', 'in', [...ESTADOS_PENDIENTES]).get();
+      const snapshot = await this.cobros
+        .where('cuentaCobro', '==', cuentaCobro)
+        .where('estado', 'in', [...ESTADOS_PENDIENTES])
+        .get();
       return this.mapear(snapshot.docs);
     } catch (causa) {
       return fallo(comoErrorPuerto(causa, 'listarPendientes'));
@@ -284,16 +288,20 @@ export class CobroRepositoryFirestore implements CobroRepository {
     }
   }
 
-  /** Los cobros de un consumidor creados en `[desde, hasta)`, del más nuevo al más viejo. */
+  /**
+   * Los cobros de un consumidor, en su cuenta, creados en `[desde, hasta)`, del
+   * más nuevo al más viejo.
+   */
   async listarDeConsumidor(
-    consumidorId: string,
+    propietario: PropietarioConsumidor,
     desde: Date,
     hasta: Date,
     limite: number,
   ): Promise<Resultado<readonly Cobro[], ErrorPuerto>> {
     try {
       const snapshot = await this.cobros
-        .where('consumidor.consumidorId', '==', consumidorId)
+        .where('consumidor.consumidorId', '==', propietario.consumidorId)
+        .where('cuentaCobro', '==', propietario.cuentaCobro)
         .where('creadoEn', '>=', Timestamp.fromDate(desde))
         .where('creadoEn', '<', Timestamp.fromDate(hasta))
         .orderBy('creadoEn', 'desc')

@@ -12,6 +12,7 @@
  */
 
 import {
+  ALIAS_DE_CUENTA,
   centavos,
   esExito,
   exito,
@@ -62,6 +63,10 @@ const consumidorDoc = z.object({
 
 const cobroDoc = z.object({
   proveedor: z.enum(['baneco', 'yape']),
+  // Obligatorio a propósito: un documento sin cuenta de cobro no se lee como
+  // «sin cuenta», falla fuerte (`DOCUMENTO_INVALIDO`). Los anteriores a este
+  // campo se atribuyen una sola vez con `atribuirCuentaALoAnterior`.
+  cuentaCobro: z.string().regex(ALIAS_DE_CUENTA),
   estado: z.enum([
     'BORRADOR',
     'QR_ACTIVO',
@@ -102,6 +107,7 @@ const cobroDoc = z.object({
 export function cobroADocumento(cobro: Cobro): Record<string, unknown> {
   return {
     proveedor: cobro.proveedor,
+    cuentaCobro: cobro.cuentaCobro,
     estado: cobro.estado,
     montoCentavos: cobro.montoCentavos,
     moneda: cobro.moneda,
@@ -154,6 +160,7 @@ export function documentoACobro(
   return exito({
     id,
     proveedor: d.proveedor satisfies Proveedor,
+    cuentaCobro: d.cuentaCobro,
     estado: d.estado satisfies EstadoCobro,
     montoCentavos: monto.valor,
     moneda: 'BOB',

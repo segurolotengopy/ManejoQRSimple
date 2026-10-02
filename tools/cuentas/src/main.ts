@@ -25,7 +25,7 @@ import { join } from 'node:path';
 
 import { archivoDeCredenciales, esAliasDeCuenta } from '@mqs/composicion';
 
-import { plantilla, variablesSinCompletar } from './plantilla.js';
+import { consumidoresSinCuenta, plantilla, variablesSinCompletar } from './plantilla.js';
 
 /** El mismo directorio que usan los scripts `prueba:*` y la bitácora. */
 function directorio(): string {
@@ -112,13 +112,22 @@ async function revisar(ruta: string, alias: string): Promise<number> {
     return 1;
   }
   const faltan = variablesSinCompletar(contenido);
+  const sinCuenta = consumidoresSinCuenta(contenido, alias);
+  if (faltan.length === 0 && sinCuenta.length > 0) {
+    console.log(`Faltan en ${ruta}: la cuenta de cada consumidor (tiene que ser «${alias}»).`);
+    for (const variable of sinCuenta) {
+      console.log(`  ${variable}`);
+    }
+    console.log('\nSin esa línea, la API no arranca: cada consumidor cobra en una sola cuenta.');
+    return 2;
+  }
   if (faltan.length === 0) {
     console.log(`✔ ${ruta} está completo.`);
     console.log(`  Probá con esta cuenta:  CUENTA=${alias} npm run prueba:api`);
     return 0;
   }
   console.log(`Faltan completar en ${ruta}:`);
-  for (const variable of faltan) {
+  for (const variable of [...faltan, ...sinCuenta]) {
     console.log(`  ${variable}`);
   }
   console.log('\nAbrilo con tu editor y reemplazá cada <…> por su valor.');

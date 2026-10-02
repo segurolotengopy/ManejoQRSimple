@@ -51,6 +51,7 @@ function armar(): {
 function solicitud(sobrescribir: Partial<SolicitudCobroConsumidor> = {}): SolicitudCobroConsumidor {
   return {
     consumidorId: 'novuchat',
+    cuentaCobro: 'cuenta-a',
     referenciaExterna: 'plan-2026-09',
     montoCentavos: bs(MONTO),
     concepto: 'Plan mensual',
@@ -104,6 +105,26 @@ describe('crearCobroDeConsumidor()', () => {
     expect(qr.emitidos).toBe(1);
   });
 
+  it('el cobro nace en la cuenta de la solicitud', async () => {
+    const { deps } = armar();
+    const r = await crearCobroDeConsumidor(deps, solicitud({ cuentaCobro: 'cuenta-2' }), T0);
+
+    expect(esExito(r) && r.valor.cobro.cuentaCobro).toBe('cuenta-2');
+  });
+
+  it('la misma referencia en otra cuenta es REFERENCIA_EXTERNA_EN_USO y no emite otro QR', async () => {
+    // El id no depende de la cuenta (la idempotencia de lo ya creado no se
+    // toca): el reintento desde otra cuenta cae sobre el cobro existente y no
+    // se le devuelve ni se le emite un QR en su cuenta.
+    const { deps, qr } = armar();
+    await crearCobroDeConsumidor(deps, solicitud({ cuentaCobro: 'cuenta-a' }), T0);
+
+    const r = await crearCobroDeConsumidor(deps, solicitud({ cuentaCobro: 'cuenta-b' }), enMinutos(5));
+
+    expect(!esExito(r) && r.error.tipo).toBe('REFERENCIA_EXTERNA_EN_USO');
+    expect(qr.emitidos).toBe(1);
+  });
+
   it('el mismo pedido dos veces devuelve el mismo cobro y UN solo QR (regla #7)', async () => {
     // Es lo que impide que un reintento del consumidor le cobre dos veces a
     // su cliente: dos QRs vivos son dos pagos posibles.
@@ -153,6 +174,7 @@ describe('crearCobroDeConsumidor()', () => {
     await deps.cobros.crear({
       id,
       proveedor: 'baneco',
+      cuentaCobro: s.cuentaCobro,
       estado: 'BORRADOR',
       montoCentavos: s.montoCentavos,
       moneda: 'BOB',
@@ -215,9 +237,19 @@ describe('esDelConsumidor()', () => {
     const r = await crearCobroDeConsumidor(deps, solicitud(), T0);
     if (!esExito(r)) throw new Error('debería haberse creado');
 
-    expect(esDelConsumidor(r.valor.cobro, 'novuchat')).toBe(true);
-    expect(esDelConsumidor(r.valor.cobro, 'otra-app')).toBe(false);
-    expect(esDelConsumidor({ ...r.valor.cobro, consumidor: null }, 'novuchat')).toBe(false);
+    const suyo = { consumidorId: 'novuchat', cuentaCobro: 'cuenta-a' };
+    expect(esDelConsumidor(r.valor.cobro, suyo)).toBe(true);
+    expect(esDelConsumidor(r.valor.cobro, { ...suyo, consumidorId: 'otra-app' })).toBe(false);
+    expect(esDelConsumidor({ ...r.valor.cobro, consumidor: null }, suyo)).toBe(false);
+  });
+
+  it('el cobro de otra cuenta no es del consumidor, aunque el consumidor coincida', async () => {
+    const { deps } = armar();
+    const r = await crearCobroDeConsumidor(deps, solicitud({ cuentaCobro: 'cuenta-b' }), T0);
+    if (!esExito(r)) throw new Error('debería haberse creado');
+
+    expect(esDelConsumidor(r.valor.cobro, { consumidorId: 'novuchat', cuentaCobro: 'cuenta-a' })).toBe(false);
+    expect(esDelConsumidor(r.valor.cobro, { consumidorId: 'novuchat', cuentaCobro: 'cuenta-b' })).toBe(true);
   });
 });
 

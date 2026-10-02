@@ -27,14 +27,22 @@
 
 ```
 cobros/{cobroId}                 estado, cliente (mínimo), montoCentavos,
-                                 concepto, qrVersion, vencimiento
+                                 concepto, qrVersion, vencimiento,
+                                 cuentaCobro (alias de la cuenta, obligatorio)
 cobros/{cobroId}/qrs/{version}   historial de QRs emitidos (append-only)
 cobros/{cobroId}/evidencia/{n}   transiciones y hechos (append-only)
 abonos/{hashMovimiento}          detecciones del watcher (dedup por id de doc)
 abonosSinConciliar/{clave}       pagos que el cierre diario no pudo atar a un cobro
-                                 (id = clave del banco codificada; se cierran, no se borran)
+                                 (id = clave del banco codificada; se cierran, no se borran);
+                                 cuentaCobro = la cuenta del satélite que lo leyó
 comprobantes/{messageId}         entradas del webhook (dedup por id de doc)
 ```
+
+`cuentaCobro` es obligatorio al leer: un documento sin él falla fuerte, y la API
+y el satélite se niegan a arrancar si queda alguno sin cuenta. Hay dos índices
+compuestos nuevos en `cobros`, que el emulador no exige y se despliegan con el
+resto: `(cuentaCobro, estado)` para el satélite y `(consumidor.consumidorId,
+cuentaCobro, creadoEn desc)` para el listado del consumidor.
 
 Los ids de documento hacen la idempotencia estructural: escribir dos veces el
 mismo `hashMovimiento` o `messageId` es un no-op detectable, no un duplicado.

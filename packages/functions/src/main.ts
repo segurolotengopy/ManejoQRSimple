@@ -19,7 +19,12 @@ import {
   describirError,
   explicarMarca,
   fijarCuentaDePrueba,
+  leerAtribucionExplicita,
+  leerCuentaDeCobro,
+  prepararDatosDeLaCuenta,
   verificarProduccion,
+  type AtribucionExplicita,
+  type MarcaDeCuenta,
 } from '@mqs/composicion';
 import { aDecimalBob, esExito } from '@mqs/qr-core';
 import { applicationDefault, initializeApp } from 'firebase-admin/app';
@@ -27,10 +32,10 @@ import { getFirestore } from 'firebase-admin/firestore';
 
 import {
   combinarVerificadores,
+  describirErrorDeConsumidores,
   leerConsumidores,
   verificadorDeConsumidores,
   verificadorDeTokenFijo,
-  MINIMO_TOKEN_CONSUMIDOR,
 } from './auth.js';
 import { cupoDeConsumidores } from './api/cupo-consumidor.js';
 import { almacenEnDirectorio } from './imagenes.js';
@@ -51,27 +56,6 @@ function conectarFirestore(): ReturnType<typeof getFirestore> {
   return getFirestore(app);
 }
 
-type ErrorConsumidores = Extract<ReturnType<typeof leerConsumidores>, { ok: false }>['error'];
-
-/** Explica en la terminal por qué no arranca, sin mostrar ningún token. */
-function describirErrorDeConsumidores(error: ErrorConsumidores): string {
-  switch (error.tipo) {
-    case 'ID_INVALIDO':
-      return `${error.variable}: el identificador del consumidor solo admite letras, números y guiones (2 a 31 caracteres).`;
-    case 'TOKEN_CORTO':
-      return `El token del consumidor "${error.consumidorId}" tiene menos de ${String(MINIMO_TOKEN_CONSUMIDOR)} caracteres.`;
-    case 'TOKEN_SIN_LLENAR':
-      return `El token del consumidor "${error.consumidorId}" quedó con el marcador de la plantilla, sin llenar.`;
-    case 'ID_REPETIDO':
-      return `Hay dos variables que dan el mismo consumidor "${error.consumidorId}" (el guion bajo y el guion medio se equiparan).`;
-    case 'TOKEN_COMPARTIDO':
-      return (
-        `El token del consumidor "${error.consumidorId}" es el mismo que el de otra identidad ` +
-        '(el del dueño, o el de otro consumidor). Cada uno necesita el suyo: compartido, uno entraría como el otro.'
-      );
-  }
-}
-
 async function main(): Promise<number> {
   const verificadorDueño = verificadorDeTokenFijo(process.env['API_TOKEN_LOCAL']);
   if (verificadorDueño === null) {
@@ -84,21 +68,30 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  // Consumidores del contrato (docs/10), uno por variable CONSUMIDOR_TOKEN_*.
-  // Sin ninguna configurada, `/api/v1/…` simplemente no le responde a nadie:
-  // el contrato existe pero no tiene quién lo use, que es el estado normal.
-  const consumidores = leerConsumidores(process.env);
+  // La cuenta de cobro de este proceso: la de sus credenciales. Cada cobro que
+  // se cree la lleva, y cada consumidor tiene que cobrar en esta y no otra.
+  const cuenta = leerCuentaDeCobro(process.env);
+  if (cuenta === null) {
+    console.error('✖ CUENTA solo admite minúsculas, números y guiones (hasta 24 caracteres).');
+    return 1;
+  }
+
+  // Consumidores del contrato (docs/10), uno por variable CONSUMIDOR_TOKEN_* y
+  // cada uno con su CONSUMIDOR_CUENTA_*. Sin ninguno configurado, `/api/v1/…`
+  // simplemente no le responde a nadie: el contrato existe pero no tiene quién
+  // lo use, que es el estado normal. Con uno a medio configurar, no se arranca.
+  const consumidores = leerConsumidores(process.env, cuenta);
   if (!consumidores.ok) {
     console.error(
       `✖ Consumidores mal configurados: ${describirErrorDeConsumidores(consumidores.error)}\n` +
-        '  La API no arranca así: un consumidor con un token débil puede crear y anular cobros.\n' +
+        '  La API no arranca así: un consumidor mal configurado puede crear y anular cobros, o hacerlo en la cuenta equivocada.\n' +
         '  Generá uno con:  node -e "console.log(require(\'crypto\').randomBytes(24).toString(\'hex\'))"',
     );
     return 1;
   }
   const verificador = combinarVerificadores(
     verificadorDueño,
-    verificadorDeConsumidores(consumidores.tokens),
+    verificadorDeConsumidores(consumidores.consumidores),
   );
   const cupo = cupoDeConsumidores(process.env);
 
@@ -144,6 +137,8 @@ async function main(): Promise<number> {
   }
 
   let prueba: ModoPrueba | null = null;
+  let marca: MarcaDeCuenta | null = null;
+  let atribucionExplicita: AtribucionExplicita = { permitida: false, aviso: null };
   if (process.env['MODO_PRUEBA_PRODUCCION'] === '1') {
     const leido = leerModoPrueba(process.env, puertos.valor.resumen);
     if (!esExito(leido)) {
@@ -151,13 +146,43 @@ async function main(): Promise<number> {
       return 1;
     }
     prueba = leido.valor;
-    // Antes de tocar nada: ¿los datos de este emulador son de esta cuenta?
-    const marca = await fijarCuentaDePrueba(db, prueba.cuenta, new Date());
+    // Antes de tocar nada: ¿los datos de este emulador son de esta cuenta? La
+    // marca no se crea sobre datos sin cuenta salvo que el dueño lo autorice
+    // expresamente (ATRIBUIR_DATOS_ANTERIORES_A=<esta cuenta>).
+    atribucionExplicita = leerAtribucionExplicita(process.env, cuenta);
+    marca = await fijarCuentaDePrueba(db, prueba.cuenta, new Date(), atribucionExplicita.permitida);
     const problema = explicarMarca(marca);
     if (problema !== null) {
       console.error(`✖ ${problema}`);
+      if (atribucionExplicita.aviso !== null) {
+        console.error(`  ${atribucionExplicita.aviso}`);
+      }
       return 1;
     }
+  }
+  // Siempre, con o sin modo prueba: un cobro pendiente sin cuenta queda fuera
+  // de la consulta por cuenta y su QR seguiría pagable sin que nadie lo mire.
+  // En modo prueba se le pasa la marca tal como quedó y si el dueño autorizó
+  // atribuir: sin marca previa ni autorización, los datos viejos no se tocan.
+  const preparada = await prepararDatosDeLaCuenta(
+    marca === null
+      ? { db, cuenta, modoPrueba: false }
+      : { db, cuenta, modoPrueba: true, marca, atribucionExplicita: atribucionExplicita.permitida },
+  );
+  if (!esExito(preparada)) {
+    console.error(`✖ ${preparada.error.mensaje}`);
+    return 1;
+  }
+  if (preparada.valor.cobros + preparada.valor.abonos > 0) {
+    registro.agregar(
+      'info',
+      'sistema',
+      `Atribución de cuenta: ${String(preparada.valor.cobros)} cobro(s) y ${String(preparada.valor.abonos)} ` +
+        `abono(s) anteriores quedaron en la cuenta «${cuenta}».`,
+    );
+  }
+
+  if (prueba !== null) {
     // Reiniciar la API no pierde de vista los QRs de antes ni reinicia el cupo.
     const previos = await puertos.valor.deps.cobros.listarRecientes(500);
     if (!esExito(previos)) {
@@ -171,7 +196,7 @@ async function main(): Promise<number> {
   registro.agregar(
     'info',
     'sistema',
-    `API iniciada · ${puertos.valor.resumen}${prueba === null ? '' : ` · modo prueba · cuenta ${prueba.cuenta}`}`,
+    `API iniciada · ${puertos.valor.resumen} · cuenta ${cuenta}${prueba === null ? '' : ' · modo prueba'}`,
   );
 
   const puerto = Number(process.env['API_PORT'] ?? String(PUERTO_POR_DEFECTO));
@@ -180,6 +205,7 @@ async function main(): Promise<number> {
   const servidor = crearServidor({
     ctx: {
       deps: puertos.valor.deps,
+      cuentaCobro: cuenta,
       evidencia: puertos.valor.deps.evidencia,
       abonosSinConciliar: puertos.valor.abonosSinConciliar,
       horasDeVigenciaPorDefecto: HORAS_VIGENCIA_POR_DEFECTO,
@@ -204,9 +230,9 @@ async function main(): Promise<number> {
     console.log(`  Logs: ${directorioLogs} (también en la pestaña Logs, aunque se reinicie)`);
     console.log('  Autenticación: token fijo (Authorization: Bearer …)');
     console.log(
-      consumidores.tokens.size === 0
+      consumidores.consumidores.size === 0
         ? '  Consumidores (/api/v1): ninguno configurado (CONSUMIDOR_TOKEN_*)'
-        : `  Consumidores (/api/v1): ${[...consumidores.tokens.keys()].join(', ')} · hasta ${String(cupo.porHora)} QRs por hora cada uno`,
+        : `  Consumidores (/api/v1): ${[...consumidores.consumidores].map(([id, c]) => `${id}→${c.cuentaCobro}`).join(', ')} · hasta ${String(cupo.porHora)} QRs por hora cada uno`,
     );
     if (prueba !== null) {
       console.log(

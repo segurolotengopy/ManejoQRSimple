@@ -25,7 +25,13 @@ export { hablaConProduccion, verificarProduccion } from './produccion.js';
 export {
   archivoDeCredenciales,
   esAliasDeCuenta,
+  leerAtribucionExplicita,
+  leerCuentaDeCobro,
   leerCuentaDePrueba,
+  prepararDatosDeLaCuenta,
+  VARIABLE_ATRIBUCION,
+  type AtribucionExplicita,
+  type ErrorPreparacionDeCuenta,
   ALIAS_DE_CUENTA,
   CUENTA_POR_DEFECTO,
 } from './cuenta.js';
@@ -34,7 +40,15 @@ export {
  * —la API y el satélite— no tengan que importar el adaptador de Firestore solo
  * por esto: la raíz de composición es la que cablea persistencia.
  */
-export { explicarMarca, fijarCuentaDePrueba, type MarcaDeCuenta } from '@mqs/firestore-store';
+export {
+  atribuirCuentaALoAnterior,
+  contarSinCuentaDeCobro,
+  explicarMarca,
+  fijarCuentaDePrueba,
+  type AtribucionDeCuenta,
+  type ConteoSinCuenta,
+  type MarcaDeCuenta,
+} from '@mqs/firestore-store';
 export {
   Bitacora,
   describirLlamada,

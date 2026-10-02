@@ -220,7 +220,7 @@ export const CASOS_COBRO_REPOSITORY: ReadonlyArray<CasoDeContrato<CobroRepositor
 
       const listado = exigirExito(
         await repo.listarDeConsumidor(
-          'consumidor-rango',
+          { consumidorId: 'consumidor-rango', cuentaCobro: 'cuenta-a' },
           new Date(INSTANTE_DE_CONTRATO.getTime() - dia),
           new Date(INSTANTE_DE_CONTRATO.getTime() + dia),
           10,
@@ -229,6 +229,57 @@ export const CASOS_COBRO_REPOSITORY: ReadonlyArray<CasoDeContrato<CobroRepositor
       );
       afirmar(listado.length === 1, 'solo el que cae en el rango, y solo del consumidor que pregunta');
       afirmar(listado[0]?.id === 'contrato-rango-dentro', 'y tiene que ser ese');
+    },
+  },
+  {
+    nombre: 'listarDeConsumidor no devuelve los del mismo consumidor en otra cuenta',
+    ejecutar: async (repo) => {
+      const base = { ...cobroDeContrato(), telefonoCliente: null };
+      const consumidor = { consumidorId: 'consumidor-cuentas', referenciaExterna: 'r-cuenta' };
+      exigirExito(
+        await repo.guardar({ ...base, id: 'contrato-cuenta-a', cuentaCobro: 'cuenta-a', consumidor }),
+        'guardar en la cuenta a',
+      );
+      exigirExito(
+        await repo.guardar({
+          ...base,
+          id: 'contrato-cuenta-b',
+          cuentaCobro: 'cuenta-b',
+          consumidor: { ...consumidor, referenciaExterna: 'r-cuenta-b' },
+        }),
+        'guardar en la cuenta b',
+      );
+
+      const desde = new Date(INSTANTE_DE_CONTRATO.getTime() - 86_400_000);
+      const hasta = new Date(INSTANTE_DE_CONTRATO.getTime() + 86_400_000);
+      const deA = exigirExito(
+        await repo.listarDeConsumidor({ consumidorId: 'consumidor-cuentas', cuentaCobro: 'cuenta-a' }, desde, hasta, 10),
+        'listar la cuenta a',
+      );
+      afirmar(
+        deA.length === 1 && deA[0]?.id === 'contrato-cuenta-a',
+        'un consumidor solo ve los cobros de su cuenta, aunque el id de consumidor coincida',
+      );
+    },
+  },
+  {
+    nombre: 'listarPendientes solo devuelve los de la cuenta pedida',
+    ejecutar: async (repo) => {
+      const base = cobroDeContrato();
+      exigirExito(
+        await repo.guardar({ ...base, id: 'contrato-pendiente-a', cuentaCobro: 'cuenta-a', estado: 'ENVIADO' }),
+        'guardar en la cuenta a',
+      );
+      exigirExito(
+        await repo.guardar({ ...base, id: 'contrato-pendiente-b', cuentaCobro: 'cuenta-b', estado: 'ENVIADO' }),
+        'guardar en la cuenta b',
+      );
+
+      const deA = exigirExito(await repo.listarPendientes('cuenta-a'), 'listar la cuenta a');
+      afirmar(
+        deA.length === 1 && deA[0]?.id === 'contrato-pendiente-a',
+        'el watcher de una cuenta no puede mirar los QRs de otra',
+      );
     },
   },
   {
@@ -251,6 +302,7 @@ function cobroDeContrato(): Cobro {
   return {
     id: 'cobro-contrato-conflicto',
     proveedor: 'baneco',
+    cuentaCobro: 'cuenta-a',
     estado: 'ENVIADO',
     montoCentavos: 12_345 as Cobro['montoCentavos'],
     moneda: 'BOB',
@@ -293,6 +345,15 @@ export const CASOS_ABONOS_SIN_CONCILIAR: ReadonlyArray<CasoDeContrato<AbonosSinC
       afirmar(leido?.registradoEn.getTime() === abono.registradoEn.getTime(), 'el instante del registro no cambia');
       afirmar(leido?.motivo === 'HUERFANO' && leido.cobroId === null, 'motivo y cobro se conservan');
       afirmar(leido?.resolucion === null, 'un abono recién registrado está abierto');
+    },
+  },
+  {
+    nombre: 'registrar un abono conserva su cuenta',
+    ejecutar: async (store) => {
+      const abono = { ...abonoSinConciliarDeEjemplo('baneco:qr-contrato-cuenta:tx-1'), cuentaCobro: 'cuenta-b' };
+      exigirExito(await store.registrar(abono), 'registrar');
+      const [leido] = exigirExito(await store.listarAbiertos(10), 'listar');
+      afirmar(leido?.cuentaCobro === 'cuenta-b', 'el abono guarda la cuenta en la que cayó el pago');
     },
   },
   {
@@ -436,6 +497,7 @@ function abonoSinConciliarDeEjemplo(idDeduplicacion: string): AbonoSinConciliar 
     montoCentavos: monto.valor,
     ocurridoEn: new Date(INSTANTE_DE_CONTRATO.getTime() - 3_600_000),
     origen: 'watcher-baneco',
+    cuentaCobro: 'cuenta-a',
     registradoEn: INSTANTE_DE_CONTRATO,
     resolucion: null,
   };

@@ -13,6 +13,7 @@ function abono(registradoEn: Date, id = 'baneco:qr-x:tx-1'): AbonoSinConciliar {
     // El pago es de mucho antes: la alerta no corre desde acá.
     ocurridoEn: new Date(T0.getTime() - 20 * 3_600_000),
     origen: 'watcher-baneco',
+    cuentaCobro: 'cuenta-a',
     registradoEn,
     resolucion: null,
   };

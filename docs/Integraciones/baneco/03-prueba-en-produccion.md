@@ -97,7 +97,9 @@ P1–P9 ok; hallazgos en `02-hallazgos-produccion.md`.
    (`baneco-gateway/src/config.ts`, `URL_PRODUCCION`). Si algún día el banco la mueve,
    `BANECO_PROD_BASE_URL` sigue mandando sobre ella. En **certificación** sí hay que
    declarar `BANECO_CERT_BASE_URL`: esa URL cambió de mayúsculas entre documentos
-   (`ApiGateway`, verificación V1) y no se adivina.
+   (`ApiGateway`, verificación V1) y no se adivina. Solo se acepta el host
+   `apimktdesa.baneco.com.bo` por `https` (o uno local, para un banco simulado): con otro host,
+   incluido el de producción en cualquier grafía, el proceso no arranca.
 
    Un marcador `<…>` sin reemplazar cuenta como variable faltante y el proceso no
    arranca: probar el login con el texto de la plantilla sería un intento fallido, y el

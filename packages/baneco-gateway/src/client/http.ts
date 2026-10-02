@@ -42,6 +42,11 @@ export function transporteFetch(timeoutMs = 15_000): Transporte {
         method: peticion.metodo,
         headers: cabeceras,
         signal: control.signal,
+        // Una redirección saltaría el riel de hosts de `leerConfig`, que solo
+        // validó la URL de origen: un 307/308 repite el POST, con el cuerpo del
+        // login, en el host que diga `Location`. El banco no redirige; si lo
+        // hace, es un error y no se sigue.
+        redirect: 'error',
         ...(peticion.cuerpo === undefined ? {} : { body: JSON.stringify(peticion.cuerpo) }),
       });
 

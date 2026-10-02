@@ -31,8 +31,8 @@ describe('leerConfig()', () => {
   });
 
   it('recorta la barra final de la URL base', () => {
-    const r = leerConfig({ ...ENTORNO_CERT, BANECO_CERT_BASE_URL: 'https://x.test/api/' });
-    expect(esExito(r) && r.valor.baseUrl).toBe('https://x.test/api');
+    const r = leerConfig({ ...ENTORNO_CERT, BANECO_CERT_BASE_URL: 'http://localhost:8099/api/' });
+    expect(esExito(r) && r.valor.baseUrl).toBe('http://localhost:8099/api');
   });
 
   it.each(['BASE_URL', 'USERNAME', 'PASSWORD', 'AES_KEY', 'ACCOUNT_CREDIT'])(
@@ -78,6 +78,83 @@ describe('leerConfig()', () => {
     if (!esExito(r)) {
       expect(r.error.tipo).toBe('URL_DE_PRODUCCION_EN_CERT');
     }
+  });
+
+  describe('en certificación solo se le habla a hosts permitidos (4B3)', () => {
+    const conUrl = (url: string) => leerConfig({ ...ENTORNO_CERT, BANECO_CERT_BASE_URL: url });
+    const tipoDeError = (url: string): string | null => {
+      const r = conUrl(url);
+      return esExito(r) ? null : r.error.tipo;
+    };
+
+    it.each([
+      ['el host en mayúsculas', 'https://APIMKT.BANECO.COM.BO/apiGateway'],
+      ['mayúsculas y minúsculas mezcladas', 'https://ApiMkt.Baneco.Com.Bo/apiGateway'],
+      ['con puerto', 'https://apimkt.baneco.com.bo:443/apiGateway'],
+      ['con usuario antes de la arroba', 'https://apimktdesa.baneco.com.bo@apimkt.baneco.com.bo/apiGateway'],
+      ['en ancho completo', 'https://ａｐｉｍｋｔ.baneco.com.bo/apiGateway'],
+      ['con el punto codificado', 'https://apimkt%2Ebaneco.com.bo/apiGateway'],
+    ])('rechaza el host de producción: %s', (_caso, url) => {
+      expect(tipoDeError(url)).toBe('URL_DE_PRODUCCION_EN_CERT');
+    });
+
+    it.each([
+      ['con punto final', 'https://apimkt.baneco.com.bo./apiGateway'],
+      ['un host que solo contiene el de certificación', 'https://apimktdesa.baneco.com.bo.otro.com/ApiGateway'],
+      ['un alias del banco', 'https://api.baneco.com.bo/ApiGateway'],
+      ['una IP', 'https://10.0.0.1/ApiGateway'],
+      ['otro dominio', 'https://ejemplo.com/ApiGateway'],
+      ['certificación por http', 'http://apimktdesa.baneco.com.bo/ApiGateway'],
+      ['un dominio .test, que sale al DNS', 'https://banco.test/api/'],
+      ['un dominio .localhost, que sale al DNS', 'http://simulado.localhost:8099/api'],
+      ['una barra invertida que cambia el host', 'https://x\\@apimkt.baneco.com.bo/apiGateway'],
+      ['localhost con punto final', 'http://localhost.:8099/api'],
+      ['el loopback con otro nombre', 'http://[::ffff:127.0.0.1]:8099/api'],
+      ['un protocolo que no es http', 'ftp://localhost/ApiGateway'],
+    ])('rechaza lo que no está en la lista de permitidos: %s', (_caso, url) => {
+      expect(tipoDeError(url)).toBe('HOST_NO_PERMITIDO_EN_CERT');
+    });
+
+    it('rechaza usuario o clave dentro de la URL, aun sobre un host permitido', () => {
+      expect(tipoDeError('http://usuario:clave-sintetica@localhost:8099/api')).toBe('VARIABLE_INVALIDA');
+      expect(tipoDeError('http://usuario@localhost:8099/api')).toBe('VARIABLE_INVALIDA');
+    });
+
+    it('rechaza una URL que no se puede interpretar', () => {
+      expect(tipoDeError('esto no es una url')).toBe('VARIABLE_INVALIDA');
+    });
+
+    it.each([
+      'https://apimktdesa.baneco.com.bo/ApiGateway',
+      'https://APIMKTDESA.baneco.com.bo/ApiGateway',
+      'http://localhost:8099/ApiGateway',
+      'http://127.0.0.1:8099/ApiGateway',
+      'http://[::1]:8099/ApiGateway',
+    ])('admite %s', (url) => {
+      expect(tipoDeError(url)).toBeNull();
+    });
+
+    it('el error lleva el host y nunca la URL completa, que puede traer usuario y clave', () => {
+      const CLAVE = 'clave-sintetica';
+      const USUARIO = 'usuario-sintetico';
+      for (const host of ['apimkt.baneco.com.bo', 'ejemplo.com', 'localhost']) {
+        const r = conUrl(`https://${USUARIO}:${CLAVE}@${host}/apiGateway`);
+        expect(esExito(r)).toBe(false);
+        expect(JSON.stringify(r)).not.toContain(CLAVE);
+        expect(JSON.stringify(r)).not.toContain(USUARIO);
+      }
+    });
+
+    it('en producción no cambia nada: la URL por defecto sigue funcionando', () => {
+      const r = leerConfig({
+        BANECO_ENV: 'prod',
+        BANECO_PROD_USERNAME: 'usuario',
+        BANECO_PROD_PASSWORD: 'password',
+        BANECO_PROD_AES_KEY: LLAVE_DE_PRUEBA,
+        BANECO_PROD_ACCOUNT_CREDIT: '1234567890',
+      });
+      expect(esExito(r)).toBe(true);
+    });
   });
 
   it('en producción la URL del banco no hace falta declararla', () => {

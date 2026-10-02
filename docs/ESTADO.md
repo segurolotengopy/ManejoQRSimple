@@ -116,7 +116,8 @@ Además se cerró **C9: no hay comisión bancaria** (decisión 17).
      ThinkPad en `docs/Integraciones/baneco/privado-no-gh/` (git-ignored). No se
      solicita rotación de llave por ahora (superficie de riesgo acotada).
      *(Matiz del banco, B3: la llave de producción se asigna al salir a
-     producción — la que circuló no sería la definitiva.)*
+     producción — la que circuló no sería la definitiva. **Superado el 2026-10-02: el banco
+     no va a dar otra; la que circuló es la de producción.** Ver la decisión 26.)*
    - **D5:** **vigencia corta** de `dueDate` por cobro (72 h por defecto,
      configurable); la renovación programática la abarata.
    - **D6:** se envió al banco la batería de preguntas
@@ -297,6 +298,22 @@ Además se cerró **C9: no hay comisión bancaria** (decisión 17).
       (`docs/05`), no hay `pino` (`docs/06`), V1 de Baneco estaba resuelto, `docs/04` §2 hay que
       volver a verificarlo en la sesión de WhatsAppModular, y se registró la pregunta nueva H4
       (¿filtra por IP la API de producción?).
+26. **El banco no emite otra llave de producción (Andres, 2026-10-02).** Baneco había dicho (B3) que la
+    llave de producción se asignaría al salir a producción y que la que circuló no sería la
+    definitiva. **No será así: la que ya se usa en la prueba controlada, y que circuló por correo, es
+    la de producción y no se rotará.** Consecuencias:
+    - **La «llave de producción definitiva» deja de ser una condición pendiente de un tercero**
+      (criterio de salida de la Fase 3, `docs/07`, y T1 de `docs/11`).
+    - **No hay llave de staging.** Un ambiente de staging no puede hablarle al banco: solo `mock` o
+      `simulado`. Refuerza la D12 y limita lo que puede probar un DAST. Tampoco hay llaves separadas
+      por entorno ni por consumidor: cada cuenta de cobro conserva la suya (`BANECO_PROD_*`).
+    - **Una llave que no se puede rotar y que ya circuló por correo es un riesgo aceptado, no
+      resuelto**, y obliga a una custodia explícita. Propuesta para el dueño, sin ejecutar nada:
+      borrar las copias que sigan en correo o en carpetas compartidas; un único respaldo en un gestor
+      de contraseñas; en producción, solo en el gestor de secretos y con acceso mínimo; y escribir en el
+      runbook qué se hace ante una sospecha de filtración. La palanca conocida es pedirle al banco que
+      bloquee al usuario API, que ya se bloquea con intentos fallidos y se desbloquea solo en agencia
+      (B4). Hay que registrarlo como riesgo aceptado cuando se rehaga el acta (SEC-10).
 
 ## Estado actual
 
@@ -604,6 +621,18 @@ ver la decisión 25. Para que un cobro real llegue a `ENVIADO` por WhatsApp sigu
       sin fallos, actionlint limpio. En `main`, cero alertas abiertas de Code Scanning. Las
       categorías nuevas (`semgrep`, `trivy-fs`, `checkov-workflows`) no dejan categorías
       viejas que borrar y no apareció ningún Environment solo.
+- [x] **2026-10-02 — Bloque 4, G2: la barrera exige los dos adaptadores del banco** (rama
+      `fix/barrera-adaptadores-produccion`). Contra producción, `QR_PROVIDER` y `PAYMENT_WATCHER`
+      tienen que ser los dos `baneco`; antes bastaba con uno, y un QR real vigilado por un watcher
+      simulado confirmaba pagos que el banco nunca vio. Es la primera condición de
+      `verificarProduccion`, un valor ausente cuenta como distinto de `baneco`, y el mensaje nombra
+      variables y nunca valores. Doce pruebas nuevas: nueve fallan sin la corrección, y una **ata la
+      barrera a los lectores reales** (`leerModo` y `leerConfig`): para todo entorno con el que el
+      sistema arma un adaptador del banco contra producción, la barrera da verdadero, así que falla
+      si uno de los dos aprende a tolerar una grafía que el otro no. La prueba controlada y el demo
+      siguen arrancando igual: los scripts de `npm` ya fijaban los dos. **Límite:** cierra el hueco
+      *dentro de un proceso*. Una auditoría independiente sin bloqueantes encontró dos hallazgos
+      anteriores a este cambio, que quedan como los pasos 4B2 y 4B3 de abajo.
 - [x] **2026-10-01 — Bloque 4, inicio: acta y análisis de brechas** (decisión 25). Evidencia reunida
       solo con consultas, sin escribir en GitHub: ruleset, Environments y secretos (ninguno), alertas
       (Dependabot, Code Scanning y secretos en 0), `security-local.sh` aprobado (informe
@@ -740,6 +769,10 @@ ver la decisión 25. Para que un cobro real llegue a `ENVIADO` por WhatsApp sigu
   dueño deja `ATRIBUIR_DATOS_ANTERIORES_A` en el archivo de la cuenta, queda puesta para siempre: es
   de una sola vez, y el código no lo impone. Conviene quitarla después de usarla.
 
+- **La llave de producción del banco no se puede rotar y ya circuló por correo** (decisión 26): un
+  riesgo aceptado que pide custodia explícita. Si se filtra, la única palanca conocida es el
+  bloqueo del usuario API por parte del banco.
+
 ### Notas de entorno (no obvias)
 
 - Node 22+ por nvm (hay v24): `export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use 24`.
@@ -775,9 +808,9 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
    destraban el resto; las demás (D3 a D12) están en `docs/11` §3.3, cada una con su recomendación.
    Recomendación del análisis: D1 = NovuChat cobrando por el contrato con poco volumen y un tope
    de monto, y D2 = Cloud Run más Firebase en el proyecto `manejoqrsimple`, lo que exige el plan
-   Blaze (D3). **Gestiones con el banco, que hace el dueño:** pedir la llave de producción definitiva
-   por un canal que no sea un adjunto de correo, y preguntar si su API de producción filtra por IP de
-   origen. Nada de esto se ejecuta ni se crea sin su OK.
+   Blaze (D3). **Gestión con el banco, que hace el dueño:** preguntar si su API de producción filtra por IP de
+   origen. La llave definitiva ya no se pide: el banco no emite otra (decisión 26). Nada de esto se
+   ejecuta ni se crea sin su OK.
 0bis. **Bloque 3, antes de arrancar la API con él** (ya está fusionado):
    - **D-A, los datos ya guardados en `~/.manejoqr/emulador-prod` y `emulador-cuenta-2`.** Opciones:
      (a) atribuirlos a su cuenta, con un respaldo previo de cada carpeta: se hace arrancando una vez
@@ -809,8 +842,10 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
    consumidor de ensayo y `~/.manejoqr/ensayo` **se conservan** para las próximas pruebas (pedido
    del dueño, 2026-10-01).
 6. Persistir el límite de inotify (archivo en `/etc/sysctl.d/`, ver «Notas de entorno»).
-7. Comercial, al acercarse producción: pedir la llave de producción por un canal que no sea un
-   adjunto de correo (B3).
+7. ~~Pedir la llave de producción definitiva por un canal que no sea un adjunto de correo (B3)~~ —
+   **ya no aplica**: el banco no va a dar otra (decisión 26). En su lugar, la **custodia** de la
+   llave actual: borrar las copias que sigan en correo o en carpetas compartidas, y decidir dónde
+   queda el respaldo.
 8. Si se abre un PR nuevo, dar el OK en el chat PR por PR (decisión 11). Con el ruleset de la
    decisión 22, Claude Code aprueba con la cuenta `segurolotengopy`, pero **la fusión la hace el
    dueño desde GitHub**: el clasificador de permisos bloquea que una misma sesión apruebe y fusione.
@@ -826,12 +861,27 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
    (`Prompts/cobrador-contrato-para-consumidores.md`): **hecho** (PR #70 y #71, decisión 24); queda
    la decisión del dueño de arriba. Los bloques 1 y 2 están cerrados y ensayados (PR #38 y #40;
    `02-hallazgos-produccion.md` §6).
-3. **Contrato para consumidores, bloque 4:** pase a producción. **Empezado: ver la decisión 25.** Se
-   puede avanzar ya, sin esperar decisiones, con los bloques 4A a 4G y 4K de `docs/11` §4: la
-   documentación al día (hecha en este mismo PR), la coherencia de adaptadores en la barrera (G2, la
-   más urgente), el endpoint de salud y la robustez de los procesos, la cuenta obligatoria, el
+3. **Contrato para consumidores, bloque 4:** pase a producción. **Empezado: ver la decisión 25.**
+   Hallazgos de la auditoría de la barrera, aún sin construir:
+   - **4B2, media (T1, reglas 1 y BANECO-1): un watcher simulado de OTRO proceso confirma un QR real
+     del emulador de la prueba.** Con `prueba:emulador` y `prueba:api` arriba, alguien corre
+     `demo:pagar -- <id>` y `satelite:demo` con `FIRESTORE_EMULATOR_HOST` exportado: `satelite:demo`
+     no tiene `BANECO_ENV`, así que la barrera lo deja pasar, no está en modo prueba y no revisa la
+     marca del emulador, y confirma un cobro con un QR real que el banco nunca vio. La evidencia lo
+     atribuye al banco: el abono simulado lleva `origen: 'watcher-baneco'`. Corrección propuesta, en
+     dos capas: que la API, el satélite y `tools/demo-local` se nieguen a arrancar contra una base que
+     tiene la marca de cuenta de la prueba, y que el watcher y el QR simulados lleven un origen propio
+     que la conciliación mande a `EN_REVISION`.
+   - **4B3, baja: el riel que impide usar el host de producción desde certificación distingue
+     mayúsculas** (`baneco-gateway/src/config.ts:121`, `includes(HOST_PRODUCCION)`). Con un host en
+     mayúsculas y las credenciales de producción puestas en `BANECO_CERT_*`, el riel no lo detecta, la
+     llamada llega a producción y la barrera da falso. Corrección: comparar el `hostname` de un
+     `new URL()` contra el de certificación, con una lista de permitidos y no de bloqueados.
+   El resto del bloque 4 se puede avanzar ya, sin esperar decisiones, con los bloques 4C a 4G y 4K de
+   `docs/11` §4: el endpoint de salud y la robustez de los procesos, la cuenta obligatoria, el
    registro persistente del cierre, el latido y lease del satélite, el cupo compartido, los tiempos
-   límite de dos jobs del CI (PIP-04) y las fixtures reales. El resto espera las decisiones D1 a D12.
+   límite de dos jobs del CI (PIP-04) y las fixtures reales. Ya están hechos la documentación al día
+   (4A) y la coherencia de adaptadores en la barrera (4B). El resto espera las decisiones D1 a D12.
 4. `wa-bridge`, cuando el dueño decida el punto 1; con él, el aviso por WhatsApp de los casos
    críticos de revisión.
 5. Al desplegar la API en serio, pasar el cupo de QRs por consumidor a un contador compartido

@@ -5,6 +5,17 @@
 > (G2, G3 y G5) y las contradicciones de documentación del §2.4. El resto se cita como lo entregó
 > el análisis, con archivo y línea, y hay que releerlo en el código antes de construir sobre él.
 > El acta con el estado del checklist del estándar está en `produccion/acta-v0.1.0.md`.
+>
+> **Actualización del 2026-10-02.** (1) **G2 está cerrado dentro de un proceso:** la barrera exige
+> los dos adaptadores del banco (ESTADO, «Hecho»). La auditoría de ese cambio encontró dos hallazgos
+> anteriores, 4B2 (un watcher simulado de otro proceso confirma un QR real del emulador compartido)
+> y 4B3 (el riel de certificación distingue mayúsculas en el host), descritos en ESTADO, «Próximo
+> paso». (2) **El banco no va a dar otra llave de producción** (Andres,
+> ESTADO, decisión 26): la «llave definitiva» del §2.2 y la gestión T1 del §3.3 ya no aplican; la
+> llave que circuló por correo es la de producción y no se rotará. Eso implica que **no hay llave de
+> staging** (un staging solo puede usar `mock` o `simulado`), que la rotación del checklist (SEC-10)
+> no es posible y queda como riesgo aceptado con custodia explícita, y que el plan de rollback debe
+> decir qué hacer ante una sospecha de filtración. El resto del análisis sigue como se escribió.
 
 # Bloque 4 «pase a producción»: análisis de brechas (ManejoQRSimple, 2026-10-01)
 
@@ -64,7 +75,7 @@ La prueba controlada tiene que seguir funcionando tal cual: es el procedimiento 
 | Informe de la prueba en producción sin hallazgos abiertos | **Parcial** | `02-hallazgos-produccion.md`: P1–P9 bien en dos cuentas y C1–C10 del contrato bien. §3.1 está corregido, pero §7 sigue abierto con las fixtures reales. |
 | Fixtures reales en `baneco-gateway` | **Pendiente** | ESTADO, «Claude Code» 1; `02-hallazgos` §7. Hace falta que el dueño pague un QR de Bs 1. |
 | `wa-bridge` operativo | **Pendiente, bloqueado por decisión** | `packages/wa-bridge/src/index.ts` es un esqueleto de 18 líneas y `composicion/src/mensajeria.ts` falla a propósito. Espera la decisión del dueño sobre docs/04 §2.3. |
-| Llave de producción definitiva (B3 del banco) | **Pendiente, depende de un tercero** | `01-preguntas-al-banco.md` B3: «al salir a producción se asigna la llave». ESTADO, «Dueño» 7. |
+| Llave de producción definitiva (B3 del banco) | **~~Pendiente, depende de un tercero~~ Cerrada el 2026-10-02: el banco no emite otra; la actual es la de producción** | `01-preguntas-al-banco.md` B3: «al salir a producción se asigna la llave». ESTADO, «Dueño» 7. |
 
 **Condiciones previas que dejó el bloque 3** (ESTADO, «Riesgos abiertos», líneas 686-702, y la decisión 24):
 
@@ -175,7 +186,7 @@ El costo es habilitar Blaze, una decisión del dueño (D3). Antes hay que confir
 | **D12** | Proyecto de staging | Un segundo proyecto de Firebase o ninguno | **Sí, uno**, con el banco en `mock`/`simulado` (A4: el banco no tiene cuenta de pruebas). Ahí corren DAST y la prueba de rollback. Producción sigue siendo el único lugar con banco real. |
 
 **Gestiones con terceros (las hace Andres, y yo solo dejo preparado el texto):**
-- T1: pedir la llave definitiva (B3) por un canal que no sea un adjunto de correo.
+- ~~T1: pedir la llave definitiva (B3) por un canal que no sea un adjunto de correo.~~ **Ya no aplica** (2026-10-02): el banco no emite otra llave.
 - T2: el catálogo de bancos (D9, no bloquea).
 - **T3, nueva:** preguntar si la API de producción filtra por IP de origen. **Hay que tenerla resuelta antes del primer despliegue fuera de la ThinkPad.**
 - WhatsAppModular y Meta: solo para D1 (b).

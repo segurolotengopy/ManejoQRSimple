@@ -22,7 +22,7 @@ P1–P9 ok; hallazgos en `02-hallazgos-produccion.md`.
 
 | Barrera | Dónde |
 |---|---|
-| La API y el satélite **no arrancan** contra producción sin `MODO_PRUEBA_PRODUCCION=1` y sin el emulador de Firestore. | `packages/composicion/src/produccion.ts` |
+| La API y el satélite **no arrancan** contra producción sin `QR_PROVIDER` y `PAYMENT_WATCHER` los dos en `baneco` (un QR real vigilado por un watcher simulado confirmaría pagos que el banco nunca vio), sin `MODO_PRUEBA_PRODUCCION=1` y sin el emulador de Firestore. | `packages/composicion/src/produccion.ts` |
 | Cada QR de prueba es de **Bs 1** (configurable hasta un techo fijo de **Bs 10**). El monto lo fija el servidor, no la consola. | `packages/functions/src/modo-prueba.ts` |
 | Como máximo **10 QRs** por prueba (techo fijo 30). Se cuentan los pedidos al banco, salgan o no, **vengan del botón de pruebas, del formulario común o de "renovar"**. Reiniciar la API no reinicia el cupo: retoma los cobros del emulador y cuenta los de las últimas 24 h. | `modo-prueba.ts`, `handlers.ts` |
 | En modo prueba, **ningún** cobro puede superar el monto de prueba ni vivir más de **24 h**, tampoco los del formulario común. | `handlers.ts`, `crearCobro` |

@@ -118,7 +118,7 @@ cumplida: «no verificado» nunca es «cumple».
 | SEC-07 | B | Federación GCP | **N/A** | no hay nube de despliegue; pasa a Rojo con D2 |
 | SEC-08 | B | Federación AWS | **N/A** | no hay nube de despliegue |
 | SEC-09 | B | Federación OCI | **N/A** | no hay nube de despliegue |
-| SEC-10 | B | Ninguna rotación vencida | **No verificado** | no existe el inventario con fechas (SEC-01) |
+| SEC-10 | B | Ninguna rotación vencida | **No verificado** | no existe el inventario con fechas (SEC-01). Además, la llave AES de Baneco **no se puede rotar**: el banco no emite otra (ESTADO, decisión 26) |
 | SEC-11 | R | Bypasses de push protection revisados | **No verificado** | el endpoint de bypasses respondió 404 con las credenciales de esta sesión |
 
 ### Aplicación
@@ -194,9 +194,11 @@ por componente se escribe junto con la arquitectura elegida.
    jobs del CI (PIP-04).
 3. **Datos reales del banco:** capturar y sanear respuestas reales de `statusQR` y `paidQR`, que
    requiere que el dueño pague un QR de Bs 1.
-4. **Terceros:** la llave de producción definitiva del banco por un canal que no sea un adjunto de
-   correo (B3), y preguntarle si su API de producción filtra por IP de origen, que hay que saber
-   antes del primer despliegue fuera de la máquina del dueño.
+4. **Terceros:** preguntarle al banco si su API de producción filtra por IP de origen, que hay que
+   saber antes del primer despliegue fuera de la máquina del dueño. La llave de producción
+   definitiva **ya no se pide**: el banco no emite otra (ESTADO, decisión 26, 2026-10-02), así que la
+   llave que circuló por correo es la de producción y no se rotará. Eso es un **riesgo aceptado con
+   custodia explícita** que hay que registrar cuando se rehaga el acta.
 5. **El criterio de salida de la Fase 3** (`docs/07`) incluye `wa-bridge` operativo. Si D1 es que
    NovuChat cobre por el contrato, `wa-bridge` no hace falta, y el criterio debe cambiarse
    explícitamente.

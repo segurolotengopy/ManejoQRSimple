@@ -4,12 +4,21 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-10-01, sesión «bloque 3: una cuenta de cobro por consumidor».
-Cada consumidor de `/api/v1` queda atado a **una** cuenta de cobro, y cada cobro y cada abono sin
-conciliar guardan la suya (decisión 24, ADR-010). Está en una rama con **PR abierto, sin
-fusionar**: 993 pruebas y 66 del emulador en verde, revisión de código, y **dos** auditorías de
-seguridad sin bloqueantes. Antes de usarlo hay una decisión del dueño sobre los datos ya
-guardados (D-A, abajo) y el consumidor de ensayo necesita una línea nueva para arrancar.
+**Última actualización:** 2026-10-01, sesión «bloque 4: el pase a producción». **Empezó con un
+análisis y un acta, no con un pase, y la conclusión es que no procede todavía** (decisión 25). Hoy
+no existe una arquitectura de producción: el sistema corre a mano en la máquina del dueño, sin
+dónde desplegar ni staging, y de los 56 controles bloqueantes del checklist del estándar hay 18 en
+verde, 26 en rojo, 2 sin verificar y 10 que no aplican (`docs/produccion/acta-v0.1.0.md`). El
+análisis de brechas, las opciones de despliegue y el plan por bloques están en
+`docs/11-produccion-brechas-y-plan.md`. **Lo que sigue necesita decisiones del dueño, sobre todo
+qué significa «producción» (D1) y cómo se despliega (D2).**
+
+Antes, el mismo día, sesión «bloque 3: una cuenta de cobro por consumidor». Cada consumidor de
+`/api/v1` queda atado a **una** cuenta de cobro, y cada cobro y cada abono sin conciliar guardan la
+suya (decisión 24, ADR-010). **PR #70 y #71 mergeados**: 1000 pruebas y 80 del emulador en verde,
+revisión de código y tres auditorías de seguridad, la última sin hallazgos. Antes de arrancar la API
+con él hay una decisión del dueño sobre los datos ya guardados (D-A, abajo); el consumidor de ensayo
+ya tiene su línea de cuenta y su certificado.
 
 Antes, el mismo día, sesión «prueba intermitente de AES». El test de
 `descifrar()` con otra llave fallaba una de cada ~250 corridas; se hizo determinista con un
@@ -266,12 +275,35 @@ Además se cerró **C9: no hay comisión bancaria** (decisión 17).
     **D-D** una API o un satélite para varias cuentas se pospone al bloque 4; **D-F** la cuenta
     nunca es entrada del contrato, aunque la tabla del prompt la listaba, y se corrigió `docs/01` §7.
     **D-A queda abierta:** qué hacer con los datos ya guardados en los emuladores (ver «Próximo paso»).
+25. **El bloque 4 empieza por un análisis y un acta, y el pase no procede todavía (2026-10-01).** El
+    bloque 4 estaba definido como «recorrer el checklist del estándar», pero ese checklist supone
+    una aplicación desplegada, y este proyecto no tiene dónde desplegar. Lo que se hizo fue:
+    - **Un acta de preparación** (`docs/produccion/acta-v0.1.0.md`) con los 56 controles bloqueantes
+      aplicables y su evidencia: 18 en verde, 26 en rojo, 2 sin verificar y 10 N/A. La sección de
+      nube no aplica porque el manifiesto declara `proveedor: ninguno`.
+    - **Un análisis de brechas** (`docs/11-produccion-brechas-y-plan.md`) hecho por un agente de solo
+      lectura, con tres hallazgos verificados por la sesión principal: **G2**, la barrera T11 acepta
+      un `QR_PROVIDER=baneco` con un `PAYMENT_WATCHER=simulado` (un QR real «pagado» con un documento
+      escrito a mano; hoy solo lo impiden los scripts de `npm`); **G3**, `verificadorFirebase` daría
+      acceso de dueño a cualquier usuario del proyecto de Firebase y no está cableado, aunque este
+      documento decía «ya implementado»; y **G5**, la API no responde `500` ante una excepción no
+      prevista y nada reinicia el satélite.
+    - **Lo que el análisis NO decide:** la arquitectura de despliegue. Ofrece cinco opciones, con
+      una recomendación marcada como tal, y doce decisiones para el dueño.
+    - **Cómo se ejecuta un pase, cuando proceda:** rige la regla del dueño (Claude ejecuta con su OK
+      en el chat; él solo aprueba lo que el sistema exige a una persona, como el Environment
+      `production`), no la frase de la habilidad `pase-a-produccion` de que «la ejecución es humana».
+    - **Se corrigió documentación desactualizada** que el análisis detectó: la API sí llama al banco
+      (`docs/05`), no hay `pino` (`docs/06`), V1 de Baneco estaba resuelto, `docs/04` §2 hay que
+      volver a verificarlo en la sesión de WhatsAppModular, y se registró la pregunta nueva H4
+      (¿filtra por IP la API de producción?).
 
 ## Estado actual
 
 **Hito en curso:** Fase 1 — riel Baneco. El sistema completo corre de punta a punta
-**en modo demo** (mock/simulado); contra el banco real falta el Hito B0 y, para que un
-cobro real llegue a `ENVIADO`, falta `wa-bridge`.
+**en modo demo** (mock/simulado); el riel Baneco ya se probó contra el banco real con plata de monto
+mínimo (P1 a P9 en dos cuentas, y el contrato para consumidores). No hay entorno de producción:
+ver la decisión 25. Para que un cobro real llegue a `ENVIADO` por WhatsApp sigue faltando `wa-bridge`.
 
 ### Hecho
 
@@ -572,8 +604,15 @@ cobro real llegue a `ENVIADO`, falta `wa-bridge`.
       sin fallos, actionlint limpio. En `main`, cero alertas abiertas de Code Scanning. Las
       categorías nuevas (`semgrep`, `trivy-fs`, `checkov-workflows`) no dejan categorías
       viejas que borrar y no apareció ningún Environment solo.
-- [ ] **2026-10-01 — Bloque 3: una cuenta de cobro por consumidor (PR abierto, rama
-      `feat/cuentas-por-consumidor`).** Un proceso por cuenta, con el vínculo explícito (decisión 24).
+- [x] **2026-10-01 — Bloque 4, inicio: acta y análisis de brechas** (decisión 25). Evidencia reunida
+      solo con consultas, sin escribir en GitHub: ruleset, Environments y secretos (ninguno), alertas
+      (Dependabot, Code Scanning y secretos en 0), `security-local.sh` aprobado (informe
+      `20261001-232920`), acciones sin SHA (ninguna), jobs sin `timeout-minutes` (`verify` y
+      `gitleaks`), endpoint de salud (no existe), pruebas de `firestore.rules` (no hay) y cobertura
+      medida de 73,52 % de sentencias y 68,15 % de ramas, sin umbral. No se ejecutó nada contra
+      producción ni se tocó la infraestructura.
+- [x] **2026-10-01 — Bloque 3: una cuenta de cobro por consumidor (PR #70, con #71 para el
+      `.env.example`; mergeados).** Un proceso por cuenta, con el vínculo explícito (decisión 24).
       - `qr-core`: `Cobro.cuentaCobro`, `PropietarioConsumidor`, `esDelConsumidor` exige consumidor
         **y** cuenta, `listarPendientes(cuenta)`, y en `conciliarDia` el destino `deOtraCuenta`.
       - `firestore-store`: el campo, dos índices nuevos, `atribuirCuentaALoAnterior` y
@@ -732,7 +771,14 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
 
 **Dueño:**
 
-0. **Bloque 3, antes de fusionarlo o de arrancar la API con él:**
+0. **Bloque 4: decidir qué significa «producción» (D1) y cómo se despliega (D2).** Son las que
+   destraban el resto; las demás (D3 a D12) están en `docs/11` §3.3, cada una con su recomendación.
+   Recomendación del análisis: D1 = NovuChat cobrando por el contrato con poco volumen y un tope
+   de monto, y D2 = Cloud Run más Firebase en el proyecto `manejoqrsimple`, lo que exige el plan
+   Blaze (D3). **Gestiones con el banco, que hace el dueño:** pedir la llave de producción definitiva
+   por un canal que no sea un adjunto de correo, y preguntar si su API de producción filtra por IP de
+   origen. Nada de esto se ejecuta ni se crea sin su OK.
+0bis. **Bloque 3, antes de arrancar la API con él** (ya está fusionado):
    - **D-A, los datos ya guardados en `~/.manejoqr/emulador-prod` y `emulador-cuenta-2`.** Opciones:
      (a) atribuirlos a su cuenta, con un respaldo previo de cada carpeta: se hace arrancando una vez
      con `ATRIBUIR_DATOS_ANTERIORES_A=<alias>`, o solos si el emulador ya tiene la marca de esa cuenta;
@@ -777,11 +823,15 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
    las fixtures derivadas de la espec. y ajustar el adaptador a los `responseCode` observados
    (por ejemplo, anular un QR pagado). Necesita que el dueño pague un QR de monto mínimo.
 2. **Contrato para consumidores, bloque 3**
-   (`Prompts/cobrador-contrato-para-consumidores.md`): **hecho y en PR abierto** (decisión 24); queda
+   (`Prompts/cobrador-contrato-para-consumidores.md`): **hecho** (PR #70 y #71, decisión 24); queda
    la decisión del dueño de arriba. Los bloques 1 y 2 están cerrados y ensayados (PR #38 y #40;
    `02-hallazgos-produccion.md` §6).
-3. **Contrato para consumidores, bloque 4:** pase a producción con el checklist del estándar
-   DevSecOps (skill `pase-a-produccion`). No espera una cuenta de pruebas. Lo aprueba el dueño.
+3. **Contrato para consumidores, bloque 4:** pase a producción. **Empezado: ver la decisión 25.** Se
+   puede avanzar ya, sin esperar decisiones, con los bloques 4A a 4G y 4K de `docs/11` §4: la
+   documentación al día (hecha en este mismo PR), la coherencia de adaptadores en la barrera (G2, la
+   más urgente), el endpoint de salud y la robustez de los procesos, la cuenta obligatoria, el
+   registro persistente del cierre, el latido y lease del satélite, el cupo compartido, los tiempos
+   límite de dos jobs del CI (PIP-04) y las fixtures reales. El resto espera las decisiones D1 a D12.
 4. `wa-bridge`, cuando el dueño decida el punto 1; con él, el aviso por WhatsApp de los casos
    críticos de revisión.
 5. Al desplegar la API en serio, pasar el cupo de QRs por consumidor a un contador compartido

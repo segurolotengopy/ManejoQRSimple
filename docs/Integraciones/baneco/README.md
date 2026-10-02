@@ -59,10 +59,10 @@ que es fuente de nivel 4. Estado de cada punto tras la respuesta del banco:
 
 | # | Punto | Estado |
 |---|---|---|
-| V1 | **Versionado asimétrico de rutas.** El manual documenta `/api/qrsimple/generateQR` y `/api/qrsimple/cancelQR` sin `v2`, pero `/api/qrsimple/v2/statusQR/{id}` y `/api/qrsimple/v2/paidQR/{fecha}` con `v2`. | ⏳ **Abierto.** El banco no lo trató. Una ruta equivocada es un 404 en la primera llamada real de B0. |
+| V1 | **Versionado asimétrico de rutas.** El manual documenta `/api/qrsimple/generateQR` y `/api/qrsimple/cancelQR` sin `v2`, pero `/api/qrsimple/v2/statusQR/{id}` y `/api/qrsimple/v2/paidQR/{fecha}` con `v2`. | ✅ **Resuelto en los hechos el 2026-09-13/14:** las nueve pruebas de la prueba controlada en producción corrieron contra esas rutas, en dos cuentas, sin un 404 (`02-hallazgos-produccion.md`). |
 | V2 | **Esquema de cifrado AES**: AES-256-CBC, PKCS7, IV de 16 bytes antepuesto, Base64. | ✅ **Confirmado** (2026-09-12) con el vector oficial del PDF §5.1: `crypto/aes.ts` lo descifra al texto esperado. Falta solo la confirmación end-to-end del login en B0. |
 | V3 | **Zona horaria de `paymentDate`/`paymentTime`.** Se interpretan en hora boliviana (UTC-4). | ✅ **Confirmado por escrito** (D7): fecha y hora del pago en hora de Bolivia. |
-| V4 | **Nombre del campo de estado**: `statusQrCode` vs `statusQRCode`. | ⏳ **Abierto.** El adaptador acepta ambos. B0 lo resuelve con el primer `statusQR`. |
+| V4 | **Nombre del campo de estado**: `statusQrCode` vs `statusQRCode`. | ⏳ **Abierto.** El adaptador acepta ambos. Sin cuenta de pruebas, B0 no genera QRs: se cierra con las fixtures reales saneadas, que salen de la prueba en producción (ESTADO, decisión 21). |
 | V5 | **Catálogo de `responseCode`.** No documentado en la v1.3.0. | ✅ **Cerrado** (E1): no existe catálogo oficial; el `message` trae la descripción. El error opaco pasa a ser el diseño definitivo. |
 
 ## Discrepancias entre la respuesta del banco y el PDF

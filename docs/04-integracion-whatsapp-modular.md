@@ -53,6 +53,12 @@ Se leyó el repo de WhatsAppModular (`/home/andres-alberdi/WhatsApp-Modular`).
    (`packages/webhook-receiver/src/parse.ts`) no extrae `image` ni `document`.
    **El comprobante del cliente llegaría como `unsupported` y se perdería.**
 
+> **Verificar de nuevo antes de decidir (2026-10-01).** Esta sección se apoya en una verificación
+> del 2026-08-27 contra el laboratorio Evolution. La ficha de WhatsAppModular del registro de
+> proyectos (2026-09-28) dice que los canales no oficiales se probaron y se descartaron, y que ya
+> tiene un receptor en producción. Hay que volver a verificar `docs/04` §2 **en la sesión de
+> WhatsAppModular** antes de elegir entre las opciones de abajo.
+
 ### 2.3 Decisión pendiente del dueño
 
 Para desbloquear `wa-bridge` hay que elegir (son de WhatsAppModular, no de acá):

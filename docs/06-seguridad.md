@@ -51,7 +51,7 @@ variables sin valores. Variable nueva ⇒ actualizar `.env.example` en el mismo 
 - Referencias/glosas: recortadas a lo necesario para conciliar.
 - Nada de HTML crudo de la consola en logs persistentes; en debug local,
   solo efímero.
-- Logs estructurados (pino) con `cobroId` y `correlationId`.
+- Logs estructurados con `cobroId` y `correlationId`. (Hoy es una bitácora JSONL propia, sin `pino` ni `request_id`: ver `docs/11` G14.)
 - **Bitácora en disco** de la API y el satélite (`~/.manejoqr/logs/`, fuera del repo,
   `composicion/src/bitacora.ts`):
   - Cada línea pasa por `sanearTexto` **antes** de escribirse (tokens `Bearer`, teléfonos y

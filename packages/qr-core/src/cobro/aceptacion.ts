@@ -14,6 +14,7 @@
  */
 
 import { exito, fallo, type Resultado } from '../comun/resultado.js';
+import { deteccionDelRiel } from '../conciliacion/deteccion.js';
 import type { Cobro } from './cobro.js';
 
 declare const marcaAceptacion: unique symbol;
@@ -51,9 +52,15 @@ export type ErrorAceptacion =
  * Acepta el abono `idDeduplicacion` para el cobro, solo si es **el último que
  * el banco reportó para ese mismo cobro**. Los registros de otros cobros se
  * ignoran: un abono no se acepta para un cobro que no es el suyo.
+ *
+ * Tampoco cuenta una detección cuyo riel no corresponde al QR vigente del
+ * cobro (un abono simulado sobre un QR real, por ejemplo): no es del banco que
+ * emitió ese QR. El filtro es cerrado (`deteccionDelRiel`): con QR vigente, un
+ * registro sin riel declarado, de un riel desconocido o con una clave de otro
+ * riel no cuenta. Sin QR vigente no hay con qué comparar y se comporta como antes.
  */
 export function aceptarAbono(
-  cobro: Pick<Cobro, 'id'>,
+  cobro: Pick<Cobro, 'id' | 'qrVigente'>,
   registros: readonly RegistroConDetecciones[],
   idDeduplicacion: string,
 ): Resultado<AbonoAceptado, ErrorAceptacion> {
@@ -61,7 +68,8 @@ export function aceptarAbono(
     .filter(
       (r) =>
         r.cobroId === cobro.id &&
-        (EVENTOS_CON_DETECCION as readonly string[]).includes(r.evento),
+        (EVENTOS_CON_DETECCION as readonly string[]).includes(r.evento) &&
+        deteccionDelRiel(r.datos, cobro.qrVigente?.origen ?? null),
     )
     .map((r) => r.datos['idDeduplicacion'])
     .filter((id): id is string => typeof id === 'string' && id !== '');

@@ -23,6 +23,12 @@ export {
 } from './puertos.js';
 export { hablaConProduccion, verificarProduccion } from './produccion.js';
 export {
+  decidirSobreLaBase,
+  esProcesoDeLaPrueba,
+  verificarBaseDelProceso,
+  type AccionSobreLaBase,
+} from './base-de-la-prueba.js';
+export {
   archivoDeCredenciales,
   esAliasDeCuenta,
   leerAtribucionExplicita,
@@ -42,12 +48,16 @@ export {
  */
 export {
   atribuirCuentaALoAnterior,
+  contarDatosSimulados,
   contarSinCuentaDeCobro,
   explicarMarca,
   fijarCuentaDePrueba,
+  leerPresenciaDeMarca,
   type AtribucionDeCuenta,
   type ConteoSinCuenta,
+  type DatosSimulados,
   type MarcaDeCuenta,
+  type PresenciaDeMarca,
 } from '@mqs/firestore-store';
 export {
   Bitacora,

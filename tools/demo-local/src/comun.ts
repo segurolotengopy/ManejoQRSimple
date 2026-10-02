@@ -7,6 +7,7 @@
  * tests de integración.
  */
 
+import { leerPresenciaDeMarca, verificarBaseDelProceso } from '@mqs/composicion';
 import { centavos, esExito, type Centavos } from '@mqs/qr-core';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
@@ -26,6 +27,23 @@ export function conectarAlEmulador(): Firestore {
   }
   const app = initializeApp({ projectId: PROYECTO }, `demo-${String(Date.now())}`);
   return getFirestore(app);
+}
+
+/**
+ * El demo no toca la base de la prueba en producción.
+ *
+ * Esa base (marca `configuracion/cuentaDePrueba`) guarda cobros con QRs reales:
+ * sembrarle cobros simulados o escribirle abonos inventados mezcla el demo con
+ * plata real. Estas herramientas **nunca** son la prueba real, así que se
+ * comprueba con un entorno vacío —no con `process.env`— y la marca decide. Sale
+ * con código 1 si la base es la de la prueba o si no se pudo comprobar.
+ */
+export async function exigirBaseDeDemo(db: Firestore): Promise<void> {
+  const problema = await verificarBaseDelProceso({}, () => leerPresenciaDeMarca(db));
+  if (problema !== null) {
+    console.error(`✖ ${problema}`);
+    process.exit(1);
+  }
 }
 
 export function bs(valorEnCentavos: number): Centavos {

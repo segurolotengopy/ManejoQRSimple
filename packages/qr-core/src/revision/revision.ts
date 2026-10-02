@@ -17,7 +17,8 @@
 
 import { centavos, type Centavos } from '../comun/dinero.js';
 import { esExito } from '../comun/resultado.js';
-import type { Cobro } from '../cobro/cobro.js';
+import type { Cobro, OrigenQr } from '../cobro/cobro.js';
+import { deteccionDelRiel } from '../conciliacion/deteccion.js';
 import type { RegistroEvidencia, TipoEvento } from '../cobro/maquina-estados.js';
 
 /** Por qué un cobro está en revisión, en el vocabulario del dueño. */
@@ -25,6 +26,7 @@ export const MOTIVOS_REVISION = [
   'MONTO_NO_COINCIDE',
   'FUERA_DE_VIGENCIA',
   'DUPLICADO',
+  'RIEL_NO_CORRESPONDE',
   'ABONO_TARDIO',
   'VENTANA_AGOTADA',
   'OTRO',
@@ -93,13 +95,28 @@ const MOTIVOS_DE_CONCILIACION: readonly MotivoRevision[] = [
   'MONTO_NO_COINCIDE',
   'FUERA_DE_VIGENCIA',
   'DUPLICADO',
+  'RIEL_NO_CORRESPONDE',
 ];
 
-/** El último abono del banco que figura en la evidencia, o `null`. */
-export function ultimaDeteccion(registros: readonly RegistroEvidencia[]): AbonoRegistrado | null {
+/**
+ * El último abono del banco que figura en la evidencia, o `null`.
+ *
+ * Se descartan las detecciones cuyo riel no corresponde al QR vigente
+ * (`origenQr`): un abono simulado sobre un QR real no es «del banco». El filtro
+ * es el de `deteccionDelRiel` (cerrado por defecto: sin riel declarado o con una
+ * clave de otro riel, no cuenta). Con `origenQr` en `null` (cobro sin QR
+ * vigente) no se filtra.
+ */
+export function ultimaDeteccion(
+  registros: readonly RegistroEvidencia[],
+  origenQr: OrigenQr | null,
+): AbonoRegistrado | null {
   for (let i = registros.length - 1; i >= 0; i -= 1) {
     const registro = registros[i];
     if (registro === undefined || !EVENTOS_CON_DETECCION.includes(registro.evento)) {
+      continue;
+    }
+    if (!deteccionDelRiel(registro.datos, origenQr)) {
       continue;
     }
     const { idDeduplicacion, montoCentavos, ocurridoEn } = registro.datos;
@@ -170,7 +187,7 @@ export function construirCaso(
   // exagerar la antigüedad alerta de más, que es el error seguro.
   const enRevisionDesde = entrada?.registradoEn ?? cobro.creadoEn;
   const horasEnRevision = Math.max(0, (ahora.getTime() - enRevisionDesde.getTime()) / HORA_MS);
-  const abono = ultimaDeteccion(registros);
+  const abono = ultimaDeteccion(registros, cobro.qrVigente?.origen ?? null);
   return {
     cobro,
     motivo: motivoDe(entrada),

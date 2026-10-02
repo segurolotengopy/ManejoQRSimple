@@ -24,13 +24,17 @@ import {
   Bitacora,
   MensajeriaNoConfigurada,
   construirPuertos,
+  decidirSobreLaBase,
   describirError,
   describirLlamada,
+  esProcesoDeLaPrueba,
   explicarMarca,
   fijarCuentaDePrueba,
   leerAtribucionExplicita,
   leerCuentaDeCobro,
+  leerPresenciaDeMarca,
   prepararDatosDeLaCuenta,
+  verificarBaseDelProceso,
   verificarProduccion,
   type NivelLog,
 } from '@mqs/composicion';
@@ -107,6 +111,14 @@ async function main(): Promise<number> {
   // bucle: contra producción la barrera ya lo rechazó (`verificarProduccion`).
   const modoPrueba = process.env['MODO_PRUEBA_PRODUCCION'] === '1';
   if (db !== null) {
+    // La base marcada como la de la prueba en producción solo la usa la prueba
+    // real: este satélite, con otros adaptadores, confirmaría o «anularía» QRs
+    // que el banco sí emitió. Antes de marcar o atribuir nada.
+    const problemaDeBase = await verificarBaseDelProceso(process.env, () => leerPresenciaDeMarca(db));
+    if (problemaDeBase !== null) {
+      console.error(`✖ ${problemaDeBase}`);
+      return 1;
+    }
     // La marca no se crea sobre datos sin cuenta salvo que el dueño lo autorice
     // expresamente (ATRIBUIR_DATOS_ANTERIORES_A=<esta cuenta>).
     const atribucionExplicita = leerAtribucionExplicita(process.env, cuenta);
@@ -205,6 +217,27 @@ async function main(): Promise<number> {
   });
 
   do {
+    // Carrera de arranque: un demo que subió antes de que se marcara la base la
+    // habría pasado en el chequeo de arriba. Se vuelve a mirar en cada pasada
+    // —una lectura— y, si la base ya es la de la prueba, no se toca nada más.
+    // Con la marca, sale; si solo falla la lectura (un parpadeo de Firestore),
+    // se salta esta pasada y se reintenta. La decisión es una función pura
+    // probada (`decidirSobreLaBase`); la prueba real siempre sigue.
+    if (db !== null && !esProcesoDeLaPrueba(process.env)) {
+      const decision = decidirSobreLaBase(process.env, await leerPresenciaDeMarca(db), 'PASADA');
+      if (decision.accion === 'SALIR') {
+        registrar('error', `✖ ${decision.mensaje}`);
+        return 1;
+      }
+      if (decision.accion === 'SALTAR_PASADA') {
+        registrar('error', `  ! ${decision.mensaje}`);
+        if (unaSola) {
+          return 1;
+        }
+        await esperar(intervalo * 1000, sigue);
+        continue;
+      }
+    }
     const resultado = await unaPasada(puertos.valor.deps, cuenta, new Date());
 
     if ('errorFatal' in resultado) {

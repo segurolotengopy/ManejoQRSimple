@@ -17,7 +17,7 @@ import { aDecimalBob, esExito } from '@mqs/qr-core';
 import { COLECCION_ABONOS, documentoACobro } from '@mqs/firestore-store';
 import { Timestamp } from 'firebase-admin/firestore';
 
-import { conectarAlEmulador } from './comun.js';
+import { conectarAlEmulador, exigirBaseDeDemo } from './comun.js';
 
 function argumento(nombre: string): string | null {
   const i = process.argv.indexOf(nombre);
@@ -32,6 +32,7 @@ async function main(): Promise<number> {
   }
 
   const db = conectarAlEmulador();
+  await exigirBaseDeDemo(db);
 
   const doc = await db.collection('cobros').doc(cobroId).get();
   if (!doc.exists) {
@@ -73,7 +74,7 @@ async function main(): Promise<number> {
       referenciaProveedor: qr.referenciaProveedor,
       montoCentavos,
       ocurridoEn: Timestamp.fromDate(ocurridoEn),
-      origen: 'watcher-baneco',
+      origen: 'watcher-simulado',
       referencia: cobro.valor.concepto,
     });
 

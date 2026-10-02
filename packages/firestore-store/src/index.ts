@@ -21,6 +21,7 @@ export {
 export {
   PaymentWatcherAbonosFirestore,
   COLECCION_ABONOS,
+  ORIGEN_ABONOS,
 } from './watcher-abonos.js';
 export {
   AbonosSinConciliarFirestore,
@@ -34,11 +35,15 @@ export {
   type ConteoSinCuenta,
 } from './atribucion-de-cuenta.js';
 export {
+  contarDatosSimulados,
   explicarMarca,
   fijarCuentaDePrueba,
+  leerPresenciaDeMarca,
   COLECCION_CONFIGURACION,
   DOC_CUENTA_DE_PRUEBA,
+  type DatosSimulados,
   type MarcaDeCuenta,
+  type PresenciaDeMarca,
 } from './cuenta-de-prueba.js';
 export {
   cobroADocumento,
@@ -49,3 +54,6 @@ export {
   qrADocumento,
   type ErrorMapeoFirestore,
 } from './mapeo.js';
+
+// Solo para las pruebas del emulador (guarda contra borrar sobre la base de la prueba real).
+export { BaseDeEmuladorDePruebas } from './base-de-pruebas.js';

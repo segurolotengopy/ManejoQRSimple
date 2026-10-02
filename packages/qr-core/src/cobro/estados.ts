@@ -45,6 +45,7 @@ export function esTerminal(estado: EstadoCobro): estado is EstadoTerminal {
 export const ORIGENES = [
   'sistema',
   'watcher-baneco',
+  'watcher-simulado',
   'scraper-yape',
   'webhook-whatsapp',
   'accion-manual',

@@ -34,7 +34,7 @@ cobros/{cobroId}                 estado, cliente (mínimo), montoCentavos,
                                  cuentaCobro (alias de la cuenta, obligatorio)
 cobros/{cobroId}/qrs/{version}   historial de QRs emitidos (append-only)
 cobros/{cobroId}/evidencia/{n}   transiciones y hechos (append-only)
-abonos/{hashMovimiento}          detecciones del watcher (dedup por id de doc)
+abonos/{hashMovimiento}          detecciones del watcher SIMULADO (dedup por id de doc)
 abonosSinConciliar/{clave}       pagos que el cierre diario no pudo atar a un cobro
                                  (id = clave del banco codificada; se cierran, no se borran);
                                  cuentaCobro = la cuenta del satélite que lo leyó
@@ -47,6 +47,13 @@ compuestos nuevos en `cobros`, que el emulador no exige y se despliegan con el
 resto: `(cuentaCobro, estado)` para el satélite y `(consumidor.consumidorId,
 cuentaCobro, creadoEn desc)` para el listado del consumidor.
 
+**Todo lo que se lee de `abonos/*` es `watcher-simulado`**, diga lo que diga el documento en
+su campo `origen` (se valida y se ignora), y un documento cuyo id empiece por `baneco:` (el
+espacio de claves del banco) se descarta. Cuando el `yape-scraper` escriba ahí, el riel Yape
+necesitará **su propio lector y su propio origen**: este lector no puede atribuirle abonos a
+`scraper-yape` sin reabrir el hueco por el que un documento escrito a mano se hace pasar por
+el banco (docs/06, T1).
+
 Los ids de documento hacen la idempotencia estructural: escribir dos veces el
 mismo `hashMovimiento` o `messageId` es un no-op detectable, no un duplicado.
 
@@ -56,7 +63,8 @@ mismo `hashMovimiento` o `messageId` es un no-op detectable, no un duplicado.
   nadie anónimo lee nada.
 - `evidencia/*` y `qrs/*`: **create-only** (niega update y delete a todos los
   clientes; solo Functions con Admin SDK bajo las reglas del dominio).
-- `abonos/*`: escribe únicamente la credencial del scraper (§4); demo-web solo lee.
+- `abonos/*`: escribe únicamente la credencial del scraper (§4) —y, en el demo, el simulador de
+  `tools/demo-local`—; demo-web solo lee. Lo que se lee de ahí es siempre `watcher-simulado`.
 - `abonosSinConciliar/*`: los escribe el satélite (cierre diario) y los cierra la API,
   ambos con Admin SDK; ningún cliente escribe.
 - Datos del cliente final: nombre y teléfono, nada más (regla inviolable #9).

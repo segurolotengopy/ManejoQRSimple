@@ -22,12 +22,21 @@ import { FieldValue, getFirestore, Timestamp, type Firestore } from 'firebase-ad
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { AbonosSinConciliarFirestore, COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
+import { BaseDeEmuladorDePruebas } from './base-de-pruebas.js';
 import { atribuirCuentaALoAnterior, contarSinCuentaDeCobro } from './atribucion-de-cuenta.js';
-import { COLECCION_CONFIGURACION, explicarMarca, fijarCuentaDePrueba } from './cuenta-de-prueba.js';
+import {
+  COLECCION_CONFIGURACION,
+  contarDatosSimulados,
+  explicarMarca,
+  fijarCuentaDePrueba,
+  leerPresenciaDeMarca,
+} from './cuenta-de-prueba.js';
 import { CobroRepositoryFirestore, EvidenceStoreFirestore } from './repositorio.js';
+import { COLECCION_ABONOS, ORIGEN_ABONOS, PaymentWatcherAbonosFirestore } from './watcher-abonos.js';
 
 let app: App;
 let db: Firestore;
+let base: BaseDeEmuladorDePruebas;
 
 const T0 = new Date('2026-08-27T12:00:00.000Z');
 
@@ -101,7 +110,7 @@ function documentoDeAbonoViejo(): Record<string, unknown> {
   };
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   // Barrera: si esta variable no está, `emulators:exec` no nos lanzó y estos
   // tests podrían terminar hablándole al proyecto real. No se corren.
   const emulador = process.env['FIRESTORE_EMULATOR_HOST'];
@@ -114,16 +123,24 @@ beforeAll(() => {
 
   app = initializeApp({ projectId: 'manejoqrsimple' }, `test-${String(Date.now())}`);
   db = getFirestore(app);
+
+  // Estas pruebas borran colecciones enteras: nunca sobre la base de la prueba
+  // en producción (cobros reales) ni sobre una que no se pueda comprobar. La
+  // guarda se mira una sola vez, antes de borrar nada, y toda limpieza queda
+  // atada a que haya pasado (`BaseDeEmuladorDePruebas`).
+  base = new BaseDeEmuladorDePruebas(db);
+  await base.verificar();
 });
 
 afterAll(async () => {
+  // Aunque la guarda haya fallado, este gancho corre: sin verificación no borra
+  // nada —ni la marca de la prueba real— y solo cierra la app.
+  await base.cerrar();
   await deleteApp(app);
 });
 
 beforeEach(async () => {
-  await db.recursiveDelete(db.collection('cobros'));
-  await db.recursiveDelete(db.collection(COLECCION_ABONOS_SIN_CONCILIAR));
-  await db.recursiveDelete(db.collection(COLECCION_CONFIGURACION));
+  await base.limpiar();
 });
 
 describe('fijarCuentaDePrueba()', () => {
@@ -699,5 +716,118 @@ describe('EvidenceStoreFirestore', () => {
   it('un cobro sin evidencia devuelve lista vacía, no error', async () => {
     const registros = await new EvidenceStoreFirestore(db).listarDeCobro('sin-evidencia');
     expect(registros).toEqual({ ok: true, valor: [] });
+  });
+});
+
+describe('PaymentWatcherAbonosFirestore: el origen lo pone el adaptador, no el documento', () => {
+  const abonoEscrito = (sobrescribir: Record<string, unknown> = {}): Record<string, unknown> => ({
+    referenciaProveedor: 'qr-1',
+    montoCentavos: 12_345,
+    ocurridoEn: Timestamp.fromDate(T0),
+    referencia: null,
+    ...sobrescribir,
+  });
+
+  it('un documento que dice ser del banco se lee como detección simulada', async () => {
+    // Adverso: quien escribe en `abonos/*` se hace pasar por `watcher-baneco`.
+    await db.collection(COLECCION_ABONOS).doc('falso-1').set(abonoEscrito({ origen: 'watcher-baneco' }));
+    const r = await new PaymentWatcherAbonosFirestore(db).consultarCobro('qr-1');
+    expect(esExito(r) && r.valor?.origen).toBe(ORIGEN_ABONOS);
+    expect(ORIGEN_ABONOS).toBe('watcher-simulado');
+  });
+
+  it('un documento sin origen también se lee, como simulado', async () => {
+    await db.collection(COLECCION_ABONOS).doc('sin-origen-1').set(abonoEscrito());
+    const r = await new PaymentWatcherAbonosFirestore(db).listarAbonosDelDia(T0);
+    expect(esExito(r) && r.valor.map((d) => d.origen)).toEqual(['watcher-simulado']);
+  });
+
+  it('un documento cuyo id imita una clave del banco se descarta: no se devuelve como detección', async () => {
+    // Si pasara, el abono real del cierre con esa misma clave contaría como
+    // «ya registrado» y nunca se ataría a su cobro.
+    await db.collection(COLECCION_ABONOS).doc('baneco:qr-1:tx-1').set(abonoEscrito({ origen: 'watcher-baneco' }));
+    const watcher = new PaymentWatcherAbonosFirestore(db);
+    const puntual = await watcher.consultarCobro('qr-1');
+    expect(esExito(puntual) && puntual.valor).toBeNull();
+    const dia = await watcher.listarAbonosDelDia(T0);
+    expect(esExito(dia) && dia.valor).toEqual([]);
+
+    // Un documento válido con la misma referencia sí se devuelve.
+    await db.collection(COLECCION_ABONOS).doc('simulado:qr-1:12345').set(abonoEscrito());
+    const conValido = await watcher.consultarCobro('qr-1');
+    expect(esExito(conValido) && conValido.valor?.idDeduplicacion).toBe('simulado:qr-1:12345');
+    const diaValido = await watcher.listarAbonosDelDia(T0);
+    expect(esExito(diaValido) && diaValido.valor.map((d) => d.idDeduplicacion)).toEqual(['simulado:qr-1:12345']);
+  });
+
+  it('un origen que no es de ningún riel conocido sigue siendo un documento inválido', async () => {
+    await db.collection(COLECCION_ABONOS).doc('raro-1').set(abonoEscrito({ origen: 'inventado' }));
+    const r = await new PaymentWatcherAbonosFirestore(db).consultarCobro('qr-1');
+    expect(!esExito(r) && r.error.tipo).toBe('RESPUESTA_INVALIDA');
+  });
+});
+
+describe('el QR simulado ida y vuelta', () => {
+  it('se guarda y se lee con origen simulado', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    const cobro = unCobro({ estado: 'ENVIADO', qrVersion: 1, qrVigente: { ...unQr(), origen: 'simulado' } });
+    expect(esExito(await repo.crear(cobro))).toBe(true);
+    const leido = await repo.obtener(cobro.id);
+    expect(esExito(leido) && leido.valor?.qrVigente?.origen).toBe('simulado');
+  });
+});
+
+describe('leerPresenciaDeMarca()', () => {
+  it('sin documento, AUSENTE', async () => {
+    await expect(leerPresenciaDeMarca(db)).resolves.toEqual({ tipo: 'AUSENTE' });
+  });
+
+  it('con la marca válida, PRESENTE', async () => {
+    await fijarCuentaDePrueba(db, 'prod', T0, false);
+    await expect(leerPresenciaDeMarca(db)).resolves.toEqual({ tipo: 'PRESENTE' });
+  });
+
+  it('una marca ilegible cuenta como PRESENTE: no se pasa por encima', async () => {
+    await db.collection(COLECCION_CONFIGURACION).doc('cuentaDePrueba').set({ cuenta: 7 });
+    await expect(leerPresenciaDeMarca(db)).resolves.toEqual({ tipo: 'PRESENTE' });
+  });
+
+  it('si la lectura falla, ERROR sin el texto de la causa', async () => {
+    const roto = {
+      collection: () => ({
+        doc: () => ({ get: () => Promise.reject(new Error('detalle-que-no-debe-salir')) }),
+      }),
+    } as unknown as Firestore;
+    const r = await leerPresenciaDeMarca(roto);
+    expect(r).toEqual({ tipo: 'ERROR' });
+    expect(JSON.stringify(r)).not.toContain('detalle-que-no-debe-salir');
+  });
+});
+
+describe('contarDatosSimulados()', () => {
+  it('base vacía: ceros', async () => {
+    await expect(contarDatosSimulados(db)).resolves.toEqual({ tipo: 'OK', abonos: 0, cobros: 0 });
+  });
+
+  it('cuenta los abonos de abonos/* y los cobros con QR simulado, y no los del banco', async () => {
+    const repo = new CobroRepositoryFirestore(db);
+    await repo.crear(unCobro({ id: 'real-1', estado: 'ENVIADO', qrVersion: 1, qrVigente: unQr() }));
+    await repo.crear(
+      unCobro({ id: 'sim-1', estado: 'ENVIADO', qrVersion: 1, qrVigente: { ...unQr(), origen: 'simulado' } }),
+    );
+    await repo.crear(unCobro({ id: 'sim-2', estado: 'ENVIADO', qrVersion: 1, qrVigente: { ...unQr(), origen: 'simulado' } }));
+    await db.collection(COLECCION_ABONOS).doc('a-1').set({ referenciaProveedor: 'x', montoCentavos: 1 });
+    await expect(contarDatosSimulados(db)).resolves.toEqual({ tipo: 'OK', abonos: 1, cobros: 2 });
+  });
+
+  it('si la consulta falla, ERROR sin el texto de la causa', async () => {
+    const roto = {
+      collection: () => {
+        throw new Error('detalle-que-no-debe-salir');
+      },
+    } as unknown as Firestore;
+    const r = await contarDatosSimulados(roto);
+    expect(r).toEqual({ tipo: 'ERROR' });
+    expect(JSON.stringify(r)).not.toContain('detalle-que-no-debe-salir');
   });
 });

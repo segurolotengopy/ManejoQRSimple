@@ -21,6 +21,7 @@ import { z } from 'zod';
 
 import { COLECCION_ABONOS_SIN_CONCILIAR } from './abonos-sin-conciliar.js';
 import { COLECCION_COBROS } from './repositorio.js';
+import { COLECCION_ABONOS } from './watcher-abonos.js';
 
 export const COLECCION_CONFIGURACION = 'configuracion';
 export const DOC_CUENTA_DE_PRUEBA = 'cuentaDePrueba';
@@ -107,6 +108,54 @@ export async function fijarCuentaDePrueba(
     });
   } catch (causa) {
     return { tipo: 'ERROR', detalle: causa instanceof Error ? causa.message : 'falló la consulta a Firestore' };
+  }
+}
+
+export type PresenciaDeMarca =
+  | { readonly tipo: 'AUSENTE' }
+  | { readonly tipo: 'PRESENTE' }
+  | { readonly tipo: 'ERROR' };
+
+/**
+ * ¿Esta base tiene la marca de la prueba en producción?
+ *
+ * Es la lectura de los procesos que **no** son la prueba y no deben tocar una
+ * base marcada: con adaptadores simulados confirmarían o anularían cobros que
+ * el banco nunca vio. Por eso es deliberadamente más tosca que
+ * `fijarCuentaDePrueba`: un solo `get()`, sin transacción y sin escribir nada,
+ * y **todo documento que exista cuenta como presente**, tenga la forma que
+ * tenga (una marca ilegible puede ser de una versión futura). Si la lectura
+ * falla, el resultado es `ERROR` y quien llama no arranca (falla cerrada). El
+ * error no lleva el mensaje de la causa: puede traer rutas o identificadores.
+ */
+export async function leerPresenciaDeMarca(db: Firestore): Promise<PresenciaDeMarca> {
+  try {
+    const marca = await db.collection(COLECCION_CONFIGURACION).doc(DOC_CUENTA_DE_PRUEBA).get();
+    return marca.exists ? { tipo: 'PRESENTE' } : { tipo: 'AUSENTE' };
+  } catch {
+    return { tipo: 'ERROR' };
+  }
+}
+
+export type DatosSimulados =
+  | { readonly tipo: 'OK'; readonly abonos: number; readonly cobros: number }
+  | { readonly tipo: 'ERROR' };
+
+/**
+ * Cuántos datos de un proceso simulado hay en la base: los abonos de `abonos/*`
+ * (los escribe el simulador) y los cobros cuyo QR vigente es `simulado`. Solo
+ * conteos: nunca ids ni contenido. La prueba real no arranca sobre una base
+ * donde esto no es cero (D2).
+ */
+export async function contarDatosSimulados(db: Firestore): Promise<DatosSimulados> {
+  try {
+    const [abonos, cobros] = await Promise.all([
+      db.collection(COLECCION_ABONOS).count().get(),
+      db.collection(COLECCION_COBROS).where('qrVigente.origen', '==', 'simulado').count().get(),
+    ]);
+    return { tipo: 'OK', abonos: abonos.data().count, cobros: cobros.data().count };
+  } catch {
+    return { tipo: 'ERROR' };
   }
 }
 

@@ -20,7 +20,7 @@ import {
   type Cobro,
 } from '@mqs/qr-core';
 
-import { bs, conectarAlEmulador, telefonoParaMostrar } from './comun.js';
+import { bs, conectarAlEmulador, exigirBaseDeDemo, telefonoParaMostrar } from './comun.js';
 
 const AHORA = new Date();
 const HORA = 3_600_000;
@@ -62,6 +62,7 @@ async function main(): Promise<number> {
     return 1;
   }
   const db = conectarAlEmulador();
+  await exigirBaseDeDemo(db);
 
   // Persistencia real (emulador) + QR de mock: no hace falta el banco.
   const puertos = construirPuertos({

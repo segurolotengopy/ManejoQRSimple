@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { esExito } from '../../comun/resultado.js';
 import {
   CASOS_ABONOS_SIN_CONCILIAR,
   CASOS_AVISOS,
@@ -24,13 +25,60 @@ import {
   EvidenceStoreEnMemoria,
   PaymentWatcherEnMemoria,
   QrProviderEnMemoria,
+  QrProviderSimulado,
 } from '../mocks.js';
+import type { SolicitudQr } from '../puertos.js';
 
 describe('contrato de QrProvider', () => {
   it.each(CASOS_QR_PROVIDER)('$nombre', async ({ ejecutar }) => {
     await expect(
       ejecutar(new QrProviderEnMemoria(() => INSTANTE_DE_CONTRATO)),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('contrato de QrProvider (QrProviderSimulado)', () => {
+  it.each(CASOS_QR_PROVIDER)('$nombre', async ({ ejecutar }) => {
+    await expect(
+      ejecutar(new QrProviderSimulado(() => INSTANTE_DE_CONTRATO)),
+    ).resolves.toBeUndefined();
+  });
+
+  it('no anula un QR que no emitió un simulador: rechazo no reintentable, sin tocarlo', async () => {
+    const proveedor = new QrProviderSimulado(() => INSTANTE_DE_CONTRATO);
+    const r = await proveedor.anular('qr-de-un-banco-real');
+    expect(r).toMatchObject({ ok: false, error: { tipo: 'RECHAZADO_POR_PROVEEDOR', reintentable: false } });
+    expect(proveedor.estaAnulado('qr-de-un-banco-real')).toBe(false);
+    // No filtra la referencia en el mensaje.
+    expect(JSON.stringify(r)).not.toContain('qr-de-un-banco-real');
+  });
+
+  it('sí anula los que emitió', async () => {
+    const proveedor = new QrProviderSimulado(() => INSTANTE_DE_CONTRATO);
+    const emitido = await proveedor.emitir({
+      cobroId: 'cobro-contrato',
+      montoCentavos: 12_345 as SolicitudQr['montoCentavos'],
+      venceEn: new Date(INSTANTE_DE_CONTRATO.getTime() + 3_600_000),
+      concepto: 'Prueba',
+      qrVersion: 1,
+      origenEsperado: 'simulado',
+    });
+    if (!esExito(emitido)) throw new Error('debería emitir');
+    expect(esExito(await proveedor.anular(emitido.valor.referenciaProveedor))).toBe(true);
+    expect(proveedor.estaAnulado(emitido.valor.referenciaProveedor)).toBe(true);
+  });
+
+  it('emite con origen simulado aunque se le pida api-baneco', async () => {
+    const proveedor = new QrProviderSimulado(() => INSTANTE_DE_CONTRATO);
+    const r = await proveedor.emitir({
+      cobroId: 'cobro-contrato',
+      montoCentavos: 12_345 as SolicitudQr['montoCentavos'],
+      venceEn: new Date(INSTANTE_DE_CONTRATO.getTime() + 3_600_000),
+      concepto: 'Prueba',
+      qrVersion: 1,
+      origenEsperado: 'api-baneco',
+    });
+    expect(esExito(r) && r.valor.origen).toBe('simulado');
   });
 });
 

@@ -20,6 +20,7 @@ import {
   type AvisoDeConfirmacion,
   type ErrorPuerto,
   type NotificadorConsumidor,
+  type OrigenDeteccion,
   type Resultado,
 } from '@mqs/qr-core';
 
@@ -49,9 +50,10 @@ export function cuerpoDelAviso(aviso: AvisoDeConfirmacion): string {
 }
 
 /** Los mismos nombres públicos que usa la API, no los internos del dominio. */
-const RIEL_PUBLICO: Readonly<Record<'watcher-baneco' | 'scraper-yape', string>> = {
+const RIEL_PUBLICO: Readonly<Record<OrigenDeteccion, string>> = {
   'watcher-baneco': 'api-baneco',
   'scraper-yape': 'scraping-yape',
+  'watcher-simulado': 'simulado',
 };
 
 /** Centavos enteros a decimal con dos posiciones, por aritmética entera. */

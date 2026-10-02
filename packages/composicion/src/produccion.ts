@@ -32,6 +32,23 @@ export function hablaConProduccion(env: Entorno): boolean {
 
 /** ¿Se puede arrancar? `null` si sí; si no, el motivo para mostrar. */
 export function verificarProduccion(env: Entorno): string | null {
+  // `MODO_PRUEBA_PRODUCCION=1` es la llave de la prueba real y de su base
+  // marcada (`configuracion/cuentaDePrueba`): con cualquier otra combinación
+  // —un adaptador simulado, o sin BANECO_ENV=prod— el proceso marcaría y usaría
+  // la base de la prueba sin que nada de lo de abajo se aplicara, y un detector
+  // simulado confirmaría o anularía cobros contra QRs que el banco sí emitió.
+  // Va antes que `hablaConProduccion`, que con BANECO_ENV distinto de `prod`
+  // saldría sin mirar nada. El mensaje nombra variables, nunca sus valores.
+  if (
+    env['MODO_PRUEBA_PRODUCCION'] === '1' &&
+    (env['BANECO_ENV'] !== 'prod' || env['QR_PROVIDER'] !== 'baneco' || env['PAYMENT_WATCHER'] !== 'baneco')
+  ) {
+    return (
+      'MODO_PRUEBA_PRODUCCION=1 es solo de la prueba real contra el banco: exige BANECO_ENV=prod y ' +
+      'que QR_PROVIDER y PAYMENT_WATCHER sean los dos baneco. Para cualquier otra corrida, ' +
+      'quite MODO_PRUEBA_PRODUCCION.'
+    );
+  }
   if (!hablaConProduccion(env)) {
     return null;
   }

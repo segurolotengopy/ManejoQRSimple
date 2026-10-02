@@ -65,6 +65,7 @@ const LIMITE_POR_DEFECTO = 50;
 const RIEL_PUBLICO: Readonly<Record<OrigenDeteccion, string>> = {
   'watcher-baneco': 'api-baneco',
   'scraper-yape': 'scraping-yape',
+  'watcher-simulado': 'simulado',
 };
 
 /**

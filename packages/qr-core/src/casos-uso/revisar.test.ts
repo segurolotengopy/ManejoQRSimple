@@ -16,6 +16,7 @@ import type { AbonoSinConciliar } from '../revision/abono-sin-conciliar.js';
 import { POLITICA_REVISION_POR_DEFECTO } from '../revision/revision.js';
 import { bs, enMinutos, T0, unCobro } from '../pruebas/fixtures.js';
 import {
+  conciliarDia,
   emitirQr,
   enviarQr,
   registrarComprobante,
@@ -337,5 +338,68 @@ describe('un abono sin corroborar que después se explica', () => {
       nivel: 'CRITICO',
       cobro: { id: cobro.id, estado: 'ENVIADO', registraElPago: false },
     });
+  });
+});
+
+describe('un abono simulado sobre un QR del banco no es «del banco»', () => {
+  const ABONO_SIMULADO = `simulado:${REFERENCIA}:${String(MONTO)}`;
+
+  /** Monto exacto, pero lo reportó un detector simulado: va a revisión. */
+  async function enRevisionPorSimulado() {
+    const base = armar();
+    const cobro = await enviado(base.deps);
+    base.watcher.cargarAbono(
+      REFERENCIA,
+      registrarDeteccion({
+        idDeduplicacion: ABONO_SIMULADO,
+        montoCentavos: bs(MONTO),
+        ocurridoEn: enMinutos(30),
+        origen: 'watcher-simulado',
+        referencia: null,
+      }),
+    );
+    const r = await verificarPago(base.deps, cobro, enMinutos(31));
+    if (!esExito(r) || r.valor.tipo !== 'EN_REVISION') throw new Error('debería quedar en revisión');
+    return { ...base, cobro: r.valor.cobro };
+  }
+
+  it('el caso se muestra sin abono y con su motivo propio', async () => {
+    const { deps } = await enRevisionPorSimulado();
+    const r = await listarRevision(deps, enMinutos(40));
+    expect(esExito(r)).toBe(true);
+    if (!esExito(r)) return;
+    expect(r.valor.casos[0]).toMatchObject({ motivo: 'RIEL_NO_CORRESPONDE', abono: null });
+  });
+
+  it('no se puede confirmar a mano: SIN_DETECCION_DEL_BANCO (regla #1)', async () => {
+    const { deps, cobro, cobros } = await enRevisionPorSimulado();
+    const r = await resolverRevision(
+      deps,
+      cobro,
+      { decision: 'CONFIRMADO', idDeduplicacion: ABONO_SIMULADO, motivo: 'el simulador dice que pagó' },
+      enMinutos(60),
+    );
+    expect(!esExito(r) && r.error.tipo).toBe('SIN_DETECCION_DEL_BANCO');
+    const guardado = await cobros.obtener(cobro.id);
+    expect(esExito(guardado) && guardado.valor?.estado).toBe('EN_REVISION');
+  });
+
+  it('si después llega el abono del banco, el caso pasa a ser confirmable', async () => {
+    const { deps, cobro, watcher } = await enRevisionPorSimulado();
+    watcher.cargarAbono(REFERENCIA, abono(MONTO, enMinutos(45), `baneco:${REFERENCIA}:tx-9`));
+
+    const cierre = await conciliarDia(deps, 'cuenta-a', enMinutos(45), enMinutos(60));
+    expect(esExito(cierre)).toBe(true);
+
+    const r = await listarRevision(deps, enMinutos(70));
+    expect(esExito(r) && r.valor.casos[0]?.abono?.idDeduplicacion).toBe(`baneco:${REFERENCIA}:tx-9`);
+
+    const confirmado = await resolverRevision(
+      deps,
+      cobro,
+      { decision: 'CONFIRMADO', idDeduplicacion: `baneco:${REFERENCIA}:tx-9`, motivo: 'el banco reportó el pago' },
+      enMinutos(80),
+    );
+    expect(esExito(confirmado) && confirmado.valor.estado).toBe('CONFIRMADO');
   });
 });

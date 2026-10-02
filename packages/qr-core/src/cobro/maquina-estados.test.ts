@@ -29,7 +29,7 @@ async function constancia(referenciaProveedor: string): Promise<QrAnulado> {
 /** Un abono aceptado por la única vía: el banco lo reportó para ese cobro. */
 function abonoAceptado(cobroId: string): AbonoAceptado {
   const id = 'baneco:qr-000001:tx-1';
-  const r = aceptarAbono({ id: cobroId }, [{ cobroId, evento: 'PAGO_DETECTADO', datos: { idDeduplicacion: id } }], id);
+  const r = aceptarAbono({ id: cobroId, qrVigente: null }, [{ cobroId, evento: 'PAGO_DETECTADO', datos: { idDeduplicacion: id } }], id);
   if (!esExito(r)) {
     throw new Error('el abono de fixture debería aceptarse');
   }

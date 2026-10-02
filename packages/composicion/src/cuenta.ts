@@ -17,6 +17,7 @@ export const CUENTA_POR_DEFECTO = 'prod';
 
 import {
   atribuirCuentaALoAnterior,
+  contarDatosSimulados,
   contarSinCuentaDeCobro,
   explicarMarca,
   type MarcaDeCuenta,
@@ -95,6 +96,18 @@ export type ErrorPreparacionDeCuenta =
       readonly pendientesDeOtraCuenta: number;
       readonly mensaje: string;
     }
+  /**
+   * La base de la prueba trae datos de un proceso simulado (abonos de
+   * `abonos/*` o cobros con QR simulado). La prueba real no arranca sobre ellos:
+   * su watcher, o alguien con un documento a mano, podría haber dejado ahí algo
+   * que se confunda con un pago. Solo conteos: nunca ids.
+   */
+  | {
+      readonly tipo: 'DATOS_SIMULADOS';
+      readonly abonos: number;
+      readonly cobros: number;
+      readonly mensaje: string;
+    }
   /** Firestore falló al comprobarlo: no se sabe qué hay, así que no se arranca. */
   | { readonly tipo: 'NO_SE_PUDO_COMPROBAR'; readonly mensaje: string };
 
@@ -145,6 +158,33 @@ export async function prepararDatosDeLaCuenta(
   let marcaRecienPuesta = false;
 
   if (opciones.modoPrueba) {
+    // Antes de atribuir nada: la base de la prueba es solo de la prueba real.
+    // Un proceso simulado que arrancó antes de que existiera la marca pudo
+    // dejar abonos o cobros simulados (D2, carrera de arranque).
+    const simulados = await contarDatosSimulados(db);
+    if (simulados.tipo === 'ERROR') {
+      return fallo({
+        tipo: 'NO_SE_PUDO_COMPROBAR',
+        mensaje:
+          'No se pudo comprobar si la base trae datos de un proceso simulado. ' +
+          '¿Está corriendo el emulador? Sin esa comprobación no se arranca.',
+      });
+    }
+    if (simulados.abonos + simulados.cobros > 0) {
+      return fallo({
+        tipo: 'DATOS_SIMULADOS',
+        abonos: simulados.abonos,
+        cobros: simulados.cobros,
+        mensaje:
+          `La base de la prueba trae ${String(simulados.abonos)} abono(s) de abonos/* y ` +
+          `${String(simulados.cobros)} cobro(s) con QR simulado: los dejó un proceso simulado. ` +
+          'La prueba en producción no arranca sobre ellos. ANTES de empezar de cero, cierre o anule en el ' +
+          'banco los cobros reales que sigan pendientes (o espere a que venzan: el banco vence los QR por ' +
+          'día, no por hora): borrar el emulador los dejaría pagables y sin que nadie los vigile. ' +
+          'Después respalde el emulador y empiece de cero ' +
+          '(docs/Integraciones/baneco/03-prueba-en-produccion.md).',
+      });
+    }
     const { marca } = opciones;
     switch (marca.tipo) {
       case 'MARCADA':

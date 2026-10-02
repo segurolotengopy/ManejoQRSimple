@@ -20,6 +20,7 @@ import {
   exito,
   fallo,
   MOTIVOS_ABONO_SIN_CONCILIAR,
+  ORIGENES_DETECCION,
   type AbonoSinConciliar,
   type AbonosSinConciliarStore,
   type ErrorPuerto,
@@ -45,7 +46,7 @@ const abonoDoc = z.object({
   cobroId: z.string().min(1).nullable(),
   montoCentavos: z.number().int().nonnegative(),
   ocurridoEn: marcaDeTiempo,
-  origen: z.enum(['watcher-baneco', 'scraper-yape']),
+  origen: z.enum(ORIGENES_DETECCION),
   // Obligatorio, como en el cobro: la cuenta en la que cayó el pago.
   cuentaCobro: z.string().regex(ALIAS_DE_CUENTA),
   registradoEn: marcaDeTiempo,

@@ -146,3 +146,51 @@ describe('la barrera y los lectores reales dicen lo mismo', () => {
     expect(contraProduccion).toBeGreaterThanOrEqual(5);
   });
 });
+
+describe('MODO_PRUEBA_PRODUCCION=1 es solo de la prueba real: producción y los dos adaptadores del banco', () => {
+  const EMULADOR = { FIRESTORE_EMULATOR_HOST: 'localhost:8080' };
+  const MODO = { MODO_PRUEBA_PRODUCCION: '1' };
+
+  it.each([
+    ['mock', 'mock'],
+    ['mock', 'simulado'],
+    ['simulado', 'simulado'],
+    ['baneco', 'mock'],
+    ['mock', 'baneco'],
+  ])('con ambiente prod, QR_PROVIDER=%s y PAYMENT_WATCHER=%s no arranca', (qr, watcher) => {
+    const motivo = verificarProduccion({ ...MODO, ...EMULADOR, BANECO_ENV: 'prod', QR_PROVIDER: qr, PAYMENT_WATCHER: watcher });
+    expect(motivo).toMatch(/MODO_PRUEBA_PRODUCCION=1/);
+    expect(motivo).toMatch(/QR_PROVIDER y PAYMENT_WATCHER/);
+    // Nombra variables, nunca los valores que tenían.
+    expect(motivo).not.toMatch(/simulado|mock|yape/);
+  });
+
+  it('los adaptadores simulados con el modo prueba y sin BANECO_ENV no arrancan: antes pasaban', () => {
+    expect(verificarProduccion({ ...MODO, ...EMULADOR, QR_PROVIDER: 'mock', PAYMENT_WATCHER: 'simulado' })).toMatch(
+      /MODO_PRUEBA_PRODUCCION=1/,
+    );
+    expect(verificarProduccion({ ...MODO, ...EMULADOR })).toMatch(/MODO_PRUEBA_PRODUCCION=1/);
+  });
+
+  it('baneco/baneco sin BANECO_ENV=prod tampoco arranca', () => {
+    expect(verificarProduccion({ ...MODO, ...EMULADOR, QR_PROVIDER: 'baneco', PAYMENT_WATCHER: 'baneco' })).toMatch(
+      /BANECO_ENV=prod/,
+    );
+  });
+
+  it('baneco/baneco contra certificación con el modo prueba no arranca', () => {
+    expect(
+      verificarProduccion({ ...MODO, ...EMULADOR, BANECO_ENV: 'cert', QR_PROVIDER: 'baneco', PAYMENT_WATCHER: 'baneco' }),
+    ).toMatch(/BANECO_ENV=prod/);
+  });
+
+  it('la prueba real —prod, baneco/baneco, emulador— arranca', () => {
+    expect(
+      verificarProduccion({ ...MODO, ...EMULADOR, BANECO_ENV: 'prod', QR_PROVIDER: 'baneco', PAYMENT_WATCHER: 'baneco' }),
+    ).toBeNull();
+  });
+
+  it('sin el modo prueba, el demo con mocks sigue arrancando', () => {
+    expect(verificarProduccion({ QR_PROVIDER: 'mock', PAYMENT_WATCHER: 'simulado', ...EMULADOR })).toBeNull();
+  });
+});

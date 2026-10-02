@@ -48,7 +48,7 @@ import {
   MessagingProviderEnMemoria,
   POLITICA_POR_DEFECTO,
   PaymentWatcherEnMemoria,
-  QrProviderEnMemoria,
+  QrProviderSimulado,
   esExito,
   exito,
   fallo,
@@ -246,9 +246,10 @@ function elegirQr(
     case 'mock':
     case 'simulado':
       // Para emitir QRs no hay diferencia entre "mock" y "simulado": los dos
-      // producen un QR de mentira. La distinción solo importa del lado del
-      // watcher, que es donde el simulador aporta algo.
-      return exito(new QrProviderEnMemoria());
+      // producen un QR de mentira, y lo declaran: origen `simulado`. Así el
+      // dominio no deja que una detección simulada confirme un QR del banco, ni
+      // al revés (regla #1). La distinción solo importa del lado del watcher.
+      return exito(new QrProviderSimulado());
     case 'baneco':
       // `baneco` no es null: se construyó arriba justamente porque este modo lo pide.
       return baneco === null

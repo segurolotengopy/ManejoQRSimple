@@ -4,7 +4,9 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-10-01, sesión «bloque 4: el pase a producción». **Empezó con un
+**Última actualización:** 2026-10-02, sesión «4B2: un detector simulado no confirma un QR real» (rama
+`fix/detector-simulado-prod`, sin commitear al cierre de esta nota; decisión 27). Antes, 2026-10-01,
+sesión «bloque 4: el pase a producción». **Empezó con un
 análisis y un acta, no con un pase, y la conclusión es que no procede todavía** (decisión 25). Hoy
 no existe una arquitectura de producción: el sistema corre a mano en la máquina del dueño, sin
 dónde desplegar ni staging, y de los 56 controles bloqueantes del checklist del estándar hay 18 en
@@ -314,6 +316,15 @@ Además se cerró **C9: no hay comisión bancaria** (decisión 17).
       runbook qué se hace ante una sospecha de filtración. La palanca conocida es pedirle al banco que
       bloquee al usuario API, que ya se bloquea con intentos fallidos y se desbloquea solo en agencia
       (B4). Hay que registrarlo como riesgo aceptado cuando se rehaga el acta (SEC-10).
+
+27. **`MODO_PRUEBA_PRODUCCION=1` es solo de la prueba real (4B2, 2026-10-02).** Exige
+    `BANECO_ENV=prod` y `QR_PROVIDER` y `PAYMENT_WATCHER` los dos en `baneco`. Antes, con
+    adaptadores simulados y sin `BANECO_ENV=prod`, la barrera dejaba pasar el proceso y este marcaba y
+    usaba la base de la prueba (el mismo agujero que 4B2, por otra puerta). Se verificó que ningún
+    script ni documento lo usa con `mock`: solo `prueba:api` y `prueba:satelite`, los dos en
+    `baneco/baneco`. La regla de la base se escribió como «una base marcada solo la toca la prueba
+    real» y no como «los adaptadores simulados no la tocan», porque un proceso `baneco/baneco` de
+    certificación sobre esa base también la contaminaría.
 
 ## Estado actual
 
@@ -633,6 +644,40 @@ ver la decisión 25. Para que un cobro real llegue a `ENVIADO` por WhatsApp sigu
       siguen arrancando igual: los scripts de `npm` ya fijaban los dos. **Límite:** cierra el hueco
       *dentro de un proceso*. Una auditoría independiente sin bloqueantes encontró dos hallazgos
       anteriores a este cambio, que quedan como los pasos 4B2 y 4B3 de abajo.
+- [x] **2026-10-02 — Bloque 4, 4B2: un detector simulado no confirma un QR real** (rama
+      `fix/detector-simulado-prod`; decisión 27). Dos capas. **(a)** Ningún proceso que no sea la
+      prueba real arranca, ni sigue corriendo, contra una base con la marca
+      `configuracion/cuentaDePrueba`: la API y el satélite lo comprueban al arrancar, el satélite lo
+      repite en cada pasada, `demo:sembrar` y `demo:pagar` también, una marca ilegible cuenta como
+      presente y, si la lectura falla, no se arranca. A la inversa, la prueba real no arranca si la
+      base trae abonos de `abonos/*` o cobros con QR simulado. **(b)** La conciliación exige que el
+      riel de la detección corresponda al origen del QR (`QRS_DEL_RIEL`, tabla total): el QR del demo
+      es ahora de origen `simulado` (`QrProviderSimulado`), el watcher de `abonos/*` fija él mismo
+      `watcher-simulado` y no copia el origen del documento, y un abono simulado sobre un QR real va a
+      `EN_REVISION` con el motivo `RIEL_NO_CORRESPONDE`. Ese abono no cuenta como «del banco» para la
+      revisión manual (`aceptarAbono` y `ultimaDeteccion` lo ignoran): no se puede aceptar a mano, y
+      si luego llega el abono del banco, el caso pasa a ser confirmable. Pruebas: matriz de rieles ×
+      QRs, el caso adverso (documento con `origen: 'watcher-baneco'`) y el 4B2 completo contra el
+      emulador; la prueba de la pasada del satélite falla si la tabla deja pasar el par. **Datos
+      guardados:** los enums solo se amplían y la evidencia no se reescribe; un cobro del demo
+      anterior a este cambio, con QR `api-baneco`, irá a `EN_REVISION` ante un abono simulado (los
+      emuladores del demo son efímeros). **Revisión y auditoría:** la evidencia heredada del incidente
+      (`origenDeteccion: 'watcher-baneco'` con clave `simulado:…`) no cuenta como «del banco»: el
+      filtro ata también la clave al riel (`deteccionDelRiel`: solo el banco usa claves `baneco:`) y es
+      cerrado por defecto; `QrProviderSimulado.anular` rechaza lo que no emitió un simulador; el
+      lector de `abonos/*` descarta ids `baneco:…`; el satélite, ante un fallo pasajero de lectura de
+      la marca, salta la pasada en vez de salir (al arrancar sigue siendo falla cerrada); y las
+      pruebas del emulador se niegan a borrar sobre una base marcada. **Límites** (también en
+      `docs/11`, junto a 4B2-bis): el filtro compara contra el QR vigente y no contra el que pagó la
+      detección; `contarDatosSimulados` no cuenta la evidencia heredada (exigiría un índice de grupo
+      de colección); y la prueba marca la base aunque luego se rechace por `DATOS_SIMULADOS`; **la API del demo
+      comprueba la marca solo al arrancar**, no en cada petición (propuesta en `docs/11`: releer con
+      `decidirSobreLaBase(…, 'PASADA')` antes de cada escritura y responder 503; costo en lecturas a
+      evaluar).
+      Antes de «empezar de cero» sobre una base con datos simulados hay que cerrar o anular en el
+      banco los cobros reales pendientes. **Residual:** una API del demo que arrancó antes de que se
+      marcara la base puede «anular» con el mock un QR real hasta que se la reinicie; el pago, si
+      llega, queda como abono tardío en revisión y no se pierde.
 - [x] **2026-10-01 — Bloque 4, inicio: acta y análisis de brechas** (decisión 25). Evidencia reunida
       solo con consultas, sin escribir en GitHub: ruleset, Environments y secretos (ninguno), alertas
       (Dependabot, Code Scanning y secretos en 0), `security-local.sh` aprobado (informe
@@ -863,7 +908,9 @@ PR #67 ya está dentro. Lo que sigue, en orden de importancia.
    `02-hallazgos-produccion.md` §6).
 3. **Contrato para consumidores, bloque 4:** pase a producción. **Empezado: ver la decisión 25.**
    Hallazgos de la auditoría de la barrera, aún sin construir:
-   - **4B2, media (T1, reglas 1 y BANECO-1): un watcher simulado de OTRO proceso confirma un QR real
+   - **4B2: HECHO el 2026-10-02 (ver «Hecho» y la decisión 27).** Se conserva la descripción del
+     hallazgo.
+     **4B2, media (T1, reglas 1 y BANECO-1): un watcher simulado de OTRO proceso confirma un QR real
      del emulador de la prueba.** Con `prueba:emulador` y `prueba:api` arriba, alguien corre
      `demo:pagar -- <id>` y `satelite:demo` con `FIRESTORE_EMULATOR_HOST` exportado: `satelite:demo`
      no tiene `BANECO_ENV`, así que la barrera lo deja pasar, no está en modo prueba y no revisa la

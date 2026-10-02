@@ -17,6 +17,7 @@ import {
   POLITICA_POR_DEFECTO,
   PaymentWatcherEnMemoria,
   QrProviderEnMemoria,
+  QrProviderSimulado,
   centavos,
   esExito,
   exito,
@@ -378,6 +379,33 @@ describe('estado del cobro', () => {
     });
     // Ni la clave del banco ni el id de su QR salen hacia el consumidor.
     expect(JSON.stringify(r.cuerpo)).not.toContain(referencia);
+  });
+
+  it('el riel de un cobro del demo se informa como «simulado»', async () => {
+    const { ctx, watcher, cobros } = armar(new QrProviderSimulado(() => AHORA));
+    const creado = await crear(ctx);
+    const id = String(cobroDe(creado)['id']);
+
+    const guardado = await cobros.obtener(id);
+    if (!esExito(guardado) || guardado.valor?.qrVigente == null) throw new Error('debería tener QR');
+    expect(guardado.valor.qrVigente.origen).toBe('simulado');
+    const referencia = guardado.valor.qrVigente.referenciaProveedor;
+    watcher.cargarAbono(
+      referencia,
+      registrarDeteccion({
+        idDeduplicacion: `simulado:${referencia}:15050`,
+        montoCentavos: monto(15_050),
+        ocurridoEn: AHORA,
+        origen: 'watcher-simulado',
+        referencia: null,
+      }),
+    );
+    const { verificarPago } = await import('@mqs/qr-core');
+    await verificarPago(ctx.deps, guardado.valor, AHORA);
+
+    const r = await enrutar(ctx, verificador, pedir('GET', `/api/v1/cobros/${id}`));
+    expect(cobroDe(r)['estado']).toBe('CONFIRMADO');
+    expect(cobroDe(r)['pago']).toMatchObject({ riel: 'simulado' });
   });
 
   it('un cobro de otro consumidor es 404, no 403', async () => {

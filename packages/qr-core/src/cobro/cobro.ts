@@ -14,7 +14,7 @@ export const PROVEEDORES = ['baneco', 'yape'] as const;
 export type Proveedor = (typeof PROVEEDORES)[number];
 
 /** De dónde salió la imagen del QR (docs/02 §3, docs/03 §5). */
-export const ORIGENES_QR = ['api-baneco', 'carga-manual', 'consola-asistida'] as const;
+export const ORIGENES_QR = ['api-baneco', 'carga-manual', 'consola-asistida', 'simulado'] as const;
 export type OrigenQr = (typeof ORIGENES_QR)[number];
 
 /**

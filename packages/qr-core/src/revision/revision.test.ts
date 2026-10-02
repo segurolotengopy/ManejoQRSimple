@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { EstadoCobro } from '../cobro/estados.js';
 import type { RegistroEvidencia, TipoEvento, ValorEvidencia } from '../cobro/maquina-estados.js';
-import { enMinutos, unCobroEn } from '../pruebas/fixtures.js';
+import { enMinutos, T0, unCobroEn } from '../pruebas/fixtures.js';
 import {
   construirCaso,
   nivelDeAlerta,
@@ -88,7 +88,42 @@ describe('construirCaso()', () => {
 describe('ultimaDeteccion()', () => {
   it('ignora registros con datos malformados en vez de inventar un abono', () => {
     const malformado = [reg('PAGO_DETECTADO', 'ENVIADO', 'PAGO_DETECTADO', 5, { idDeduplicacion: 'x', montoCentavos: 1.5 })];
-    expect(ultimaDeteccion(malformado)).toBeNull();
+    expect(ultimaDeteccion(malformado, null)).toBeNull();
+  });
+});
+
+describe('ultimaDeteccion(): solo cuentan las detecciones del riel del QR', () => {
+  const datos = (id: string, origenDeteccion: string) => ({
+    idDeduplicacion: id,
+    montoCentavos: 100,
+    ocurridoEn: T0.toISOString(),
+    origenDeteccion,
+  });
+
+  it('descarta el abono simulado sobre un QR real y deja el del banco', () => {
+    const registros = [
+      reg('PAGO_DETECTADO', 'ENVIADO', 'PAGO_DETECTADO', 5, datos('baneco:qr-1:tx-1', 'watcher-baneco')),
+      reg('DETECCION_EN_REVISION', 'EN_REVISION', 'EN_REVISION', 6, datos('sim-1', 'watcher-simulado')),
+    ];
+    expect(ultimaDeteccion(registros, 'api-baneco')?.idDeduplicacion).toBe('baneco:qr-1:tx-1');
+  });
+
+  it('con solo un abono simulado sobre un QR real no hay abono', () => {
+    const registros = [reg('PAGO_DETECTADO', 'ENVIADO', 'PAGO_DETECTADO', 5, datos('sim-1', 'watcher-simulado'))];
+    expect(ultimaDeteccion(registros, 'api-baneco')).toBeNull();
+  });
+
+  it('es cerrado: sin riel declarado, o con la clave de otro riel, no cuenta (evidencia heredada)', () => {
+    const sinRiel = { idDeduplicacion: 'baneco:qr-1:tx-1', montoCentavos: 100, ocurridoEn: T0.toISOString() };
+    expect(ultimaDeteccion([reg('PAGO_DETECTADO', 'ENVIADO', 'PAGO_DETECTADO', 5, sinRiel)], 'api-baneco')).toBeNull();
+    // El incidente 4B2 dejó evidencia que dice `watcher-baneco` con una clave simulada.
+    const heredada = datos('simulado:qr-1:100', 'watcher-baneco');
+    expect(ultimaDeteccion([reg('PAGO_DETECTADO', 'ENVIADO', 'PAGO_DETECTADO', 5, heredada)], 'api-baneco')).toBeNull();
+  });
+
+  it('sin QR vigente no se filtra por riel', () => {
+    const registros = [reg('PAGO_DETECTADO', 'ENVIADO', 'PAGO_DETECTADO', 5, datos('sim-1', 'watcher-simulado'))];
+    expect(ultimaDeteccion(registros, null)?.idDeduplicacion).toBe('sim-1');
   });
 });
 

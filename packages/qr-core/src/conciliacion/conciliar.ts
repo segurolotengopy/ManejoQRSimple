@@ -17,9 +17,9 @@
 import type { Centavos } from '../comun/dinero.js';
 import { sonIguales } from '../comun/dinero.js';
 import { exito, fallo, type Resultado } from '../comun/resultado.js';
-import type { Cobro } from '../cobro/cobro.js';
+import type { Cobro, OrigenQr } from '../cobro/cobro.js';
 import type { EstadoCobro } from '../cobro/estados.js';
-import type { DeteccionDePago } from './deteccion.js';
+import { rielCorresponde, type DeteccionDePago, type OrigenDeteccion } from './deteccion.js';
 
 declare const marcaConciliacion: unique symbol;
 
@@ -44,7 +44,12 @@ export type MotivoRechazo =
     }
   | { readonly tipo: 'DUPLICADO'; readonly idDeduplicacion: string }
   | { readonly tipo: 'ESTADO_NO_CONCILIABLE'; readonly estado: EstadoCobro }
-  | { readonly tipo: 'SIN_QR_EMITIDO' };
+  | { readonly tipo: 'SIN_QR_EMITIDO' }
+  | {
+      readonly tipo: 'RIEL_NO_CORRESPONDE';
+      readonly origenDeteccion: OrigenDeteccion;
+      readonly origenQr: OrigenQr;
+    };
 
 export type PoliticaConciliacion = {
   /**
@@ -88,6 +93,16 @@ export function conciliar(args: {
 
   if (cobro.qrVigente === null) {
     return fallo({ tipo: 'SIN_QR_EMITIDO' });
+  }
+
+  // El riel de la detección tiene que ser el que corresponde al QR: un
+  // detector simulado no confirma un QR real, ni al revés (regla #1).
+  if (!rielCorresponde(deteccion.origen, cobro.qrVigente.origen)) {
+    return fallo({
+      tipo: 'RIEL_NO_CORRESPONDE',
+      origenDeteccion: deteccion.origen,
+      origenQr: cobro.qrVigente.origen,
+    });
   }
 
   // Monto exacto: sin tolerancia, sin redondeo (reglas #5 y #1).

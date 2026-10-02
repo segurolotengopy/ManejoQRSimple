@@ -89,8 +89,15 @@ export {
 } from './conciliacion/conciliar.js';
 export {
   claveBaneco,
+  claveDelRiel,
   claveHash,
+  deteccionDelRiel,
+  esOrigenDeteccion,
+  ORIGENES_DETECCION,
+  PREFIJO_CLAVE_BANECO,
+  QRS_DEL_RIEL,
   registrarDeteccion,
+  rielCorresponde,
   type DeteccionDePago,
   type OrigenDeteccion,
 } from './conciliacion/deteccion.js';
@@ -229,5 +236,6 @@ export {
   NotificadorSinDestinos,
   PaymentWatcherEnMemoria,
   QrProviderEnMemoria,
+  QrProviderSimulado,
   type MensajeEnviado,
 } from './ports/mocks.js';

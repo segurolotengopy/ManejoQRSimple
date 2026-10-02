@@ -83,7 +83,7 @@ function armar(qr: QrContado = new QrContado(() => T0)) {
     politica: POLITICA_POR_DEFECTO,
     abonosSinConciliar,
   };
-  return { deps, evidencia, cobros, watcher, mensajeria, qr, abonosSinConciliar };
+  return { deps, evidencia, cobros, watcher, mensajeria, qr, abonosSinConciliar, avisos };
 }
 
 function abono(sobrescribir: Partial<{ monto: number; ocurridoEn: Date }> = {}): DeteccionDePago {
@@ -892,5 +892,68 @@ describe('la anulación compensatoria de emitirQr', () => {
 
     expect(esExito(r)).toBe(false);
     expect(!esExito(r) && r.error.tipo).toBe('QR_SUELTO_EN_EL_PROVEEDOR');
+  });
+});
+
+describe('un detector simulado no confirma un QR del banco (regla #1)', () => {
+  /** La detección que deja un proceso simulado: mismo abono, otro riel. */
+  function abonoSimulado(): DeteccionDePago {
+    return registrarDeteccion({
+      idDeduplicacion: 'simulado:mock-qr-000001:12345',
+      montoCentavos: bs(MONTO),
+      ocurridoEn: enMinutos(30),
+      origen: 'watcher-simulado',
+      referencia: 'Pago',
+    });
+  }
+
+  function confirmacionesEnviadas(mensajeria: MessagingProviderEnMemoria) {
+    return mensajeria.enviados.filter((m) => m.tipo === 'confirmacion');
+  }
+
+  it('verificarPago: monto exacto y vigente, pero el riel no corresponde: EN_REVISION', async () => {
+    const { deps, watcher, mensajeria, evidencia, cobros, avisos } = armar();
+    const cobro = await hastaEnviado(deps);
+    watcher.cargarAbono(REFERENCIA, abonoSimulado());
+
+    const r = await verificarPago(deps, cobro, enMinutos(31));
+    expect(esExito(r)).toBe(true);
+    if (!esExito(r) || r.valor.tipo !== 'EN_REVISION') {
+      throw new Error('debería quedar en revisión');
+    }
+    expect(r.valor.motivo).toEqual({
+      tipo: 'RIEL_NO_CORRESPONDE',
+      origenDeteccion: 'watcher-simulado',
+      origenQr: 'api-baneco',
+    });
+    expect(await estadoGuardado(cobros)).toBe('EN_REVISION');
+
+    const registros = await evidencia.listarDeCobro('cobro-1');
+    const fallida = esExito(registros) ? registros.valor.find((x) => x.evento === 'CONCILIACION_FALLIDA') : undefined;
+    expect(fallida?.datos['motivo']).toBe('RIEL_NO_CORRESPONDE');
+    // El riel de la detección queda en el registro de la detección misma.
+    const detectada = esExito(registros) ? registros.valor.find((x) => x.evento === 'PAGO_DETECTADO') : undefined;
+    expect(detectada?.datos['origenDeteccion']).toBe('watcher-simulado');
+    expect(detectada?.datos['origenQr']).toBeUndefined();
+
+    expect(confirmacionesEnviadas(mensajeria)).toEqual([]);
+    const pendientes = await avisos.contarPendientes();
+    expect(esExito(pendientes) && pendientes.valor).toBe(0);
+  });
+
+  it('conciliarDia: el mismo abono en el reporte del día tampoco confirma', async () => {
+    const { deps, watcher, mensajeria, cobros, avisos } = armar();
+    await hastaEnviado(deps);
+    watcher.cargarAbono(REFERENCIA, abonoSimulado());
+
+    const r = await conciliarDia(deps, CUENTA, enMinutos(30), enMinutos(35));
+    expect(esExito(r)).toBe(true);
+    if (!esExito(r)) return;
+    expect(r.valor.confirmados).toEqual([]);
+    expect(r.valor.enRevision).toEqual(['cobro-1']);
+    expect(await estadoGuardado(cobros)).toBe('EN_REVISION');
+    expect(confirmacionesEnviadas(mensajeria)).toEqual([]);
+    const pendientes = await avisos.contarPendientes();
+    expect(esExito(pendientes) && pendientes.valor).toBe(0);
   });
 });

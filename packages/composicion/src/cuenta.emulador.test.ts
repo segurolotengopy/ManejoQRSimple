@@ -10,13 +10,14 @@ import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, Timestamp, type Firestore } from 'firebase-admin/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { fijarCuentaDePrueba } from '@mqs/firestore-store';
+import { BaseDeEmuladorDePruebas, fijarCuentaDePrueba } from '@mqs/firestore-store';
 import { esExito } from '@mqs/qr-core';
 
 import { leerAtribucionExplicita, prepararDatosDeLaCuenta } from './cuenta.js';
 
 let app: App;
 let db: Firestore;
+let base: BaseDeEmuladorDePruebas;
 
 const T0 = new Date('2026-08-27T12:00:00.000Z');
 
@@ -51,26 +52,40 @@ const abonoViejo = (): Record<string, unknown> => ({
 async function foto(): Promise<unknown> {
   const leer = async (coleccion: string) =>
     (await db.collection(coleccion).get()).docs.map((d) => [d.ref.path, d.data()]);
-  return { cobros: await leer('cobros'), abonos: await leer('abonosSinConciliar') };
+  return {
+    cobros: await leer('cobros'),
+    abonos: await leer('abonosSinConciliar'),
+    abonosDelWatcher: await leer('abonos'),
+    // La evidencia vive en una subcolección de cada cobro.
+    evidencia: (await db.collectionGroup('evidencia').get()).docs.map((d) => [d.ref.path, d.data()]),
+  };
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   const emulador = process.env['FIRESTORE_EMULATOR_HOST'];
   if (emulador === undefined || emulador === '') {
     throw new Error('FIRESTORE_EMULATOR_HOST no está definida. Estos tests solo corren contra el emulador.');
   }
   app = initializeApp({ projectId: 'manejoqrsimple' }, `composicion-${String(Date.now())}`);
   db = getFirestore(app);
+
+  // Estas pruebas borran colecciones enteras: nunca sobre la base de la prueba
+  // en producción (cobros reales) ni sobre una que no se pueda comprobar. La
+  // guarda se mira una sola vez, antes de borrar nada, y toda limpieza queda
+  // atada a que haya pasado (`BaseDeEmuladorDePruebas`).
+  base = new BaseDeEmuladorDePruebas(db);
+  await base.verificar();
 });
 
 afterAll(async () => {
+  // Aunque la guarda haya fallado, este gancho corre: sin verificación no borra
+  // nada —ni la marca de la prueba real— y solo cierra la app.
+  await base.cerrar();
   await deleteApp(app);
 });
 
 beforeEach(async () => {
-  await db.recursiveDelete(db.collection('cobros'));
-  await db.recursiveDelete(db.collection('abonosSinConciliar'));
-  await db.recursiveDelete(db.collection('configuracion'));
+  await base.limpiar();
 });
 
 /**
@@ -265,5 +280,57 @@ describe('prepararDatosDeLaCuenta() con la secuencia de los main.ts', () => {
     expect(esExito(r)).toBe(false);
     if (esExito(r)) return;
     expect(r.error).toMatchObject({ tipo: 'DATOS_SIN_CUENTA', cobros: 0, abonos: 0, pendientesDeOtraCuenta: 1 });
+  });
+});
+
+describe('prepararDatosDeLaCuenta(): la base de la prueba no trae datos de un proceso simulado', () => {
+  it('con un documento en abonos/*, la prueba no arranca y no escribe cobros, abonos ni evidencia', async () => {
+    // Un demo que subió antes de que existiera la marca dejó un abono simulado.
+    await db.collection('abonos').doc('simulado:qr-1:100').set({
+      referenciaProveedor: 'qr-1',
+      montoCentavos: 100,
+      ocurridoEn: Timestamp.fromDate(T0),
+      referencia: null,
+    });
+    const antes = await foto();
+
+    // Ojo: `arrancar` fija primero la marca (como los main.ts), así que la marca SÍ se crea
+    // aunque la prueba se rechace. Es inocua: es la marca de la prueba real, y `foto()` no
+    // la incluye a propósito. Lo que no puede pasar es que se escriba algo más.
+    const r = await arrancar('cuenta-a', true);
+
+    expect(esExito(r)).toBe(false);
+    if (esExito(r)) return;
+    expect(r.error).toMatchObject({ tipo: 'DATOS_SIMULADOS', abonos: 1, cobros: 0 });
+    expect(r.error.mensaje).toContain('cierre o anule en el');
+    expect(r.error.mensaje).toContain('ANTES de empezar de cero');
+    expect(r.error.mensaje).toContain('vence los QR por día');
+    // Solo conteos: ni ids ni contenido.
+    expect(r.error.mensaje).not.toContain('qr-1');
+    expect(await foto()).toEqual(antes);
+  });
+
+  it('con un cobro de QR simulado, tampoco', async () => {
+    await db.collection('cobros').doc('sim-1').set({
+      ...cobroViejo(),
+      cuentaCobro: 'cuenta-a',
+      qrVigente: {
+        qrVersion: 1,
+        referenciaProveedor: 'mock-qr-000001',
+        emitidoEn: Timestamp.fromDate(T0),
+        venceEn: Timestamp.fromDate(new Date(T0.getTime() + 3_600_000)),
+        origen: 'simulado',
+        imagenRef: null,
+        hashImagen: null,
+      },
+    });
+    const r = await arrancar('cuenta-a', true);
+    expect(!esExito(r) && r.error).toMatchObject({ tipo: 'DATOS_SIMULADOS', abonos: 0, cobros: 1 });
+  });
+
+  it('fuera de la prueba el chequeo no aplica: el demo convive con sus datos', async () => {
+    await db.collection('abonos').doc('simulado:qr-1:100').set({ referenciaProveedor: 'qr-1', montoCentavos: 100 });
+    const r = await arrancar('cuenta-a', false);
+    expect(esExito(r)).toBe(true);
   });
 });

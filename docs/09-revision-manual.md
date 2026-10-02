@@ -89,6 +89,17 @@ un solo uso y la deduplicación por cobro, prácticamente no debería ocurrir.
 - Mirá el extracto en la app del banco. Si de verdad hay dos créditos, el segundo se
   devuelve por fuera, y conviene reportarlo: significa que algo del sistema no funcionó.
 
+### Lo reportó un simulador, no el banco (`RIEL_NO_CORRESPONDE`)
+Un abono simulado (el de `demo:pagar` o cualquier documento en `abonos/*`) apareció sobre un
+cobro con un QR **real**. El monto puede ser exacto y estar en vigencia: da igual, el banco
+nunca vio ese pago y por eso el caso no muestra ningún abono y **no se puede aceptar**, ni a
+mano (regla #1).
+- **No rechace el caso antes del cierre del día**: si el cliente pagó de verdad, el cierre
+  adjunta el abono del banco y el caso pasa a ser confirmable.
+- Averigüe qué proceso simulado apuntó a la base de la prueba (`satelite:demo`, `demo:pagar` o
+  una API con adaptadores simulados): no debería haber arrancado, y es un incidente de
+  proceso aunque no se haya perdido plata.
+
 ### Pago a un QR vencido (`ABONO_TARDIO`)
 El QR ya estaba vencido y anulado, pero el pago entró (carrera de segundos entre la
 última consulta y la anulación, o un QR renovado que el cliente no recibió).

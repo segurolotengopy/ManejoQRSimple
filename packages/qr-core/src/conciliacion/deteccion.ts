@@ -11,6 +11,7 @@
 
 import { createHash } from 'node:crypto';
 
+import type { OrigenQr } from '../cobro/cobro.js';
 import type { Centavos } from '../comun/dinero.js';
 
 declare const marcaDeteccion: unique symbol;
@@ -23,13 +24,76 @@ declare const marcaDeteccion: unique symbol;
  * por ejemplo— lo haga contra esta lista y no contra una copia a mano. Un riel
  * nuevo acá alcanza a todos los que la usan.
  */
-export const ORIGENES_DETECCION = ['watcher-baneco', 'scraper-yape'] as const;
+export const ORIGENES_DETECCION = ['watcher-baneco', 'scraper-yape', 'watcher-simulado'] as const;
 
 export type OrigenDeteccion = (typeof ORIGENES_DETECCION)[number];
 
 /** ¿Este texto es uno de los rieles conocidos? */
 export function esOrigenDeteccion(valor: unknown): valor is OrigenDeteccion {
   return typeof valor === 'string' && (ORIGENES_DETECCION as readonly string[]).includes(valor);
+}
+
+/**
+ * Qué QRs puede pagar cada riel de detección. Es una tabla **total**: un riel
+ * nuevo obliga a decidir su fila, y no hay un camino por defecto que lo deje
+ * pasar.
+ *
+ * Existe porque un detector simulado (el del demo) no puede confirmar un QR
+ * que emitió el banco, ni uno real puede confirmar un QR simulado: la fuente
+ * de verdad de un pago es el riel que corresponde a su QR (regla #1).
+ */
+export const QRS_DEL_RIEL: Readonly<Record<OrigenDeteccion, readonly OrigenQr[]>> = {
+  'watcher-baneco': ['api-baneco'],
+  'scraper-yape': ['carga-manual', 'consola-asistida'],
+  'watcher-simulado': ['simulado'],
+};
+
+/** ¿Una detección de este riel puede pagar un QR de este origen? */
+export function rielCorresponde(origenDeteccion: OrigenDeteccion, origenQr: OrigenQr): boolean {
+  return QRS_DEL_RIEL[origenDeteccion].includes(origenQr);
+}
+
+/** El espacio de claves que solo el banco usa (`claveBaneco`). */
+export const PREFIJO_CLAVE_BANECO = 'baneco:';
+
+/**
+ * ¿La clave de deduplicación pertenece al espacio del riel? Solo el riel del
+ * banco usa claves `baneco:…` (`claveBaneco`), y **ningún otro** puede usarlas:
+ * un documento que dice ser del banco pero trae una clave de otro formato (la
+ * evidencia heredada del incidente 4B2 tiene `watcher-baneco` con una clave
+ * `simulado:…`), o un detector simulado que reclama una clave real, no cuentan.
+ */
+export function claveDelRiel(origenDeteccion: OrigenDeteccion, idDeduplicacion: string): boolean {
+  const esDeBaneco = idDeduplicacion.startsWith(PREFIJO_CLAVE_BANECO);
+  return origenDeteccion === 'watcher-baneco' ? esDeBaneco : !esDeBaneco;
+}
+
+/**
+ * ¿Este registro de evidencia lleva una detección **del riel que corresponde**
+ * al QR vigente del cobro? Es la única regla con la que `aceptarAbono` y
+ * `ultimaDeteccion` deciden qué detecciones son «del banco»; no se copia.
+ *
+ * Cerrada por defecto: con QR vigente, el registro cuenta solo si declara un
+ * riel conocido, ese riel paga el QR (`rielCorresponde`) y su clave es de ese
+ * riel (`claveDelRiel`). Sin riel declarado, con un riel desconocido o sin
+ * clave, no cuenta. Sin QR vigente (`null`) no hay con qué comparar y cuenta,
+ * como antes.
+ */
+export function deteccionDelRiel(
+  datos: Readonly<Record<string, unknown>>,
+  origenQr: OrigenQr | null,
+): boolean {
+  if (origenQr === null) {
+    return true;
+  }
+  const origenDeteccion = datos['origenDeteccion'];
+  const idDeduplicacion = datos['idDeduplicacion'];
+  return (
+    esOrigenDeteccion(origenDeteccion) &&
+    typeof idDeduplicacion === 'string' &&
+    rielCorresponde(origenDeteccion, origenQr) &&
+    claveDelRiel(origenDeteccion, idDeduplicacion)
+  );
 }
 
 export type DeteccionDePago = {

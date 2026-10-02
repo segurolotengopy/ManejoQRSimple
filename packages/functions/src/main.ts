@@ -21,7 +21,9 @@ import {
   fijarCuentaDePrueba,
   leerAtribucionExplicita,
   leerCuentaDeCobro,
+  leerPresenciaDeMarca,
   prepararDatosDeLaCuenta,
+  verificarBaseDelProceso,
   verificarProduccion,
   type AtribucionExplicita,
   type MarcaDeCuenta,
@@ -121,6 +123,14 @@ async function main(): Promise<number> {
   );
 
   const db = conectarFirestore();
+  // La base marcada como la de la prueba en producción solo la usa la prueba
+  // real: con otros adaptadores, esta API confirmaría o anularía contra QRs que
+  // el banco sí emitió. Antes de armar los puertos, para no construir nada.
+  const problemaDeBase = await verificarBaseDelProceso(process.env, () => leerPresenciaDeMarca(db));
+  if (problemaDeBase !== null) {
+    console.error(`✖ ${problemaDeBase}`);
+    return 1;
+  }
   const puertos = construirPuertos({
     env: process.env,
     db,

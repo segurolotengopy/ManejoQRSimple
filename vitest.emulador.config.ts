@@ -21,6 +21,11 @@ export default defineConfig({
     alias: {
       '@mqs/qr-core': paquete('qr-core'),
       '@mqs/firestore-store': paquete('firestore-store'),
+      // Para las pruebas que cablean el sistema entero (composición + satélite)
+      // contra el emulador: tienen que correr contra el mismo código fuente.
+      '@mqs/baneco-gateway': paquete('baneco-gateway'),
+      '@mqs/avisos-consumidor': paquete('avisos-consumidor'),
+      '@mqs/composicion': paquete('composicion'),
     },
   },
   test: {

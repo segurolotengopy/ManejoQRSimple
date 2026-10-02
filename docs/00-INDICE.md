@@ -43,6 +43,7 @@ se referencian desde ahí con la sintaxis `@docs/archivo.md` cuando hacen falta.
 | 08  | [`08-agentes.md`](08-agentes.md) | Subagentes de Claude Code por etapa, con su justificación |
 | 09  | [`09-revision-manual.md`](09-revision-manual.md) | Cobros en revisión: alertas, rutina diaria y qué hacer con cada caso |
 | 10  | [`10-contrato-consumidores.md`](10-contrato-consumidores.md) | Contrato para otros productos: crear un cobro, saber si se pagó y anularlo, sin conocer el banco |
+| 11  | [`11-produccion-brechas-y-plan.md`](11-produccion-brechas-y-plan.md) | Bloque 4: qué falta para producción, opciones de despliegue, plan por bloques y decisiones del dueño |
 | —   | [`ESTADO.md`](ESTADO.md) | **Bitácora de avance. Leer al empezar, actualizar al cerrar cada sesión.** |
 
 ## Carpetas auxiliares
@@ -52,6 +53,7 @@ docs/consola-yape/       Capturas de la consola Yape BCP aportadas por el dueño
                          Fuente de verdad del mapeo de selectores del scraper.
 docs/Integraciones/      Documentación técnica de proveedores externos
                          (BCP, BCB, Meta). Nunca suelta en la raíz de docs/.
+docs/produccion/         Actas de pase a producción (formato del estándar DevSecOps).
 ```
 
 ## Archivos de configuración incluidos

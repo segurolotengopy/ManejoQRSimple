@@ -12,9 +12,12 @@
   si es el caso, decidir con el dueño ANTES de habilitar billing y registrar la
   decisión en ESTADO.md — mismo criterio de WhatsApp-Modular con GCP
   (su proyecto se mantuvo sin billing hasta necesitarlo).
-  **Resuelto para Baneco (D2 y D3, 2026-08-27):** la llamada al banco no corre en
-  Functions sino en el **satélite** (`@mqs/baneco-satelite`, fuera de Firebase), así
-  que Spark alcanza: Functions no necesita salida a internet. Sin webhook en la
+  **Resuelto para Baneco (D2 y D3, 2026-08-27), y corregido el 2026-10-01:** la
+  *vigilancia* del pago corre en el **satélite** (`@mqs/baneco-satelite`, fuera de
+  Firebase), pero **la API también llama al banco** al emitir, anular y verificar un
+  cobro (`functions/src/api/handlers.ts`, `consumidores.ts`). Cualquier despliegue de la
+  API necesita salida a internet y, en Firebase o GCP, el plan Blaze, no Spark (ver
+  `docs/11` §2.4). Sin webhook en la
   primera etapa (D3, confirmado por el banco en D4): no hay endpoint público que
   exponer. Si algún día se habilita (Hito B3), el endpoint y su decisión de plan se
   registran acá.
@@ -80,7 +83,10 @@ leer los cobros pendientes y escribir estado y evidencia. Se pasa por
 | prueba en producción | emulador local persistente, uno por cuenta de cobro (`~/.manejoqr/emulador-<cuenta>`) | cobros reales de Bs 1 del dueño contra la API de producción del banco, con topes (docs/Integraciones/baneco/03) |
 | demo | proyecto ManejoQRSimple | cobros reales de demostración del dueño |
 
-Sin entorno de producción hasta tener API oficial (alcance declarado del proyecto).
+~~Sin entorno de producción hasta tener API oficial.~~ **La API oficial de Banco Económico ya
+existe y está probada** (P1 a P9 en dos cuentas), pero todavía no hay un entorno de producción:
+qué significa y cómo se despliega es el bloque 4 (`docs/11-produccion-brechas-y-plan.md` y el
+acta `docs/produccion/acta-v0.1.0.md`).
 
 ## 6. Despliegue
 

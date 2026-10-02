@@ -120,6 +120,7 @@ solo correo al oficial de cuenta, que es el canal de soporte (E2).
 | H1 | B | **Contraseña del usuario API de producción**, o el procedimiento para obtenerla o activarla. | El documento de producción trae usuario, llave AES y URL, pero no la contraseña, y sin ella el login falla. Ver nota H1. | ✅ **Resuelto (2026-09-13):** el dueño obtuvo la contraseña; la prueba en producción corrió P1–P9 ok (`02-hallazgos-produccion.md`). |
 | H2 | D | **Catálogo de bancos** que dijeron adjuntar en D9. | No llegó. | Abierto. No bloquea. |
 | H3 | I | **Usuario de pruebas con su cuenta** para certificación (A4). | Sin la cuenta, B0 autentica pero no genera QRs. | **Cerrado el 2026-09-20:** no existe (A4). No bloquea nada. |
+| H4 | I | **¿La API de producción filtra por IP de origen?** Hasta hoy todo se llamó desde la conexión de la máquina del dueño. | — | **Abierto, y hay que saberlo antes del primer despliegue fuera de esa máquina** (`docs/11` T3). Recordar B4: el usuario API se bloquea con intentos fallidos y se desbloquea solo en agencia. |
 
 **Nota H1: ningún documento del banco explica cómo se obtiene la contraseña.** Se
 revisaron el 2026-09-12 la espec. v1.3.0 completa, el documento del ambiente de producción,

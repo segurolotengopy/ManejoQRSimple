@@ -21,6 +21,6 @@
   "dependencies": {
     "@mqs/qr-core": "*",
     "firebase-admin": "^14.5.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   }
 }

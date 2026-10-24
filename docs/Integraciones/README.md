@@ -7,3 +7,8 @@ la raíz de `docs/`. En la raíz quedan los documentos propios del proyecto.
 Cuando se obtenga un contrato técnico oficial (por ejemplo, la especificación
 de la API de pagos del BCP u OpenBCB), gobierna al adaptador correspondiente:
 **no inventar parámetros ni endpoints distintos a los documentados**.
+
+## Contenido
+
+- `baneco/`: Banco Económico, línea principal.
+- `bnb/`: Banco Nacional de Bolivia, análisis del portal de APIs (sin implementar).

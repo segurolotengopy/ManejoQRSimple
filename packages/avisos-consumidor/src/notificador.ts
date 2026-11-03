@@ -15,12 +15,13 @@
  */
 
 import {
+  aDecimalBob,
   exito,
   fallo,
+  vistaPublicaDelPago,
   type AvisoDeConfirmacion,
   type ErrorPuerto,
   type NotificadorConsumidor,
-  type OrigenDeteccion,
   type Resultado,
 } from '@mqs/qr-core';
 
@@ -40,27 +41,14 @@ export function cuerpoDelAviso(aviso: AvisoDeConfirmacion): string {
       referenciaExterna: aviso.referenciaExterna,
       estado: 'CONFIRMADO',
       // Decimal con punto, como en toda la API: nunca un número (regla #5).
-      monto: aDecimal(aviso.montoCentavos),
+      // Lo que pedía el cobro, igual que en `estadoCobro`; lo que entró al
+      // banco va en `pago.monto`.
+      monto: aDecimalBob(aviso.montoCentavos),
       moneda: 'BOB',
-      confirmadoEn: aviso.confirmadoEn.toISOString(),
-      ocurridoEn: aviso.ocurridoEn?.toISOString() ?? null,
-      riel: aviso.riel === null ? null : RIEL_PUBLICO[aviso.riel],
+      // La misma vista que `estadoCobro`: una sola función para los dos canales.
+      pago: vistaPublicaDelPago(aviso.pago),
     },
   });
-}
-
-/** Los mismos nombres públicos que usa la API, no los internos del dominio. */
-const RIEL_PUBLICO: Readonly<Record<OrigenDeteccion, string>> = {
-  'watcher-baneco': 'api-baneco',
-  'scraper-yape': 'scraping-yape',
-  'watcher-simulado': 'simulado',
-};
-
-/** Centavos enteros a decimal con dos posiciones, por aritmética entera. */
-function aDecimal(centavos: number): string {
-  const entero = Math.trunc(centavos / 100);
-  const resto = Math.abs(centavos % 100);
-  return `${String(entero)}.${String(resto).padStart(2, '0')}`;
 }
 
 /** Lo mínimo de `fetch` que hace falta. Se inyecta para poder probar sin red. */
@@ -71,8 +59,15 @@ export type Transporte = (
     readonly headers: Readonly<Record<string, string>>;
     readonly body: string;
     readonly signal: AbortSignal;
+    /**
+     * `error`: una redirección es una falla, no algo que seguir. El servidor
+     * del consumidor es por definición ajeno, y un 307 hacia `127.0.0.1` haría
+     * que el POST salga desde adentro de la máquina del dueño, cruzando el
+     * loopback en el que se apoya "la API escucha solo en 127.0.0.1" (T15).
+     */
+    readonly redirect: 'error';
   },
-) => Promise<{ readonly status: number; text(): Promise<string> }>;
+) => Promise<{ readonly status: number; descartarCuerpo(): Promise<void> }>;
 
 export class NotificadorHttp implements NotificadorConsumidor {
   constructor(
@@ -106,10 +101,11 @@ export class NotificadorHttp implements NotificadorConsumidor {
         },
         body: cuerpo,
         signal: control.signal,
+        redirect: 'error',
       });
-      // Se consume y se descarta: no queremos el cuerpo del consumidor cerca
-      // de nuestros logs, pero sí cerrar la conexión.
-      await respuesta.text().catch(() => '');
+      // Se cancela sin leerlo: `text()` armaría en memoria todo lo que un
+      // consumidor malicioso mande en la ventana de 10 s, por cada aviso.
+      await respuesta.descartarCuerpo().catch(() => undefined);
 
       if (respuesta.status >= 200 && respuesta.status < 300) {
         return exito('ENTREGADO');
@@ -140,5 +136,10 @@ export class NotificadorHttp implements NotificadorConsumidor {
 
 const fetchComoTransporte: Transporte = async (url, opciones) => {
   const respuesta = await fetch(url, opciones);
-  return { status: respuesta.status, text: () => respuesta.text() };
+  return {
+    status: respuesta.status,
+    descartarCuerpo: async () => {
+      await respuesta.body?.cancel();
+    },
+  };
 };

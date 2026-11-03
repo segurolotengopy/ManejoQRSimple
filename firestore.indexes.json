@@ -45,6 +45,20 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "avisosConsumidor",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "pendiente",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "proximoIntentoEn",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

@@ -22,9 +22,13 @@ function unAviso(sobrescribir: Partial<AvisoDeConfirmacion> = {}): AvisoDeConfir
     cobroId: 'cons-abc',
     referenciaExterna: 'plan-2026-09',
     montoCentavos: 15_050 as Centavos,
-    confirmadoEn: AHORA,
-    ocurridoEn: new Date(AHORA.getTime() - 10_000),
-    riel: 'watcher-baneco',
+    pago: {
+      confirmadoEn: AHORA,
+      ocurridoEn: new Date(AHORA.getTime() - 10_000),
+      montoCentavos: 15_050 as Centavos,
+      riel: 'watcher-baneco',
+      confirmadoPor: 'sistema',
+    },
     ...sobrescribir,
   };
 }
@@ -34,7 +38,7 @@ function transporteQueResponde(status: number) {
   const pedidos: { url: string; headers: Record<string, string>; body: string }[] = [];
   const transporte: Transporte = (url, opciones) => {
     pedidos.push({ url, headers: { ...opciones.headers }, body: opciones.body });
-    return Promise.resolve({ status, text: () => Promise.resolve('lo que conteste el consumidor') });
+    return Promise.resolve({ status, descartarCuerpo: () => Promise.resolve() });
   };
   return { transporte, pedidos };
 }
@@ -51,28 +55,52 @@ describe('cuerpoDelAviso()', () => {
         estado: 'CONFIRMADO',
         monto: '150.50',
         moneda: 'BOB',
-        confirmadoEn: AHORA.toISOString(),
-        ocurridoEn: new Date(AHORA.getTime() - 10_000).toISOString(),
-        riel: 'api-baneco',
+        // La misma forma que `estadoCobro`: el pago va en `cobro.pago`.
+        pago: {
+          confirmadoEn: AHORA.toISOString(),
+          ocurridoEn: new Date(AHORA.getTime() - 10_000).toISOString(),
+          monto: '150.50',
+          riel: 'api-baneco',
+          confirmadoPor: 'automatico',
+        },
       },
     });
+  });
+
+  it('`cobro.monto` es lo que pedía el cobro y `cobro.pago.monto` lo que entró, como en estadoCobro', () => {
+    // Abono por menos aceptado a mano: pedía 123,45 y entraron 100,00.
+    const aviso = unAviso({
+      montoCentavos: 12_345 as Centavos,
+      pago: { ...unAviso().pago, montoCentavos: 10_000 as Centavos, confirmadoPor: 'accion-manual' },
+    });
+    const cuerpo = JSON.parse(cuerpoDelAviso(aviso)) as {
+      cobro: { monto: string; pago: { monto: string; confirmadoPor: string } };
+    };
+    expect(cuerpo.cobro.monto).toBe('123.45');
+    expect(cuerpo.cobro.pago.monto).toBe('100.00');
+    // Una resolución manual se nombra como en la API, y no se disfraza de automática.
+    expect(cuerpo.cobro.pago.confirmadoPor).toBe('revision-manual');
   });
 
   it('el monto va como texto decimal, nunca como número', () => {
     // 150.50 como `number` se serializa "150.5" y pierde la forma del importe.
     expect(cuerpoDelAviso(unAviso())).toContain('"monto":"150.50"');
-    expect(cuerpoDelAviso(unAviso({ montoCentavos: 5 as Centavos }))).toContain('"monto":"0.05"');
+    expect(
+      cuerpoDelAviso(unAviso({ pago: { ...unAviso().pago, montoCentavos: 5 as Centavos } })),
+    ).toContain('"monto":"0.05"');
   });
 
   it('traduce el riel a su nombre público, no al interno del dominio', () => {
     // `watcher-baneco` describe nuestra implementación; filtrarlo ataría el
     // contrato a ella.
     expect(cuerpoDelAviso(unAviso())).toContain('"riel":"api-baneco"');
-    expect(cuerpoDelAviso(unAviso({ riel: null }))).toContain('"riel":null');
+    expect(cuerpoDelAviso(unAviso({ pago: { ...unAviso().pago, riel: null } }))).toContain('"riel":null');
   });
 
   it('un riel simulado sale como «simulado»: solo existe en el demo', () => {
-    expect(cuerpoDelAviso(unAviso({ riel: 'watcher-simulado' }))).toContain('"riel":"simulado"');
+    expect(
+      cuerpoDelAviso(unAviso({ pago: { ...unAviso().pago, riel: 'watcher-simulado' } })),
+    ).toContain('"riel":"simulado"');
   });
 });
 
@@ -142,6 +170,30 @@ describe('NotificadorHttp', () => {
     expect(esExito(r)).toBe(false);
     // El texto de la excepción puede traer cualquier cosa; no llega al error.
     expect(JSON.stringify(r)).not.toContain('ENOTFOUND');
+    expect(!esExito(r) && r.error.reintentable).toBe(true);
+  });
+
+  it('no sigue redirecciones: pide `redirect: error` al transporte', async () => {
+    // El servidor del consumidor es ajeno. Un 307 hacia 127.0.0.1 haría que el
+    // POST salga desde adentro de la máquina del dueño, cruzando el loopback
+    // en el que se apoya "la API escucha solo en 127.0.0.1".
+    let pedido: Parameters<Transporte>[1] | undefined;
+    const transporte: Transporte = (_url, opciones) => {
+      pedido = opciones;
+      return Promise.resolve({ status: 200, descartarCuerpo: () => Promise.resolve() });
+    };
+    const notificador = new NotificadorHttp(new Map([['novuchat', DESTINO]]), () => AHORA, transporte);
+
+    await notificador.entregar(unAviso());
+    expect(pedido?.redirect).toBe('error');
+  });
+
+  it('una redirección rechazada por el transporte es un fallo reintentable', async () => {
+    const transporte: Transporte = () => Promise.reject(new TypeError('redirect mode is set to error'));
+    const notificador = new NotificadorHttp(new Map([['novuchat', DESTINO]]), () => AHORA, transporte);
+
+    const r = await notificador.entregar(unAviso());
+    expect(esExito(r)).toBe(false);
     expect(!esExito(r) && r.error.reintentable).toBe(true);
   });
 

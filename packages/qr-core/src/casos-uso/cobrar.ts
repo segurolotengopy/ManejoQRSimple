@@ -211,8 +211,9 @@ const esperaPago = (cobro: Cobro): boolean =>
  * no existe. Al revés —estado guardado y aviso perdido— el consumidor llega
  * al mismo resultado preguntando por `estadoCobro`, que es justamente lo que
  * el contrato le promete (docs/10 §1). Por eso encolar no puede hacer
- * fracasar la transición: si falla, se informa en `avisoNoEncolado` y quien
- * llama lo registra.
+ * fracasar la transición: si falla, se informa en `avisoNoEncolado`. Hoy
+ * ningún llamador lo registra (queda como pendiente en docs/ESTADO.md): el
+ * costo es un aviso que no sale, que el consumidor recupera consultando.
  */
 export async function aplicar(
   deps: DepsPersistencia,

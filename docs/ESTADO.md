@@ -742,6 +742,39 @@ ver la decisión 25. Para que un cobro real llegue a `ENVIADO` por WhatsApp sigu
         satélite no arrancan.
       - Amenaza T15 en `docs/06`: el aviso falsificado es T9 en la dirección opuesta.
       - 929 tests (49 nuevos), typecheck, lint, `deps:check` y build en verde.
+      - **Auditoría posterior al merge (2026-10-02).** El PR #40 se mergeó el 2026-09-20
+        sin aplicar los hallazgos de su auditoría de seguridad: la sesión que los
+        corregía se cortó a mitad y quedaron sin registrar. Se retomaron en la rama
+        `fix/aviso-hallazgos-auditoria`:
+        - **Bloqueante (corregido):** el aviso anunciaba el monto del **cobro** y no el
+          del **abono**, y no decía si lo resolvió una persona. Con un abono por menos
+          aceptado a mano, el consumidor habría entregado contra plata que no entró, y
+          `estadoCobro` decía otra cosa. Ahora el aviso trae `cobro.pago` con la misma
+          forma y los mismos valores que `estadoCobro` (`pago.monto` = lo que entró,
+          `cobro.monto` = lo que pedía, `pago.confirmadoPor`), armado por **una sola
+          función** (`vistaPublicaDelPago`) que usan los dos canales. La revisión de
+          código del PR #94 detectó que la primera corrección ponía el monto del abono
+          en `cobro.monto` y hacía divergir los dos canales; se rehízo con esa forma
+          única. La prueba falla sin la corrección.
+        - Corregidos: redirecciones (el aviso ya no las sigue: un 307 hacia `127.0.0.1`
+          lo habría hecho salir desde adentro de la máquina), cuerpo de la respuesta del
+          consumidor (se cancela en vez de leerlo entero), escalera de reintentos (el
+          primer escalón de 30 s no se usaba nunca), y la lectura de destinos (id
+          inválido, dos variables que pisaban al mismo consumidor, secreto compartido o
+          igual al token de cualquier consumidor o del dueño), el índice compuesto de
+          Firestore que faltaba para `listarParaEnviar` (el emulador no lo exige; en
+          Firestore real cada pasada habría fallado y ningún aviso saldría). El ejemplo de verificación de `docs/10` §4.6 no miraba `t` y
+          lanzaba con firmas de otro largo; se reemplazó.
+        - **Siguen abiertos, a propósito:** (5) la entrega es secuencial y un consumidor
+          que no contesta suma hasta 10 s por aviso a cada vuelta del satélite —falta un
+          presupuesto de tiempo por tanda—; (7) un consumidor sin destino cierra su aviso
+          como `SIN_DESTINO` aunque la causa sea un typo en el nombre de la variable;
+          (9) la entrega es "al menos una vez": dos satélites a la vez entregarían dos
+          veces, cubierto hoy por la deduplicación del consumidor por `idEvento`;
+          (11) `aplicar()` informa `avisoNoEncolado` y ningún llamador lo registra: un
+          aviso que no llega a la cola se pierde sin rastro (tolerable, el consumidor
+          consulta, pero no visible); (12) el paso de avisos del satélite
+          (`baneco-satelite/src/main.ts`) y `fetchComoTransporte` no tienen prueba propia.
 
 ### En espera (bloqueos externos)
 

@@ -326,12 +326,25 @@ X-MQS-Firma: t=1790000000,v1=9f2a…
     "estado": "CONFIRMADO",
     "monto": "150.50",
     "moneda": "BOB",
-    "confirmadoEn": "2026-09-20T14:04:02.000Z",
-    "ocurridoEn": "2026-09-20T14:03:52.000Z",
-    "riel": "api-baneco"
+    "pago": {
+      "confirmadoEn": "2026-09-20T14:04:02.000Z",
+      "ocurridoEn": "2026-09-20T14:03:52.000Z",
+      "monto": "150.50",
+      "riel": "api-baneco",
+      "confirmadoPor": "automatico"
+    }
   }
 }
 ```
+
+**`cobro.pago.monto` es lo que entró al banco; `cobro.monto` es lo que pedía el
+cobro.** Coinciden en el camino normal, porque conciliar exige monto exacto.
+Pero si el banco reportó un abono por menos y el dueño lo aceptó a mano, el
+cobro queda `CONFIRMADO` con menos plata de la pedida, y `pago.confirmadoPor`
+viene `revision-manual`: **compará `pago.monto` con lo que vendiste antes de
+entregar**, no `cobro.monto`. Es exactamente la misma forma que devuelve
+`estadoCobro`: `cobro.pago` es el mismo bloque en los dos canales, y los dos
+tienen que decir lo mismo.
 
 Los mismos campos que `estadoCobro`, y por la misma razón: nada del pagador,
 ningún identificador del banco.
@@ -342,13 +355,29 @@ ningún identificador del banco.
 **SHA-256 sobre `<t>.<cuerpo crudo>`** con tu secreto.
 
 ```js
-const [t, v1] = cabecera.split(',').map((p) => p.slice(p.indexOf('=') + 1));
-const esperada = crypto.createHmac('sha256', SECRETO).update(`${t}.${cuerpoCrudo}`).digest('hex');
-// Comparación en tiempo constante, nunca con ===
-const valida = crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(esperada));
+import { createHmac, timingSafeEqual } from 'node:crypto';
+
+// Es la misma lógica que `verificarFirma` de `@mqs/avisos-consumidor`.
+function firmaValida(cuerpoCrudo, cabecera, secreto, tolerancia = 300) {
+  const campos = new Map(
+    cabecera.split(',').map((p) => [p.slice(0, p.indexOf('=')).trim(), p.slice(p.indexOf('=') + 1).trim()]),
+  );
+  const t = campos.get('t');
+  const recibida = campos.get('v1');
+  if (!/^\d+$/.test(t ?? '') || recibida === undefined) return false;
+
+  // Marca de tiempo: sin esto, un aviso interceptado se puede reenviar.
+  if (Math.abs(Date.now() / 1000 - Number(t)) > tolerancia) return false;
+
+  const esperada = createHmac('sha256', secreto).update(`${t}.${cuerpoCrudo}`).digest('hex');
+  const a = Buffer.from(recibida);
+  const b = Buffer.from(esperada);
+  // `timingSafeEqual` lanza si los largos difieren: se compara el largo antes.
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 ```
 
-Tres cosas que importan:
+Cuatro cosas que importan:
 
 1. **Sobre el cuerpo crudo**, antes de parsearlo. Si serializás el JSON de
    nuevo, los bytes cambian y la firma no cierra.
@@ -356,6 +385,10 @@ Tres cosas que importan:
    diferencia y deja adivinar la firma correcta carácter por carácter.
 3. **Mirá `t`.** Descartá lo que tenga más de unos minutos: sin eso, quien
    intercepte un aviso válido puede reenviarlo cuando quiera.
+4. **No dejes que una cabecera mal formada tire una excepción.** `timingSafeEqual`
+   lanza `RangeError` si los largos difieren: quien descubra tu URL podría mandar
+   firmas basura en bucle y provocar un error por pedido. El ejemplo de arriba
+   compara el largo primero y devuelve `false` ante cualquier cosa rara.
 
 #### Contestá rápido, y deduplicá
 

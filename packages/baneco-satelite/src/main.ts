@@ -315,7 +315,7 @@ async function main(): Promise<number> {
         for (const id of avisados.valor.inconsistentes) {
           // Se encoló un aviso y el cobro ya no lo sostiene. No se entrega
           // nada, y no se deja pasar en silencio.
-          registrar('error', `  ! aviso ${id} cerrado sin entregar: el cobro no está confirmado.`);
+          registrar('error', `  ! aviso ${id} cerrado sin entregar: el cobro no está confirmado o su evidencia no trae el monto.`);
         }
       }
 

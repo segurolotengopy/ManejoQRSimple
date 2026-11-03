@@ -189,6 +189,8 @@ export {
   type ResumenAvisos,
 } from './casos-uso/avisar.js';
 
+export { vistaPublicaDelPago, type DatosPublicosDelPago } from './avisos/vista-publica.js';
+
 // El contrato para proyectos consumidores (docs/10). No exporta —ni existe—
 // ninguna operación que confirme un pago: la asimetría es el contrato.
 export {

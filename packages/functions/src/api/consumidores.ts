@@ -26,8 +26,8 @@ import {
   esExito,
   idDeCobroDeConsumidor,
   pagoDeCobro,
+  vistaPublicaDelPago,
   type Cobro,
-  type OrigenDeteccion,
   type PagoDeCobro,
   type PropietarioConsumidor,
 } from '@mqs/qr-core';
@@ -54,19 +54,6 @@ const DIA_MS = 24 * HORA_MS;
 const RANGO_POR_DEFECTO_DIAS = 7;
 const RANGO_MAXIMO_DIAS = 92;
 const LIMITE_POR_DEFECTO = 50;
-
-/**
- * Nombres del riel hacia afuera.
- *
- * Se traducen en vez de exponer los del dominio: `watcher-baneco` describe
- * nuestra implementación, y un contrato que la filtra no se puede refactorizar
- * sin romperle el código a quien lo consume.
- */
-const RIEL_PUBLICO: Readonly<Record<OrigenDeteccion, string>> = {
-  'watcher-baneco': 'api-baneco',
-  'scraper-yape': 'scraping-yape',
-  'watcher-simulado': 'simulado',
-};
 
 /**
  * Lo que un consumidor ve de su cobro.
@@ -97,16 +84,7 @@ function aVistaConsumidor(cobro: Cobro, pago: PagoDeCobro | null): Record<string
             // proyecto no inventa lo que el proveedor no da (docs/10 §6).
             imagenDisponible: cobro.qrVigente.imagenRef !== null,
           },
-    pago:
-      pago === null
-        ? null
-        : {
-            confirmadoEn: pago.confirmadoEn.toISOString(),
-            ocurridoEn: pago.ocurridoEn?.toISOString() ?? null,
-            monto: pago.montoCentavos === null ? null : aDecimalBob(pago.montoCentavos),
-            riel: pago.riel === null ? null : RIEL_PUBLICO[pago.riel],
-            confirmadoPor: pago.confirmadoPor === 'accion-manual' ? 'revision-manual' : 'automatico',
-          },
+    pago: pago === null ? null : vistaPublicaDelPago(pago),
   };
 }
 

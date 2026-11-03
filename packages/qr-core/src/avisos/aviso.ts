@@ -22,7 +22,7 @@
 
 import type { Cobro } from '../cobro/cobro.js';
 import type { Centavos } from '../comun/dinero.js';
-import type { OrigenDeteccion } from '../conciliacion/deteccion.js';
+import type { DatosPublicosDelPago } from './vista-publica.js';
 
 /** Cómo terminó un aviso. `null` mientras sigue pendiente. */
 export const DESENLACES_AVISO = ['ENTREGADO', 'SIN_DESTINO', 'COBRO_INCONSISTENTE'] as const;
@@ -66,12 +66,18 @@ export type AvisoDeConfirmacion = {
   readonly consumidorId: string;
   readonly cobroId: string;
   readonly referenciaExterna: string;
+  /** Lo que pedía el cobro. El mismo `cobro.monto` que devuelve `estadoCobro`. */
   readonly montoCentavos: Centavos;
-  /** Cuándo este sistema lo dio por confirmado. */
-  readonly confirmadoEn: Date;
-  /** Cuándo ocurrió el abono según el banco, si consta. */
-  readonly ocurridoEn: Date | null;
-  readonly riel: OrigenDeteccion | null;
+  /**
+   * El pago, con la misma forma y el mismo significado que `cobro.pago` en
+   * `estadoCobro`: su `monto` es **lo que entró al banco**, no lo que pedía el
+   * cobro. Coinciden en el camino normal, porque conciliar exige monto exacto.
+   * Pero un abono por menos que no concilió y que el dueño resolvió a mano deja
+   * un cobro `CONFIRMADO` con menos plata de la pedida; el consumidor que lee
+   * `cobro.pago.monto` lo ve, y por eso es también lo que lee en el aviso. Es
+   * la regla #1 aplicada a este canal.
+   */
+  readonly pago: DatosPublicosDelPago & { readonly montoCentavos: Centavos };
 };
 
 /**

@@ -35,11 +35,27 @@ export type ErrorDestino =
   | { readonly tipo: 'URL_INVALIDA'; readonly consumidorId: string }
   | { readonly tipo: 'URL_NO_ES_HTTPS'; readonly consumidorId: string }
   | { readonly tipo: 'SECRETO_CORTO'; readonly consumidorId: string }
-  | { readonly tipo: 'SECRETO_SIN_LLENAR'; readonly consumidorId: string };
+  | { readonly tipo: 'SECRETO_SIN_LLENAR'; readonly consumidorId: string }
+  /** El identificador que sale del nombre de la variable no es un identificador. */
+  | { readonly tipo: 'ID_INVALIDO'; readonly variable: string }
+  /** Dos variables que normalizan al mismo consumidor: una pisaría a la otra. */
+  | { readonly tipo: 'ID_REPETIDO'; readonly consumidorId: string }
+  /** Dos consumidores con el mismo secreto, o el secreto igual a un token de la API. */
+  | { readonly tipo: 'SECRETO_COMPARTIDO'; readonly consumidorId: string };
 
 export type LecturaDestinos =
   | { readonly ok: true; readonly destinos: ReadonlyMap<string, Destino> }
   | { readonly ok: false; readonly error: ErrorDestino };
+
+/**
+ * El mismo formato de identificador que exige `CONSUMIDOR_TOKEN_<ID>` en la API
+ * (`functions/src/auth.ts`). Se repite acá y no se importa porque este paquete
+ * no puede depender de `functions`.
+ */
+const ID_CONSUMIDOR = /^[a-z0-9][a-z0-9-]{1,30}$/;
+
+const PREFIJO_TOKEN = 'CONSUMIDOR_TOKEN_';
+const TOKEN_DEL_DUEÑO = 'API_TOKEN_LOCAL';
 
 const idDeVariable = (variable: string, prefijo: string): string =>
   variable.slice(prefijo.length).toLowerCase().replace(/_/g, '-');
@@ -58,12 +74,36 @@ export function leerDestinos(
     if (texto === '') {
       continue;
     }
-    if (variable.startsWith(PREFIJO_URL)) {
-      urls.set(idDeVariable(variable, PREFIJO_URL), texto);
-    } else if (variable.startsWith(PREFIJO_SECRETO)) {
-      secretos.set(idDeVariable(variable, PREFIJO_SECRETO), texto);
+    const esUrl = variable.startsWith(PREFIJO_URL);
+    const esSecreto = variable.startsWith(PREFIJO_SECRETO);
+    if (!esUrl && !esSecreto) {
+      continue;
+    }
+    const consumidorId = idDeVariable(variable, esUrl ? PREFIJO_URL : PREFIJO_SECRETO);
+    if (!ID_CONSUMIDOR.test(consumidorId)) {
+      return { ok: false, error: { tipo: 'ID_INVALIDO', variable } };
+    }
+    const mapa = esUrl ? urls : secretos;
+    if (mapa.has(consumidorId)) {
+      // `..._MI_APP` y `..._MI-APP` dan el mismo id: sin esto, el segundo
+      // pisaría al primero según el orden del entorno, y los avisos de un
+      // consumidor —con su referencia y su monto— saldrían hacia la URL del otro.
+      return { ok: false, error: { tipo: 'ID_REPETIDO', consumidorId } };
+    }
+    mapa.set(consumidorId, texto);
+  }
+
+  // Los tokens de la API —de cualquier consumidor y el del dueño—, para no
+  // aceptar un secreto de firma igual a uno. Con el secreto de A igual al token
+  // de B, B podría fabricarle avisos válidos a A, y A llamar a la API como B.
+  const tokens = new Set<string>();
+  for (const [variable, valor] of Object.entries(env)) {
+    const texto = valor?.trim() ?? '';
+    if (texto !== '' && (variable.startsWith(PREFIJO_TOKEN) || variable === TOKEN_DEL_DUEÑO)) {
+      tokens.add(texto);
     }
   }
+  const vistos = new Map<string, string>();
 
   const destinos = new Map<string, Destino>();
 
@@ -91,6 +131,15 @@ export function leerDestinos(
       return { ok: false, error: { tipo: 'URL_NO_ES_HTTPS', consumidorId } };
     }
 
+    // El secreto de firma es distinto de todo token de la API (con el token se
+    // llama, con el secreto se verifica lo que sale) y del de cualquier otro
+    // consumidor: con uno compartido, un consumidor le fabricaría avisos
+    // válidos a otro que conozca su URL (T15).
+    if (tokens.has(secreto) || vistos.has(secreto)) {
+      return { ok: false, error: { tipo: 'SECRETO_COMPARTIDO', consumidorId } };
+    }
+    vistos.set(secreto, consumidorId);
+
     destinos.set(consumidorId, { consumidorId, url: parseada.toString(), secreto });
   }
 
@@ -116,6 +165,12 @@ export function describirErrorDestino(error: ErrorDestino): string {
       return `La URL de aviso del consumidor "${error.consumidorId}" no es https.`;
     case 'SECRETO_CORTO':
       return `El secreto de firma del consumidor "${error.consumidorId}" tiene menos de ${String(MINIMO_SECRETO)} caracteres.`;
+    case 'ID_INVALIDO':
+      return `${error.variable}: el identificador del consumidor solo admite letras, números y guiones (2 a 31 caracteres).`;
+    case 'ID_REPETIDO':
+      return `Hay dos variables de aviso que dan el mismo consumidor "${error.consumidorId}" (el guion bajo y el guion medio se equiparan).`;
+    case 'SECRETO_COMPARTIDO':
+      return `El secreto de firma del consumidor "${error.consumidorId}" es igual al de otro consumidor o a un token de la API. Cada uno necesita el suyo.`;
     case 'SECRETO_SIN_LLENAR':
       return `El secreto de firma del consumidor "${error.consumidorId}" quedó con el marcador de la plantilla, sin llenar.`;
   }

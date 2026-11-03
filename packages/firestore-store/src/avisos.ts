@@ -7,8 +7,11 @@
  *   cobro confirmado encola un aviso y no más, y reintentar la confirmación no
  *   produce un segundo aviso ni reabre uno ya cerrado.
  * - **`pendiente` es un campo aparte** para poder consultar lo que falta
- *   entregar con un índice simple, igual que `abierto` en los abonos sin
- *   conciliar.
+ *   entregar, igual que `abierto` en los abonos sin conciliar. La consulta
+ *   (`pendiente ==` más rango y orden sobre `proximoIntentoEn`) exige un
+ *   **índice compuesto**, declarado en `firestore.indexes.json`: el emulador
+ *   no los exige, pero Firestore real rechaza la consulta sin él, y entonces
+ *   ningún aviso se entrega.
  *
  * El `cobroId` lo generamos nosotros (un UUID o `cons-<hexa>`), así que no
  * hace falta codificarlo para usarlo como id de documento.

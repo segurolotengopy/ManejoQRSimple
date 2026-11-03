@@ -124,7 +124,10 @@ async function entregarUno(
       // El tipo de falla, no el mensaje del servidor del consumidor: ese
       // podría traer cualquier cosa hasta nuestra bitácora.
       entregado.error.tipo,
-      proximoIntento(aviso.intentos + 1, ahora),
+      // `aviso.intentos` cuenta los fallos ANTERIORES: en el primero vale 0 y
+      // toca el primer escalón. Con `+ 1` se saltaba, y los 30 s que el
+      // contrato promete no se usaban nunca.
+      proximoIntento(aviso.intentos, ahora),
     );
     return 'REINTENTAR';
   }
@@ -152,9 +155,10 @@ async function armarAviso(
     return null;
   }
   const pago = pagoDeCobro(registros.valor);
-  if (pago === null) {
-    // Confirmado sin rastro del pago en la evidencia: contradictorio. No se
-    // inventa una fecha de confirmación para poder mandar algo.
+  if (pago === null || pago.montoCentavos === null) {
+    // Confirmado sin rastro del pago, o sin el monto que entró. No se inventa
+    // una fecha ni se cae al monto que pedía el cobro para poder mandar algo:
+    // el aviso afirma que hay plata y tiene que poder decir cuánta.
     return null;
   }
 
@@ -165,9 +169,14 @@ async function armarAviso(
     cobroId: cobro.id,
     referenciaExterna: cobro.consumidor.referenciaExterna,
     montoCentavos: cobro.montoCentavos,
-    confirmadoEn: pago.confirmadoEn,
-    ocurridoEn: pago.ocurridoEn,
-    riel: pago.riel,
+    // El pago con su monto: el del abono, no el del cobro. Ver `AvisoDeConfirmacion.pago`.
+    pago: {
+      confirmadoEn: pago.confirmadoEn,
+      ocurridoEn: pago.ocurridoEn,
+      montoCentavos: pago.montoCentavos,
+      riel: pago.riel,
+      confirmadoPor: pago.confirmadoPor,
+    },
   };
 }
 

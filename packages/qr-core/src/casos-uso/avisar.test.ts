@@ -27,6 +27,7 @@ import type { AvisoDeConfirmacion } from '../avisos/aviso.js';
 import type { ErrorPuerto, NotificadorConsumidor } from '../ports/puertos.js';
 import { bs, enMinutos, T0, unCobro, unCobroDeConsumidor } from '../pruebas/fixtures.js';
 import { emitirQr, verificarPago } from './cobrar.js';
+import { resolverRevision } from './revisar.js';
 import { describirAvisos, entregarAvisos } from './avisar.js';
 
 const MONTO = 12_345;
@@ -249,6 +250,70 @@ describe('entregar los avisos', () => {
     const r = await entregarAvisos(depsAviso, enMinutos(32));
     expect(esExito(r) && r.valor.inconsistentes).toEqual([cobro.id]);
     expect(notificador.entregados).toHaveLength(0);
+  });
+});
+
+describe('lo que el aviso afirma sobre el dinero', () => {
+  it('un abono por menos, resuelto a mano, avisa el monto que ENTRÓ y que lo resolvió una persona', async () => {
+    // Cobro de 123,45 y el banco reporta 100,00: no concilia y va a revisión.
+    // El dueño lo acepta. Anunciar el monto del cobro haría que el consumidor
+    // entregue lo vendido contra plata que no está: la regla #1 en este canal.
+    const notificador = new NotificadorEnMemoria();
+    const { deps, watcher, depsAviso } = armar(notificador);
+    const emitido = await emitirQr(deps, unCobroDeConsumidor({ montoCentavos: bs(MONTO) }), VENCE, T0);
+    if (!esExito(emitido)) throw new Error('emitir debería funcionar');
+
+    const MENOS = 10_000;
+    const clave = `baneco:${REFERENCIA}:tx-menos`;
+    watcher.cargarAbono(
+      REFERENCIA,
+      registrarDeteccion({
+        idDeduplicacion: clave,
+        montoCentavos: bs(MENOS),
+        ocurridoEn: enMinutos(30),
+        origen: 'watcher-baneco',
+        referencia: null,
+      }),
+    );
+    const verificado = await verificarPago(deps, emitido.valor, enMinutos(31));
+    if (!esExito(verificado) || verificado.valor.tipo !== 'EN_REVISION') {
+      throw new Error('el abono por menos debería haber ido a revisión');
+    }
+    const resuelto = await resolverRevision(
+      deps,
+      verificado.valor.cobro,
+      { decision: 'CONFIRMADO', idDeduplicacion: clave, motivo: 'se acepta el pago parcial' },
+      enMinutos(40),
+    );
+    if (!esExito(resuelto)) throw new Error('la resolución debería funcionar');
+
+    await entregarAvisos(depsAviso, enMinutos(41));
+
+    const aviso = notificador.entregados[0];
+    expect(aviso?.montoCentavos).toBe(MENOS);
+    expect(aviso?.montoCentavos).not.toBe(MONTO);
+    expect(aviso?.confirmadoPor).toBe('accion-manual');
+  });
+
+  it('una confirmación automática avisa el monto exacto y que fue automática', async () => {
+    const notificador = new NotificadorEnMemoria();
+    const { deps, watcher, depsAviso } = armar(notificador);
+    await hastaConfirmado(deps, watcher);
+
+    await entregarAvisos(depsAviso, enMinutos(32));
+    expect(notificador.entregados[0]).toMatchObject({ montoCentavos: MONTO, confirmadoPor: 'sistema' });
+  });
+});
+
+describe('la escalera de reintentos', () => {
+  it('el primer fallo espera 30 segundos, como promete el contrato', async () => {
+    // Antes se pasaba `intentos + 1` y el primer escalón no se usaba nunca.
+    const { deps, watcher, avisos, depsAviso } = armar(new NotificadorCaido());
+    const cobro = await hastaConfirmado(deps, watcher);
+
+    const ahora = enMinutos(32);
+    await entregarAvisos(depsAviso, ahora);
+    expect(avisos.ver(cobro.id)?.proximoIntentoEn.getTime()).toBe(ahora.getTime() + 30_000);
   });
 });
 

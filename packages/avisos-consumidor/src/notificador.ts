@@ -45,6 +45,8 @@ export function cuerpoDelAviso(aviso: AvisoDeConfirmacion): string {
       confirmadoEn: aviso.confirmadoEn.toISOString(),
       ocurridoEn: aviso.ocurridoEn?.toISOString() ?? null,
       riel: aviso.riel === null ? null : RIEL_PUBLICO[aviso.riel],
+      // Los mismos valores que `estadoCobro`: los dos canales dicen lo mismo.
+      confirmadoPor: aviso.confirmadoPor === 'accion-manual' ? 'revision-manual' : 'automatico',
     },
   });
 }
@@ -71,8 +73,15 @@ export type Transporte = (
     readonly headers: Readonly<Record<string, string>>;
     readonly body: string;
     readonly signal: AbortSignal;
+    /**
+     * `error`: una redirección es una falla, no algo que seguir. El servidor
+     * del consumidor es por definición ajeno, y un 307 hacia `127.0.0.1` haría
+     * que el POST salga desde adentro de la máquina del dueño, cruzando el
+     * loopback en el que se apoya "la API escucha solo en 127.0.0.1" (T15).
+     */
+    readonly redirect: 'error';
   },
-) => Promise<{ readonly status: number; text(): Promise<string> }>;
+) => Promise<{ readonly status: number; descartarCuerpo(): Promise<void> }>;
 
 export class NotificadorHttp implements NotificadorConsumidor {
   constructor(
@@ -106,10 +115,11 @@ export class NotificadorHttp implements NotificadorConsumidor {
         },
         body: cuerpo,
         signal: control.signal,
+        redirect: 'error',
       });
-      // Se consume y se descarta: no queremos el cuerpo del consumidor cerca
-      // de nuestros logs, pero sí cerrar la conexión.
-      await respuesta.text().catch(() => '');
+      // Se cancela sin leerlo: `text()` armaría en memoria todo lo que un
+      // consumidor malicioso mande en la ventana de 10 s, por cada aviso.
+      await respuesta.descartarCuerpo().catch(() => undefined);
 
       if (respuesta.status >= 200 && respuesta.status < 300) {
         return exito('ENTREGADO');
@@ -140,5 +150,10 @@ export class NotificadorHttp implements NotificadorConsumidor {
 
 const fetchComoTransporte: Transporte = async (url, opciones) => {
   const respuesta = await fetch(url, opciones);
-  return { status: respuesta.status, text: () => respuesta.text() };
+  return {
+    status: respuesta.status,
+    descartarCuerpo: async () => {
+      await respuesta.body?.cancel();
+    },
+  };
 };

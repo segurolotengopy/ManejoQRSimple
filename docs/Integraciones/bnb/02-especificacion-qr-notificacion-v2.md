@@ -110,7 +110,7 @@ estado final (B4, B5), y seguridad de la notificación (B8).
 
 ## 7. Decisiones del dueño
 
-1. ¿El BNB será un **segundo riel** junto a Baneco o lo reemplaza?
+1. ~~¿El BNB será un segundo riel junto a Baneco o lo reemplaza?~~ **Decidido el 2026-11-23 (Andres): segundo riel.** Baneco sigue como línea principal y el BNB se suma detrás de los mismos puertos.
 2. ¿Hay una cuenta de empresa en el BNB para recibir los cobros (o hay que abrirla)?
 3. ¿Se empieza solo con **consulta periódica** y la notificación se activa después?
    (Recomendado: no necesita URL pública y no cambia el modelo de confianza.)

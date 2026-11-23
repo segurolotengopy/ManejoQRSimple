@@ -9,7 +9,7 @@
 **anulación** y **notificación de pago**; encaja como segundo riel (`bnb-gateway`, `api-bnb`,
 `watcher-bnb`). Brechas críticas: el estado no trae monto ni fecha de pago, la lista es por fecha
 de generación, la notificación no tiene firma. Quedó `docs/Integraciones/bnb/02-…` y `03-preguntas-al-banco.md`
-(sin enviar). Nada implementado ni decidido. Antes, 2026-10-23, sesión «Análisis BNB» (rama `claude/bnb-analysis-f4fa73`): solo
+(sin enviar). **Decidido por Andres: el BNB será un segundo riel junto a Baneco.** Nada implementado. Antes, 2026-10-23, sesión «Análisis BNB» (rama `claude/bnb-analysis-f4fa73`): solo
 documentación. Se leyó el portal de APIs del Banco Nacional de Bolivia y se dejó
 `docs/Integraciones/bnb/01-analisis-portal-api.md` (QR Simple v2.0.0 solo en sandbox; sin anulación,
 sin webhook y sin datos de producción). Nada implementado ni decidido; la lectura llegó resumida y

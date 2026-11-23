@@ -12,3 +12,4 @@ de la API de pagos del BCP u OpenBCB), gobierna al adaptador correspondiente:
 
 - `baneco/`: Banco Económico, línea principal.
 - `bnb/`: Banco Nacional de Bolivia: análisis del portal, encaje de la especificación «QR / Notificación V2» y preguntas al banco (sin implementar).
+- `bcp/`: Banco de Crédito (BCP), riel por API oficial: qué pedir al banco (sin especificación).

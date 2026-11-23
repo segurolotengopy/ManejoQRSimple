@@ -4,7 +4,12 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-10-23, sesión «Análisis BNB» (rama `claude/bnb-analysis-f4fa73`): solo
+**Última actualización:** 2026-11-23, sesión «Análisis BNB»: Andres entregó la especificación oficial
+«Medio de Pago QR / Notificación V2» del BNB. Hay generación de QR, estado, lista por fecha,
+**anulación** y **notificación de pago**; encaja como segundo riel (`bnb-gateway`, `api-bnb`,
+`watcher-bnb`). Brechas críticas: el estado no trae monto ni fecha de pago, la lista es por fecha
+de generación, la notificación no tiene firma. Quedó `docs/Integraciones/bnb/02-…` y `03-preguntas-al-banco.md`
+(sin enviar). Nada implementado ni decidido. Antes, 2026-10-23, sesión «Análisis BNB» (rama `claude/bnb-analysis-f4fa73`): solo
 documentación. Se leyó el portal de APIs del Banco Nacional de Bolivia y se dejó
 `docs/Integraciones/bnb/01-analisis-portal-api.md` (QR Simple v2.0.0 solo en sandbox; sin anulación,
 sin webhook y sin datos de producción). Nada implementado ni decidido; la lectura llegó resumida y
@@ -757,7 +762,7 @@ ver la decisión 25. Para que un cobro real llegue a `ENVIADO` por WhatsApp sigu
 | ~~Pago manual de un QR de prueba por el banco (A2)~~ | — | — | **Reemplazado el 2026-09-20** por pagos propios de monto mínimo en producción (decisión 21). Las fixtures reales salen de ahí. |
 | IPs del webhook (D1) | 2026-08-27 | Solo el Hito B3 (webhook) | Se opera sin webhook. |
 | Decisión del dueño sobre WhatsAppModular (docs/04 §2.3) | 2026-08-27 | `wa-bridge` — **sin él ningún cobro real pasa de `QR_ACTIVO`** | Demo con `MESSAGING_PROVIDER=mock`. |
-| Preguntas al BNB (`docs/Integraciones/bnb/01-analisis-portal-api.md` §5) | 2026-10-23 | Cualquier adaptador BNB (no hay ninguno planeado) | Solo análisis; sin contacto con el banco todavía. |
+| Preguntas al BNB (`docs/Integraciones/bnb/03-preguntas-al-banco.md`, sin enviar) | 2026-11-23 | Cualquier adaptador BNB (no hay ninguno planeado) | Solo análisis; sin contacto con el banco todavía. |
 | Capturas de la consola Yape BCP | — | Riel Yape (diferido, D1) | Sin impacto en Baneco. |
 
 ### Riesgos abiertos

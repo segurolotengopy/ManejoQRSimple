@@ -53,8 +53,8 @@ docs/consola-yape/       Capturas de la consola Yape BCP aportadas por el dueño
                          Fuente de verdad del mapeo de selectores del scraper.
 docs/Integraciones/      Documentación técnica de proveedores externos
                          (BCP, BCB, Meta). Nunca suelta en la raíz de docs/.
-docs/Integraciones/bnb/  Análisis del portal de APIs del Banco Nacional de Bolivia
-                         (solo análisis, sin implementar).
+docs/Integraciones/bnb/  Banco Nacional de Bolivia: análisis, encaje de la especificación
+                         QR/Notificación V2 y preguntas al banco (sin implementar).
 docs/produccion/         Actas de pase a producción (formato del estándar DevSecOps).
 ```
 

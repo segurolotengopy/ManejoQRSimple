@@ -2,6 +2,11 @@
 
 Fecha de lectura: 2026-10-23. Estado: **solo análisis**; nada implementado ni decidido.
 
+> **Actualización 2026-11-23:** el PDF oficial «Medio de Pago QR / Notificación V2» (ver
+> `02-especificacion-qr-notificacion-v2.md`) **desmiente** dos ausencias de esta lectura:
+> **sí hay anulación** (`CancelQRByIdAsync`) y **sí hay notificación de pago**
+> (`ReceiveNotification`). Gobierna el PDF; esta nota queda como registro de la primera lectura.
+
 Fuentes (públicas):
 
 - https://www.bnb.com.bo/PortalBNB/Api/AllApis

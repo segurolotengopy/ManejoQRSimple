@@ -4,7 +4,16 @@
 > trabajo y antes de cualquier pausa. Al retomar, leer esto primero.
 > Nunca contiene secretos — solo estado, decisiones y próximos pasos.
 
-**Última actualización:** 2026-10-02, sesión «4B2: un detector simulado no confirma un QR real» (rama
+**Última actualización:** 2026-11-23, sesión «Análisis BNB»: Andres entregó la especificación oficial
+«Medio de Pago QR / Notificación V2» del BNB. Hay generación de QR, estado, lista por fecha,
+**anulación** y **notificación de pago**; encaja como segundo riel (`bnb-gateway`, `api-bnb`,
+`watcher-bnb`). Brechas críticas: el estado no trae monto ni fecha de pago, la lista es por fecha
+de generación, la notificación no tiene firma. Quedó `docs/Integraciones/bnb/02-…` y `03-preguntas-al-banco.md`
+(**enviadas por correo por Andres el 2026-11-24**, sin respuesta). **Decidido por Andres: el BNB será un segundo riel junto a Baneco.** **Decidido también: un tercer riel por la API oficial del BCP** (sin especificación todavía: Andres abre una cuenta de empresa en el BCP y el banco enviará sus documentos de integración después;  `docs/Integraciones/bcp/01-pedidos-al-banco.md`; Yape por consola sigue diferido y es otra cosa). **Registrada la «Variante C» (QR genérico abierto verificado por consola, `docs/03` §5): diferida, solo demo, no se construye** (atribución ambigua, sin vencimiento ni anulación, sin capturas). Nada implementado. Antes, 2026-10-23, sesión «Análisis BNB» (rama `claude/bnb-analysis-f4fa73`): solo
+documentación. Se leyó el portal de APIs del Banco Nacional de Bolivia y se dejó
+`docs/Integraciones/bnb/01-analisis-portal-api.md` (QR Simple v2.0.0 solo en sandbox; sin anulación,
+sin webhook y sin datos de producción). Nada implementado ni decidido; la lectura llegó resumida y
+hay que contrastarla con el original o con la especificación oficial del banco. Antes, 2026-10-02, sesión «4B2: un detector simulado no confirma un QR real» (rama
 `fix/detector-simulado-prod`, sin commitear al cierre de esta nota; decisión 27). Antes, 2026-10-01,
 sesión «bloque 4: el pase a producción». **Empezó con un
 análisis y un acta, no con un pase, y la conclusión es que no procede todavía** (decisión 25). Hoy
@@ -753,6 +762,7 @@ ver la decisión 25. Para que un cobro real llegue a `ENVIADO` por WhatsApp sigu
 | ~~Pago manual de un QR de prueba por el banco (A2)~~ | — | — | **Reemplazado el 2026-09-20** por pagos propios de monto mínimo en producción (decisión 21). Las fixtures reales salen de ahí. |
 | IPs del webhook (D1) | 2026-08-27 | Solo el Hito B3 (webhook) | Se opera sin webhook. |
 | Decisión del dueño sobre WhatsAppModular (docs/04 §2.3) | 2026-08-27 | `wa-bridge` — **sin él ningún cobro real pasa de `QR_ACTIVO`** | Demo con `MESSAGING_PROVIDER=mock`. |
+| Preguntas al BNB (`docs/Integraciones/bnb/03-preguntas-al-banco.md`, sin enviar) | 2026-11-23 | Cualquier adaptador BNB (no hay ninguno planeado) | Solo análisis; sin contacto con el banco todavía. |
 | Capturas de la consola Yape BCP | — | Riel Yape (diferido, D1) | Sin impacto en Baneco. |
 
 ### Riesgos abiertos

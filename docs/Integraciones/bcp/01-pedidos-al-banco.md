@@ -39,7 +39,8 @@ valores nuevos de origen (`api-bcp`, `watcher-bcp`) en las tablas totales de `qr
 de deduplicación con prefijo propio y `bcp` en `QR_PROVIDER` / `PAYMENT_WATCHER`.
 Dependencias: ningún adaptador importa a otro.
 
-## 4. Decisiones del dueño pendientes
+## 4. Estado de las gestiones (2026-11-24)
 
-1. ¿Quién contacta al BCP y por qué canal?
-2. ¿Hay cuenta de empresa en el BCP para recibir los cobros?
+- Andres gestiona la **apertura de una cuenta de empresa en el BCP**; el banco enviará sus
+  documentos de integración **después** de abrirla. Hasta entonces no hay especificación.
+- Contacto con el BCP: lo lleva Andres.

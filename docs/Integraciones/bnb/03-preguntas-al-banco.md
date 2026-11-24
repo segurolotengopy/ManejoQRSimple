@@ -1,6 +1,6 @@
 # Preguntas y pedidos al BNB — QR Simple y Notificación V2
 
-Fecha: 2026-11-23. Estado: **sin enviar**. Se envía solo con la autorización de Andres.
+Fecha: 2026-11-23. Estado: **enviadas por correo por Andres (2026-11-24); sin respuesta todavía.** Queda por anotar qué preguntas fueron en el correo.
 Base: `02-especificacion-qr-notificacion-v2.md`. Cada respuesta del banco se anota debajo de
 su pregunta, con fecha, y la más reciente gana sobre el PDF.
 

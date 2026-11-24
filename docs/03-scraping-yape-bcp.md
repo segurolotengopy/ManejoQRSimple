@@ -61,7 +61,7 @@ npm run scraper:login     # abre Chromium HEADED apuntando a la consola;
   se copia por SSH (`scp`) al destino — nunca por repositorio, nube de
   archivos ni chat.
 
-## 5. Origen del QR de cobro (dos variantes, decidir tras el mapeo)
+## 5. Origen del QR de cobro (tres variantes, decidir tras el mapeo)
 
 - **Variante A — carga asistida (por defecto, mínimo riesgo):** el dueño genera
   el QR en su app/consola Yape con la vigencia máxima permitida y lo registra
@@ -73,6 +73,21 @@ npm run scraper:login     # abre Chromium HEADED apuntando a la consola;
   aprobación explícita del dueño por tratarse de una acción de escritura no
   transaccional (no mueve dinero). Se documenta como decisión en ESTADO.md
   antes de implementarse.
+- **Variante C — QR genérico abierto (DIFERIDA, solo demo; evaluada 2026-11-24 a pedido
+  de Andres):** un único QR abierto sirve a todos los clientes y el scraper, con la sesión
+  del dueño, detecta los abonos en la consola (solo lectura). Cumple las reglas 1, 2 y 3,
+  pero choca con otras:
+  - **Atribución:** el QR no identifica el cobro. Dos cobros abiertos del mismo monto hacen
+    ambiguo el abono; un pago real atribuido al cliente equivocado es fraude. Regla: si hay
+    más de un cobro candidato (monto exacto y ventana), el abono va a `EN_REVISION`, nunca
+    se elige uno. Un monto único por cobro (centavos distintivos) resolvería la
+    ambigüedad, pero cambia lo que paga el cliente: decisión del dueño.
+  - **Regla 6 y anulación:** un QR abierto no vence ni se anula por cobro. Un pago tardío
+    solo puede ir a `EN_REVISION`.
+  - **Términos y antifraude del BCP:** riesgo del §3, aceptable solo con cuenta propia en
+    demo. Producción exige la API oficial (rieles Baneco, BNB y BCP).
+  - **Bloqueo:** `docs/consola-yape/` no tiene capturas; sin ellas no se mapea nada (regla 12).
+  - No se construye hasta que Andres lo active expresamente.
 
 ## 6. Mapa de la consola (PENDIENTE — se llena con capturas reales)
 
